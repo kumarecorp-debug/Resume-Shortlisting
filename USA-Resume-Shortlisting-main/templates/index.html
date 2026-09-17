@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RS_PROJECT</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='index.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='signin.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='signup.css') }}">
+    <style>
+        /* Ensure the entire page is scrollable */
+        html, body {
+            margin: 0;
+            padding: 0;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+        .container {
+            flex: 1;
+            padding-bottom: 20px; /* Add space so footer doesn't overlap content */
+        }
+        /* Override footer to reduce height and make it part of the page flow */
+        footer {
+            padding: 0.5em; /* Reduced from 1em to decrease height */
+            position: static; /* Remove fixed positioning so footer scrolls with page */
+            width: 100%;
+        }
+    </style>
+</head>
+<body>
+    <nav>
+        <ul>
+            <li><a href="{{ url_for('process') }}" style="display: flex; align-items: center; gap: 5px;">Resume Shortlisting 📥</a></li>
+            <li><a href="#" id="signin-button" style="display: flex; align-items: center; gap: 5px;">Sign In 🔒</a></li>
+            <li><a href="#" id="signup-button" style="display: flex; align-items: center; gap: 5px;">Sign Up 👤</a></li>
+        </ul>
+    </nav>
+    <header>
+        <h1>Resume Shortlisting Project (RS_PROJECT)</h1>
+        <p>Streamlining Talent Acquisition</p>
+    </header>
+    <nav class="sub-nav">
+        <ul>
+            <li><a href="#overview">Overview</a></li>
+            <li><a href="#features">Features</a></li>
+            <li><a href="#contact">Contact</a></li>
+        </ul>
+    </nav>
+    <div class="container">
+        <div class="section" id="overview">
+            <h2>Project Overview: AI-Based Resume Shortlisting System</h2>
+            <p>This project presents an AI-driven Resume Shortlisting System aimed at optimizing and automating the initial stages of the recruitment process. By leveraging Natural Language Processing (NLP) and Machine Learning (ML) techniques, the system is capable of efficiently parsing and analyzing resumes to identify qualified candidates. It performs automated screening based on predefined criteria, matches candidate skills with job-specific requirements, and evaluates relevant experience—particularly in government sectors. The system then ranks candidates using a composite scoring mechanism, thereby enabling recruiters to make informed decisions with greater speed and accuracy. The overall objective is to enhance the efficiency, consistency, and objectivity of candidate shortlisting in modern hiring workflows.</p>
+        </div>
+        <div class="section" id="features">
+            <h2>Key Features</h2>
+            <div class="features-grid">
+                <div class="feature-item">
+                    <h3>Automated Screening</h3>
+                    <p>The system efficiently filters resumes by applying predefined criteria such as job title relevance, required qualifications, and minimum experience. This reduces manual effort and ensures only eligible candidates proceed to the next stage.</p>
+                </div>
+                <div class="feature-item">
+                    <h3>Skill Matching</h3>
+                    <p>Utilizing NLP techniques, the system extracts and analyzes skills from candidate resumes and compares them against the required job specifications. This facilitates precise identification of candidates whose competencies align with organizational needs.</p>
+                </div>
+                <div class="feature-item">
+                    <h3>Ranking System</h3>
+                    <p>Candidates are ranked based on a composite relevance score derived from two primary factors: the percentage of matched skills, Experience and the experience in government . This ensures the most suitable candidates are prioritized in the selection process.</p>
+                </div>
+                <div class="feature-item">
+                    <h3>User-Friendly Interface</h3>
+                    <p>The solution offers an intuitive and accessible interface that enables automated resume screening directly from email submissions, significantly reducing manual effort for recruiters. It allows users to configure screening parameters and seamlessly review ranked candidate results, thereby streamlining the recruitment workflow and enhancing overall efficiency.</p>
+                </div>
+            </div>
+        </div>
+        <div class="section" id="contact">
+            <h2>Contact Us</h2>
+            <p>For further details, inquiries, or collaboration opportunities regarding this project, please reach out via the contact information below:</p>
+            <ul class="contact-details">
+                <li><strong>Project Owner / Developer:</strong> innoSoul, Inc.</li>
+                <li><strong>Email:</strong> <a href="mailto:[email protected]">support@innosoul.com</a></li>
+                <li><strong>Phone:</strong> 518 400 0755</li>
+                <li><strong>LinkedIn:</strong> <a href="#">https://www.linkedin.com/company/innosoul-inc-/</a></li>
+                <li><strong>GitHub:</strong> I don't have</li>
+                <li><strong>Location:</strong> 349 Kinderkamack Road Westwood, NJ 07675</li>
+                <li><strong>Website:</strong> <a href="http://www.innosoul.com">www.innosoul.com</a></li>
+            </ul>
+        </div>
+    </div>
+
+    <!-- Sign In Modal -->
+    <div class="modal" id="signin-modal">
+        <div class="modal-content">
+            <span class="close-button">×</span>
+            <div class="left-section">
+                <h1>WELCOME<br>BACK!</h1>
+                <p>Lorem, ipsum dolor sit amet consectetur adipiscing elit. Deleniti, rem?</p>
+            </div>
+            <div class="right-section">
+                <h2>Sign In</h2>
+                <form id="signin-form" autocomplete="off">
+                    <div class="form-group">
+                        <label>
+                            <span class="icon">👤</span>
+                            Username (@innosoul.com)
+                            <span class="underline"></span>
+                        </label>
+                        <input type="email" name="username" placeholder="Enter your username" required>
+                    </div>
+                    <div class="form-group">
+                        <label>
+                            <span class="icon">🔒</span>
+                            Password
+                            <span class="underline"></span>
+                        </label>
+                        <input type="password" name="password" placeholder="Enter your password" required autocomplete="new-password">
+                    </div>
+                    <div class="form-group">
+                        <button type="submit">Sign In</button>
+                    </div>
+                    <div class="success" id="signin-success" style="display: none;"></div>
+                    <div class="error" id="signin-error" style="display: none;"></div>
+                </form>
+                <div class="forgot-password">
+                    <a href="#">Forgot Password</a>
+                </div>
+                <div class="link">
+                    Don't have an account? <a href="#" id="open-signup-from-signin">Sign Up</a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Sign Up Modal -->
+    <div class="modal" id="signup-modal">
+        <div class="modal-content">
+            <span class="close-button">×</span>
+            <div class="right-section">
+                <h2>Sign Up</h2>
+                <form id="signup-form" autocomplete="off">
+                    <div class="form-group">
+                        <label>
+                            <span class="icon">👤</span>
+                            Username
+                            <span class="underline"></span>
+                        </label>
+                        <input type="email" name="username" placeholder="Enter your username" required>
+                    </div>
+                    <div class="form-group">
+                        <label>
+                            <span class="icon">🔒</span>
+                            Password
+                            <span class="underline"></span>
+                        </label>
+                        <input type="password" name="password" placeholder="Enter your password" required autocomplete="new-password">
+                    </div>
+                    <div class="form-group">
+                        <label>
+                            <span class="icon">🔒</span>
+                            Confirm Password
+                            <span class="underline"></span>
+                        </label>
+                        <input type="password" name="confirm_password" placeholder="Confirm your password" required autocomplete="new-password">
+                    </div>
+                    <div class="form-group">
+                        <button type="submit">Sign Up</button>
+                    </div>
+                    <div class="success" id="signup-success" style="display: none;"></div>
+                    <div class="error" id="signup-error" style="display: none;"></div>
+                </form>
+                <div class="link">
+                    Don't have an account? <a href="#" id="open-signin-from-signup">Sign In</a>
+                </div>
+            </div>
+            <div class="left-section">
+                <h1>WELCOME<br>BACK!</h1>
+                <p>Lorem, ipsum dolor sit amet</p>
+            </div>
+        </div>
+    </div>
+
+    <footer>
+        <p>© 2025 RS_PROJECT. All rights reserved.</p>
+    </footer>
+
+    <script>
+        // Modal handling for Sign In and Sign Up
+        const signinModal = document.getElementById('signin-modal');
+        const signupModal = document.getElementById('signup-modal');
+        const signinButton = document.getElementById('signin-button');
+        const signupButton = document.getElementById('signup-button');
+        const openSignupFromSignin = document.getElementById('open-signup-from-signin');
+        const openSigninFromSignup = document.getElementById('open-signin-from-signup');
+        const closeButtons = document.getElementsByClassName('close-button');
+
+        // Sign Up form elements
+        const signupForm = document.getElementById('signup-form');
+        const signupSuccess = document.getElementById('signup-success');
+        const signupError = document.getElementById('signup-error');
+
+        // Sign In form elements
+        const signinForm = document.getElementById('signin-form');
+        const signinSuccess = document.getElementById('signin-success');
+        const signinError = document.getElementById('signin-error');
+
+        // Helper function to clear messages
+        function clearMessages() {
+            signupSuccess.style.display = 'none';
+            signupError.style.display = 'none';
+            signinSuccess.style.display = 'none';
+            signinError.style.display = 'none';
+        }
+
+        // Helper function to reset forms
+        function resetForms() {
+            signinForm.reset();
+            signupForm.reset();
+        }
+
+        // Sign Up form submission
+        signupForm.addEventListener('submit', function(e) {
+            e.preventDefault();
+            clearMessages();
+
+            const username = signupForm.querySelector('input[name="username"]').value;
+            const password = signupForm.querySelector('input[name="password"]').value;
+            const confirmPassword = signupForm.querySelector('input[name="confirm_password"]').value;
+
+            // Validate password match
+            if (password !== confirmPassword) {
+                signupError.textContent = 'Passwords do not match.';
+                signupError.style.display = 'block';
+                return;
+            }
+
+            // Validate username ends with @innosoul.com
+            if (!username.endsWith('@innosoul.com')) {
+                signupError.textContent = 'Username must end with @innosoul.com';
+                signupError.style.display = 'block';
+                return;
+            }
+
+            // Retrieve existing users from localStorage, or initialize an empty array
+            let users = JSON.parse(localStorage.getItem('users')) || [];
+            
+            // Check if the username already exists
+            if (users.some(user => user.username.toLowerCase() === username.toLowerCase())) {
+                signupError.textContent = 'Username already exists. Please choose a different email.';
+                signupError.style.display = 'block';
+                return;
+            }
+
+            // Add the new user to the array
+            users.push({ username, password });
+            
+            // Store the updated users array back in localStorage
+            try {
+                localStorage.setItem('users', JSON.stringify(users));
+            } catch (e) {
+                if (e.name === 'QuotaExceededError') {
+                    signupError.textContent = 'Storage limit reached. Cannot sign up more users.';
+                    signupError.style.display = 'block';
+                    return;
+                }
+            }
+
+            // Show success message, close Sign Up modal, open Sign In modal
+            signupSuccess.textContent = 'Sign Up successful! Please sign in.';
+            signupSuccess.style.display = 'block';
+            setTimeout(() => {
+                signupModal.style.display = 'none';
+                signinModal.style.display = 'flex';
+                signupSuccess.style.display = 'none';
+                resetForms();
+            }, 1500);
+        });
+
+        // Sign In form submission
+        signinForm.addEventListener('submit', function(e) {
+            e.preventDefault();
+            clearMessages();
+
+            const username = signinForm.querySelector('input[name="username"]').value;
+            const password = signinForm.querySelector('input[name="password"]').value;
+
+            // Retrieve users from localStorage
+            const users = JSON.parse(localStorage.getItem('users')) || [];
+
+            // Check if the user exists
+            if (users.length === 0) {
+                signinError.textContent = 'No account found. Please sign up first.';
+                signinError.style.display = 'block';
+                return;
+            }
+
+            // Find a matching user (case-insensitive for email, case-sensitive for password)
+            const user = users.find(user => user.username.toLowerCase() === username.toLowerCase() && user.password === password);
+
+            if (user) {
+                signinSuccess.textContent = 'Sign In successful! Redirecting...';
+                signinSuccess.style.display = 'block';
+                setTimeout(() => {
+                    window.location.href = "{{ url_for('process') }}";
+                }, 1500);
+            } else {
+                signinError.textContent = 'Invalid username or password.';
+                signinError.style.display = 'block';
+            }
+        });
+
+        // Open Sign In modal
+        signinButton.addEventListener('click', function(e) {
+            e.preventDefault();
+            clearMessages();
+            resetForms();
+            signinModal.style.display = 'flex';
+        });
+
+        // Open Sign Up modal
+        signupButton.addEventListener('click', function(e) {
+            e.preventDefault();
+            clearMessages();
+            resetForms();
+            signupModal.style.display = 'flex';
+        });
+
+        // Open Sign Up from Sign In modal
+        openSignupFromSignin.addEventListener('click', function(e) {
+            e.preventDefault();
+            clearMessages();
+            resetForms();
+            signinModal.style.display = 'none';
+            signupModal.style.display = 'flex';
+        });
+
+        // Open Sign In from Sign Up modal
+        openSigninFromSignup.addEventListener('click', function(e) {
+            e.preventDefault();
+            clearMessages();
+            resetForms();
+            signupModal.style.display = 'none';
+            signinModal.style.display = 'flex';
+        });
+
+        // Close modals
+        for (let closeButton of closeButtons) {
+            closeButton.addEventListener('click', function() {
+                clearMessages();
+                resetForms();
+                signinModal.style.display = 'none';
+                signupModal.style.display = 'none';
+            });
+        }
+
+        // Close modal when clicking outside
+        window.addEventListener('click', function(e) {
+            if (e.target === signinModal) {
+                clearMessages();
+                resetForms();
+                signinModal.style.display = 'none';
+            }
+            if (e.target === signupModal) {
+                clearMessages();
+                resetForms();
+                signupModal.style.display = 'none';
+            }
+        });
+    </script>
+</body>
+</html>
