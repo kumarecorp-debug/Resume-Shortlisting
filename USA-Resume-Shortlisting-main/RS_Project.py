@@ -105,6 +105,7 @@ def auto_authenticate_google(account_email="recruiter@ecorptrainings.com"):
     """
     Authenticates with Google Gmail API for the specified account email.
     Supports switching between recruiter@ecorptrainings.com and jai.ecorp@gmail.com.
+    Supports loading OAuth tokens from Environment Variables (for Vercel / Cloud) or local JSON files.
     """
     email_key = account_email.lower().strip() if account_email else "recruiter@ecorptrainings.com"
     acct_config = SUPPORTED_ACCOUNTS.get(email_key, SUPPORTED_ACCOUNTS["recruiter@ecorptrainings.com"])
@@ -112,33 +113,60 @@ def auto_authenticate_google(account_email="recruiter@ecorptrainings.com"):
     client_fname = acct_config["client_file"]
     token_fname = acct_config["token_file"]
     
-    client_file = os.path.join(SCRIPT_DIR, client_fname)
-    if not os.path.exists(client_file):
-        parent_client = os.path.join(os.path.dirname(SCRIPT_DIR), client_fname)
-        if os.path.exists(parent_client):
-            client_file = parent_client
-            
+    SCOPES = ['https://www.googleapis.com/auth/gmail.readonly']
+    creds = None
+
+    # 1. Check Environment Variables (Required for Vercel / Cloud Hosting)
+    env_token_keys = [
+        "GOOGLE_TOKEN_JAI_JSON" if "jai" in email_key else "GOOGLE_TOKEN_JSON",
+        "TOKEN_JAI_JSON" if "jai" in email_key else "TOKEN_JSON",
+        "GMAIL_TOKEN_JAI" if "jai" in email_key else "GMAIL_TOKEN_RECRUITER"
+    ]
+    for env_k in env_token_keys:
+        env_token_str = os.environ.get(env_k, "").strip()
+        if env_token_str:
+            try:
+                token_data = json.loads(env_token_str)
+                creds = Credentials.from_authorized_user_info(token_data, SCOPES)
+                if creds and creds.expired and creds.refresh_token:
+                    creds.refresh(Request())
+                if creds and creds.valid:
+                    logging.info(f"Successfully authenticated {email_key} using environment variable {env_k}")
+                    return build('gmail', 'v1', credentials=creds)
+            except Exception as e:
+                logging.warning(f"Failed to load token from environment variable {env_k}: {e}")
+                creds = None
+
+    # 2. Check Local Token Files
     token_file = os.path.join(SCRIPT_DIR, token_fname)
     if not os.path.exists(token_file):
         parent_token = os.path.join(os.path.dirname(SCRIPT_DIR), token_fname)
         if os.path.exists(parent_token):
             token_file = parent_token
 
-    creds = None
-    SCOPES = ['https://www.googleapis.com/auth/gmail.readonly']
-
     if os.path.exists(token_file):
         try:
             creds = Credentials.from_authorized_user_file(token_file, SCOPES)
             if creds and creds.expired and creds.refresh_token:
                 creds.refresh(Request())
+            if creds and creds.valid:
+                return build('gmail', 'v1', credentials=creds)
         except Exception as e:
-            logging.warning(f"Existing token for {email_key} is invalid or expired: {e}. Re-authenticating...")
+            logging.warning(f"Existing token file for {email_key} is invalid or expired: {e}. Re-authenticating...")
             creds = None
+
+    # 3. Local Browser Authentication (Desktop Only)
+    client_file = os.path.join(SCRIPT_DIR, client_fname)
+    if not os.path.exists(client_file):
+        parent_client = os.path.join(os.path.dirname(SCRIPT_DIR), client_fname)
+        if os.path.exists(parent_client):
+            client_file = parent_client
 
     if not creds or not creds.valid:
         if not os.path.exists(client_file):
-            raise FileNotFoundError(f"{client_fname} not found at {client_file}. Please ensure Google OAuth credentials are provided.")
+            raise FileNotFoundError(
+                f"{client_fname} not found. When deploying on Vercel/Cloud, add GOOGLE_TOKEN_JSON and GOOGLE_TOKEN_JAI_JSON to your Vercel Environment Variables."
+            )
         try:
             flow = InstalledAppFlow.from_client_secrets_file(client_file, SCOPES)
             try:
