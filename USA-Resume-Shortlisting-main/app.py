@@ -8,13 +8,19 @@ from contextlib import redirect_stdout, redirect_stderr
 import RS_Project
 import os
 
-app = Flask(__name__)
+project_root = os.path.dirname(os.path.abspath(__file__))
+template_dir = os.path.join(project_root, 'templates')
+static_dir = os.path.join(project_root, 'static')
+
+app = Flask(__name__, template_folder=template_dir, static_folder=static_dir)
 app.secret_key = 'your-secret-key-here-ecorp-resume'
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
-project_root = os.path.dirname(os.path.abspath(__file__))
-os.chdir(project_root)
+try:
+    os.chdir(project_root)
+except Exception:
+    pass
 
 @app.route('/', methods=['GET'])
 def index():
@@ -47,27 +53,20 @@ def process():
                 columns=[]
             )
 
-        resume_folder = os.path.join(project_root, "Resumes")
+        resume_folder = RS_Project.RESUME_FOLDER
         try:
             if not os.path.exists(resume_folder):
-                os.makedirs(resume_folder)
+                os.makedirs(resume_folder, exist_ok=True)
             test_file = os.path.join(resume_folder, "test_write.txt")
             with open(test_file, 'w') as f:
                 f.write("Test")
             os.remove(test_file)
-            logging.info(f"Write permissions verified for Resumes folder: {resume_folder}")
-        except Exception as e:
-            flash(f'Cannot write to Resumes folder: {str(e)}. Please check folder permissions.', 'error')
-            logging.error(f"Failed to write to Resumes folder: {e}")
-            return render_template(
-                'process.jinja',
-                job_query=job_query,
-                job_role=job_query,
-                selected_account=selected_account,
-                available_accounts=available_accounts,
-                table_data=[],
-                columns=[]
-            )
+        except Exception:
+            import tempfile
+            resume_folder = os.path.join(tempfile.gettempdir(), "Resumes")
+            os.makedirs(resume_folder, exist_ok=True)
+            RS_Project.RESUME_FOLDER = resume_folder
+            RS_Project.OUTPUT_CSV = os.path.join(resume_folder, "resume_analysis.csv")
 
         stdout_buffer = StringIO()
         stderr_buffer = StringIO()
