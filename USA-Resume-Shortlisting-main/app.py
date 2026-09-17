@@ -22,10 +22,7 @@ try:
 except Exception:
     pass
 
-@app.route('/', methods=['GET'])
-def index():
-    return render_template('index.html')
-
+@app.route('/', methods=['GET', 'POST'])
 @app.route('/process', methods=['GET', 'POST'])
 def process():
     available_accounts = list(RS_Project.SUPPORTED_ACCOUNTS.values())
