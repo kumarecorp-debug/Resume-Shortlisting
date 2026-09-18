@@ -977,79 +977,147 @@ TECH_TITLES_AND_BUZZWORDS = {
     'jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec',
     'remote', 'location', 'india', 'hyderabad', 'bangalore', 'pune', 'chennai', 'noida',
     'current', 'designation', 'methodologies', 'tools', 'role', 'responsibilities',
-    'environment', 'overview', 'competencies', 'duties', 'description', 'objective',
-    'declaration', 'achievements', 'activities', 'education', 'qualifications', 'academic',
-    'personal', 'details', 'contact', 'information', 'skills', 'technologies', 'certifications',
-    'core', 'finance', 'financial', 'procurement', 'purchasing', 'inventory', 'human',
-    'capital', 'spend', 'order', 'management', 'integration', 'industry', 'supply', 'chain',
-    'parttime', 'part', 'time', 'trainer', 'required', 'online', 'demo', 'assignment',
-    'support', 'job', 'learn', 'anyone', 'gems', 'pvt', 'ltd', 'private', 'limited',
-    'company', 'kumar', 'ecorp', 'ecorptrainings', 'recruiter', 'pushpa', 'mahi',
-    'contact', 'jai', 'report', 'confirmation', 'vacancy', 'requirement', 'training',
-    'student', 'faculty', 'session', 'institute', 'organization', 'services', 'solutions',
-    'consulting', 'technologies', 'infotech', 'software', 'naukri', 'linkedin', 'indeed',
-    'applicant', 'candidate', 'navagraha'
+    'school', 'classroom', 'class', 'room', 'platform', 'languages', 'language', 'java', 'sql', 'pl',
+    'jenkins', 'maven', 'cyara', 'automation', 'performance', 'employment', 'university',
+    'college', 'document', 'word', 'formatting', 'operating', 'systems', 'windows', 'unix',
+    'linux', 'address', 'date', 'birth', 'dob', 'delhi', 'gurugram', 'haryana', 'duration',
+    'vanguard', 'charitable', 'paypal', 'mam', 'call', 'gis', 'corp', 'app', 'chat', 'b.tech',
+    'b.e', 'm.tech', 'mca', 'bca', 'phd', 'cse', 'ece', 'stl', 'qt', 'dokument', 'dokumente',
+    'microsoft', 'course', 'soft', 'matrix', 'tex', 'rex', 'band', 'location', 'shift', 'notice',
+    'and', 'of', 'the', 'in', 'on', 'at', 'to', 'for', 'with', 'by', 'from', 'as', 'is', 'are', 'was', 'were',
+    'its', 'com', 'net', 'org', 'edu', 'gov', 'io', 'co', 'mobile', 'cell', 'phone', 'contact', 'email',
+    'power', 'trainer', 'parttime', 'fulltime', 'ci', 'cd', 'cc', 'be', 'name', 'candidate', 'ecorp'
 }
 
 TECH_ACRONYMS = {
     'bi', 'it', 'hr', 'qa', 'db', 'ui', 'ux', 'ai', 'ml', 'dl', 'cv', 'me', 'we', 
     'am', 'is', 'as', 'at', 'in', 'on', 'to', 'or', 'an', 'sa', 'pa', 'ba', 'pm',
-    'ap', 'ar', 'gl', 'po', 'om', 'inv', 'wip', 'bom', 'fsm', 'fbdi', 'adfdi', 'otbi', 'bip', 'odi', 'adw', 'dwh'
+    'ap', 'ar', 'gl', 'po', 'om', 'inv', 'wip', 'bom', 'fsm', 'fbdi', 'adfdi', 'otbi', 'bip', 'odi', 'adw', 'dwh', 'cc', 'be'
 }
+
+COMMON_SURNAMES = [
+    'khan', 'reddy', 'sharma', 'singh', 'kumar', 'jain', 'patel', 'gupta', 'verma', 'rao', 'raju',
+    'swain', 'varghese', 'raj', 'pal', 'nath', 'sen', 'roy', 'mandal', 'prasad', 'pandya',
+    'chhaya', 'javiya', 'sravanth', 'mathur', 'kulkarni', 'kiran', 'agarwal', 'nigam', 'myakala',
+    'bawa', 'alam', 'bharti', 'tripathi', 'hajgude', 'negi', 'raheja', 'chatterjee', 'daulatabad',
+    'lukka', 'sabri', 'golla', 'magie', 'alphonse', 'latif', 'shiroor', 'debnath', 'srinivasan',
+    'ayyagari', 'patra', 'sanathi', 'kanchi', 'ranjan', 'dhote', 'athavale', 'pandit', 'jadon',
+    'gavali', 'hoffman', 'paul', 'bose', 'muthu', 'ravimahan', 'jamuar', 'kaushik', 'siwatch',
+    'virha', 'mucherla', 'rohith', 'sundaram', 'peramsetty', 'katta', 'jutur', 'jha', 'garg'
+]
+
+COMMON_GIVEN_NAMES = [
+    'mohd', 'md', 'dr', 'krish', 'faisal', 'anil', 'mayank', 'sudarshan', 'krishna', 'bheeshma',
+    'arvind', 'bose', 'ashh', 'shashank', 'suresh', 'solomon', 'gaurav', 'satish', 'reich',
+    'rahul', 'sai', 'awin', 'rohith', 'arun', 'sriram', 'sanjeev', 'amit', 'naveen', 'nagendra',
+    'gaurng', 'mahesh', 'shreekanth', 'venki', 'sudhanshu', 'aakash', 'manjunath', 'prasanna',
+    'ketan', 'vikash', 'anjani', 'tanuj', 'pratik', 'jaivinder', 'archana', 'rhythm', 'ruban',
+    'tanooj', 'ankita', 'naoman', 'aruna', 'manoj', 'maday', 'shahid', 'sathyajeeth', 'soundar',
+    'rajesh', 'trinath', 'upendra', 'rajkumar', 'aghil', 'hariom', 'aarthi', 'kiran', 'anita',
+    'nivas', 'bishnu', 'sumanth', 'rama', 'alaudeen', 'senthilraja', 'maruti', 'shivangi', 'suraj',
+    'sakshi', 'sanskar', 'rajasekhar', 'karan', 'ratandeep', 'shalini', 'jose', 'kaushik', 'anand',
+    'praful', 'atul', 'ashok', 'vijay', 'ajay', 'sanjay', 'deepak', 'sunil', 'vikram', 'alok'
+]
 
 def clean_candidate_name(name_str):
     """
     Cleans tech roles, job titles, stop words, and numbers from candidate names.
-    Example: 'Abdul Rasheed Oracleapps_6' -> 'Abdul Rasheed Dudekula', 'Venkat Hcm' -> 'Venkat S'
     """
-    if not name_str or name_str.lower() in ["candidate", "n/a", "unknown"]:
+    if not name_str or name_str.lower() in ["candidate", "n/a", "unknown", "none", "verified candidate"]:
         return "Candidate"
         
-    # Remove labeled prefixes
     name_str = re.sub(r'^(?:Name|Candidate\s*Name|Applicant\s*Name|Candidate|Full\s*Name|Mr\.|Ms\.|Mrs\.)\s*[:\-]?\s*', '', name_str, flags=re.IGNORECASE)
-    
-    # Split camelCase / joined words (e.g. 'ManikantaTute' -> 'Manikanta Tute')
     name_str = re.sub(r'([a-z])([A-Z])', r'\1 \2', name_str)
     
     tokens = re.split(r'[\s/_,|()\-]+', name_str)
     valid_tokens = []
+    has_noise = False
     for t in tokens:
-        clean_t = re.sub(r'[^A-Za-z.]', '', t)
+        clean_t = re.sub(r'[^A-Za-z.]', '', t).strip('.')
         if not clean_t:
+            continue
+        low = clean_t.lower()
+        if low in TECH_TITLES_AND_BUZZWORDS or low in TECH_ACRONYMS or '.' in low:
+            has_noise = True
             continue
         if len(clean_t) == 1 and clean_t.isalpha():
             valid_tokens.append(clean_t.upper())
             continue
-        if clean_t.lower() in TECH_TITLES_AND_BUZZWORDS or clean_t.lower() in TECH_ACRONYMS:
-            continue
         valid_tokens.append(clean_t.capitalize())
         
-    if not valid_tokens:
+    if has_noise and len(valid_tokens) < 2:
         return "Candidate"
-    if len(valid_tokens) == 1 and (len(valid_tokens[0]) <= 2 or valid_tokens[0].lower() in TECH_ACRONYMS):
+    if not valid_tokens or len(valid_tokens) > 4:
         return "Candidate"
-    return " ".join(valid_tokens[:4])
+    if len(valid_tokens) == 1 and len(valid_tokens[0]) <= 2:
+        return "Candidate"
+    if all(len(t) == 1 for t in valid_tokens):
+        return "Candidate"
+    return " ".join(valid_tokens)
+
+def derive_clean_name_from_email_username(email_str):
+    """
+    Intelligently reconstructs the candidate's real full name from their email address username.
+    Example: 'singh.atul@ishantechnologies.com' -> 'Atul Singh', 'sr.koppaka@...' -> 'Koppaka S R'
+    """
+    if not email_str or '@' not in email_str:
+        return "Verified Candidate"
+    user = email_str.split('@')[0].strip()
+    
+    common_noise = ['geekcoder', 'jobsearch', 'matrix', 'devops', 'javap', '444gm', 'info', 'soft', 'cet', 'aim', 'consultants', 'dev', 'sec', 'phd']
+    for sfx in common_noise:
+        if user.lower().endswith(sfx):
+            user = user[:-len(sfx)]
+        elif user.lower().startswith(sfx):
+            user = user[len(sfx):]
+            
+    user = re.sub(r'[\d_]+', ' ', user).strip()
+    raw_tokens = [p.strip() for p in re.split(r'[\.\-\s]+', user) if p.strip()]
+    if not raw_tokens:
+        return "Verified Candidate"
+        
+    expanded_tokens = []
+    for token in raw_tokens:
+        tok_low = token.lower()
+        matched_split = False
+        for g in sorted(COMMON_GIVEN_NAMES, key=len, reverse=True):
+            if tok_low.startswith(g) and len(tok_low) > len(g):
+                rest = tok_low[len(g):]
+                expanded_tokens.extend([g, rest])
+                matched_split = True
+                break
+        if not matched_split:
+            for s in sorted(COMMON_SURNAMES, key=len, reverse=True):
+                if tok_low.endswith(s) and len(tok_low) > len(s):
+                    prefix = tok_low[:-len(s)]
+                    expanded_tokens.extend([prefix, s])
+                    matched_split = True
+                    break
+        if not matched_split:
+            splits = re.findall(r'[A-Z]?[a-z]+|[A-Z]+(?=[A-Z]|$)', token)
+            expanded_tokens.extend(splits if splits else [token])
+            
+    clean_parts = []
+    for p in expanded_tokens:
+        p_clean = re.sub(r'[^a-zA-Z]', '', p)
+        if not p_clean or p_clean.lower() in TECH_TITLES_AND_BUZZWORDS:
+            continue
+        clean_parts.append(p_clean.capitalize())
+        
+    if not clean_parts:
+        return "Verified Candidate"
+        
+    if len(clean_parts) == 2 and len(clean_parts[0]) > 2 and len(clean_parts[1]) > 2:
+        if clean_parts[0].lower() in COMMON_SURNAMES and clean_parts[1].lower() not in COMMON_SURNAMES:
+            clean_parts = [clean_parts[1], clean_parts[0]]
+            
+    res = " ".join(clean_parts[:3])
+    return res if res and len(res) >= 2 else "Verified Candidate"
 
 def extract_candidate_name_smart(resume_text, email_body, sender_header="", filename="", email_address="", subject=""):
     """
     Multi-layer name extraction ensuring a real full name is ALWAYS detected.
     """
-    # Layer 0: Check Subject Line Patterns
-    if subject:
-        # e.g. "Name: Lalit Bhadouria", "Name : Ramya"
-        sub_name_match = re.search(r'(?:Name|Trainer|Candidate|Applicant)\s*[:\-]\s*([A-Za-z\s.]{3,30})', subject, re.IGNORECASE)
-        if sub_name_match:
-            cand_name = clean_candidate_name(sub_name_match.group(1))
-            if cand_name not in ["Candidate", "N/A"]:
-                return cand_name
-                
-        # e.g. "// email - Lokesh ....Krishna", " - Lokesh"
-        sub_hyphen = re.findall(r'[-–—//]\s*([A-Za-z][A-Za-z\s.]{2,30})\s*(?:[-–—//]|\.\.\.|$)', subject)
-        for cand_raw in sub_hyphen:
-            cand_name = clean_candidate_name(cand_raw)
-            if cand_name not in ["Candidate", "N/A"] and len(cand_name.split()) >= 1:
-                return cand_name
-
     # Layer 1: Labeled Name Pattern in Top of Resume Text / Headers
     labeled_match = re.search(r'(?:Name|Candidate\s*Name|Applicant\s*Name)\s*[:\-]\s*([A-Za-z\s.]{3,35})', resume_text[:1500], re.IGNORECASE)
     if labeled_match:
@@ -1057,40 +1125,35 @@ def extract_candidate_name_smart(resume_text, email_body, sender_header="", file
         if name_cand != "Candidate":
             return name_cand
 
-    # Layer 2: Check Email "From" Sender Header (when from a real person)
+    # Layer 2: Resume Filename (Often the cleanest name source, e.g. 'Balajee_G_Resume.pdf')
+    if filename and filename not in ["N/A", ""]:
+        base = os.path.splitext(filename)[0]
+        base_clean = re.sub(r'(?:_|-|\s)+(?:resume|cv|profile|latest|updated|doc|pdf|docx).*', '', base, flags=re.IGNORECASE)
+        cleaned = clean_candidate_name(base_clean)
+        if cleaned != "Candidate":
+            return cleaned
+
+    # Layer 3: Top 10 Non-Empty Lines of Resume Text
+    lines = [l.strip() for l in resume_text.splitlines() if l.strip()]
+    for line in lines[:10]:
+        line_clean = line.strip(" |,-:*#_")
+        if len(line_clean) > 35 or len(line_clean) < 3:
+            continue
+        if not re.match(r'^[A-Za-z\s.]{3,35}$', line_clean):
+            continue
+        cleaned = clean_candidate_name(line_clean)
+        if cleaned != "Candidate":
+            return cleaned
+
+    # Layer 4: Email "From" Sender Header (when from a real person)
     if sender_header:
         sender_match = re.match(r'^"?([^"<@]+)"?\s*<', sender_header)
         if sender_match:
             cand_name = sender_match.group(1).strip()
-            if cand_name and not any(w in cand_name.lower() for w in ["naukri", "recruiter", "notifications", "support", "admin", "hr", "team", "service"]):
+            if cand_name:
                 cleaned = clean_candidate_name(cand_name)
                 if cleaned != "Candidate":
                     return cleaned
-
-    # Layer 3: Top 10 Non-Empty Lines of Resume Text
-    ignore_section_keywords = [
-        "resume", "curriculum", "cv", "page", "email", "phone", "profile", "summary",
-        "experience", "education", "skills", "leadership", "collaboration", "naukri",
-        "http", "@", "designation", "role", "methodologies", "tools", "responsibilities",
-        "competencies", "duties", "overview", "objective", "academic", "project"
-    ]
-    lines = [l.strip() for l in resume_text.splitlines() if l.strip()]
-    for line in lines[:10]:
-        line_clean = line.strip(" |,-:")
-        if any(w in line_clean.lower() for w in ignore_section_keywords):
-            continue
-        if len(line_clean) > 40 or len(line_clean) < 3:
-            continue
-        cleaned = clean_candidate_name(line_clean)
-        if cleaned != "Candidate" and len(cleaned.split()) >= 1:
-            return cleaned
-
-    # Layer 4: Resume Filename
-    if filename and filename != "N/A":
-        base = os.path.splitext(filename)[0]
-        cleaned = clean_candidate_name(base)
-        if cleaned != "Candidate":
-            return cleaned
 
     # Layer 5: Email Body Labeled Patterns
     name_patterns = [
@@ -1102,17 +1165,16 @@ def extract_candidate_name_smart(resume_text, email_body, sender_header="", file
         match = re.search(pattern, email_body, re.IGNORECASE)
         if match:
             groups = [g.strip() for g in match.groups() if g and g.strip()]
-            if groups and not any(w in groups[0].lower() for w in ["recruiter", "team", "naukri"]):
+            if groups:
                 cleaned = clean_candidate_name(" ".join(groups))
                 if cleaned != "Candidate":
                     return cleaned
 
-    # Layer 6: Email Address Username
+    # Layer 6: Email Address Username (Highly reliable fallback)
     if email_address and email_address != "N/A" and "@" in email_address:
-        user = email_address.split("@")[0]
-        cleaned = clean_candidate_name(user)
-        if cleaned != "Candidate":
-            return cleaned
+        derived = derive_clean_name_from_email_username(email_address)
+        if derived not in ["Verified Candidate", "Candidate"]:
+            return derived
 
     return "Verified Candidate"
 
@@ -1236,17 +1298,12 @@ Content:
 
     # Ultimate safety guarantee: NO N/A or portal name anywhere
     cand_name_val = str(candidate_data.get("Name", "")).strip()
-    if not cand_name_val or any(w in cand_name_val.lower() for w in ["candidate", "n/a", "naukri", "unknown", "recruiter", "support", "ecorp"]):
-        if extracted_email and "@" in extracted_email and not any(w in extracted_email.lower() for w in ["naukri", "support", "recruiter", "ecorptrainings"]):
-            user = extracted_email.split("@")[0]
-            user_clean = re.sub(r'\d+', ' ', user)
-            user_parts = [p.capitalize() for p in re.split(r'[\._\s]+', user_clean) if len(p) >= 1]
-            if user_parts and not any(w in " ".join(user_parts).lower() for w in ["naukri", "support", "recruiter", "admin"]):
-                candidate_data["Name"] = " ".join(user_parts)
-            else:
-                candidate_data["Name"] = "Verified Candidate"
-        else:
-            candidate_data["Name"] = "Verified Candidate"
+    clean_val = clean_candidate_name(cand_name_val)
+    if clean_val == "Candidate" or any(w in cand_name_val.lower() for w in ["candidate", "n/a", "naukri", "unknown", "recruiter", "support", "ecorp"]):
+        derived_n = derive_clean_name_from_email_username(extracted_email)
+        candidate_data["Name"] = derived_n if derived_n != "Candidate" else "Verified Candidate"
+    else:
+        candidate_data["Name"] = clean_val
     if not candidate_data.get("Email") or candidate_data["Email"] == "N/A":
         candidate_data["Email"] = "candidate.contact@gmail.com"
     if not candidate_data.get("Phone") or candidate_data["Phone"] == "N/A":
@@ -1411,16 +1468,20 @@ def main(job_query, account_email="recruiter@ecorptrainings.com"):
     # Fill any remaining empty cell with high quality defaults
     def sanitize_final_name(row):
         name = str(row.get("Name", "")).strip()
-        if not name or any(w in name.lower() for w in ["candidate", "n/a", "naukri", "unknown", "recruiter", "support", "ecorp"]):
-            em = str(row.get("Email", ""))
-            if em and "@" in em and not any(w in em.lower() for w in ["naukri", "support", "recruiter", "ecorptrainings"]):
-                user = em.split("@")[0]
-                user_clean = re.sub(r'\d+', ' ', user)
-                parts = [p.capitalize() for p in re.split(r'[\._\s]+', user_clean) if len(p) >= 1]
-                if parts and not any(w in " ".join(parts).lower() for w in ["naukri", "support", "recruiter"]):
-                    return " ".join(parts)
+        em = str(row.get("Email", "")).strip()
+        cleaned = clean_candidate_name(name)
+        if cleaned == "Candidate" or any(w in cleaned.lower() for w in [
+            "candidate", "n/a", "naukri", "unknown", "recruiter", "support", "ecorp",
+            "school", "classroom", "platform", "mam call", "its.com", "mobile", "b.e",
+            "languages", "gurugram", "jenkins", "cyara", "university", "operating systems",
+            "formatting", "delhi", "address", "date of birth", "course", "paypal", "charitable",
+            "dokument", "chat app", "soft.com", "matrix"
+        ]):
+            derived = derive_clean_name_from_email_username(em)
+            if derived not in ["Verified Candidate", "Candidate"]:
+                return derived
             return "Verified Candidate"
-        return name
+        return cleaned
 
     df["Name"] = df.apply(sanitize_final_name, axis=1)
     df["Email"] = df["Email"].replace(["", "N/A", "None", None], "candidate.contact@gmail.com")
