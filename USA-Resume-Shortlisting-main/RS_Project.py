@@ -88,13 +88,43 @@ SUPPORTED_ACCOUNTS = {
         "name": "Recruiter Account",
         "email": "recruiter@ecorptrainings.com",
         "client_file": "client.json",
-        "token_file": "token.json"
+        "token_file": "token.json",
+        "env_var": "GOOGLE_TOKEN_JSON"
     },
     "jai.ecorp@gmail.com": {
         "name": "Jai Ecorp Account",
         "email": "jai.ecorp@gmail.com",
         "client_file": "client_jai.json",
-        "token_file": "token_jai.json"
+        "token_file": "token_jai.json",
+        "env_var": "GOOGLE_TOKEN_JAI_JSON"
+    },
+    "kumar.ecorp@gmail.com": {
+        "name": "Kumar Ecorp Account",
+        "email": "kumar.ecorp@gmail.com",
+        "client_file": "client_kumar.json",
+        "token_file": "token_kumar.json",
+        "env_var": "GOOGLE_TOKEN_KUMAR_JSON"
+    },
+    "pushpa@ecorptrainings.com": {
+        "name": "Pushpa Account",
+        "email": "pushpa@ecorptrainings.com",
+        "client_file": "client_pushpa.json",
+        "token_file": "token_pushpa.json",
+        "env_var": "GOOGLE_TOKEN_PUSHPA_JSON"
+    },
+    "mahi@ecorptrainings.com": {
+        "name": "Mahi Account",
+        "email": "mahi@ecorptrainings.com",
+        "client_file": "client_mahi.json",
+        "token_file": "token_mahi.json",
+        "env_var": "GOOGLE_TOKEN_MAHI_JSON"
+    },
+    "contact@ecorptrainings.com": {
+        "name": "Contact Account",
+        "email": "contact@ecorptrainings.com",
+        "client_file": "client_contact.json",
+        "token_file": "token_contact.json",
+        "env_var": "GOOGLE_TOKEN_CONTACT_JSON"
     }
 }
 
@@ -104,7 +134,7 @@ SUPPORTED_ACCOUNTS = {
 def auto_authenticate_google(account_email="recruiter@ecorptrainings.com"):
     """
     Authenticates with Google Gmail API for the specified account email.
-    Supports switching between recruiter@ecorptrainings.com and jai.ecorp@gmail.com.
+    Supports switching between recruiter, jai, kumar, pushpa, mahi, and contact accounts.
     Supports loading OAuth tokens from Environment Variables (for Vercel / Cloud) or local JSON files.
     """
     email_key = account_email.lower().strip() if account_email else "recruiter@ecorptrainings.com"
@@ -112,16 +142,23 @@ def auto_authenticate_google(account_email="recruiter@ecorptrainings.com"):
     
     client_fname = acct_config["client_file"]
     token_fname = acct_config["token_file"]
+    primary_env = acct_config.get("env_var", "")
     
     SCOPES = ['https://www.googleapis.com/auth/gmail.readonly']
     creds = None
 
-    # 1. Check Environment Variables (Required for Vercel / Cloud Hosting)
+    # Derive possible environment variable keys
+    username_prefix = email_key.split('@')[0].replace('.', '_').upper()
     env_token_keys = [
-        "GOOGLE_TOKEN_JAI_JSON" if "jai" in email_key else "GOOGLE_TOKEN_JSON",
-        "TOKEN_JAI_JSON" if "jai" in email_key else "TOKEN_JSON",
-        "GMAIL_TOKEN_JAI" if "jai" in email_key else "GMAIL_TOKEN_RECRUITER"
+        primary_env,
+        f"GOOGLE_TOKEN_{username_prefix}_JSON",
+        f"TOKEN_{username_prefix}_JSON",
+        f"GMAIL_TOKEN_{username_prefix}"
     ]
+    seen = set()
+    env_token_keys = [k for k in env_token_keys if k and not (k in seen or seen.add(k))]
+
+    # 1. Check Environment Variables (Required for Vercel / Cloud Hosting)
     for env_k in env_token_keys:
         env_token_str = os.environ.get(env_k, "").strip()
         if env_token_str:
@@ -165,7 +202,7 @@ def auto_authenticate_google(account_email="recruiter@ecorptrainings.com"):
     if not creds or not creds.valid:
         if not os.path.exists(client_file):
             raise FileNotFoundError(
-                f"{client_fname} not found. When deploying on Vercel/Cloud, add GOOGLE_TOKEN_JSON and GOOGLE_TOKEN_JAI_JSON to your Vercel Environment Variables."
+                f"{client_fname} not found. When deploying on Vercel/Cloud, add {primary_env} to your Vercel Environment Variables."
             )
         try:
             flow = InstalledAppFlow.from_client_secrets_file(client_file, SCOPES)
