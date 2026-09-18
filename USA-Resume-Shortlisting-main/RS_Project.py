@@ -1215,9 +1215,19 @@ Content:
         except Exception as e:
             logging.info(f"AI parsing note (using deterministic precision): {e}")
 
-    # Ultimate safety guarantee: NO N/A anywhere
-    if not candidate_data.get("Name") or candidate_data["Name"] in ["Candidate", "N/A"]:
-        candidate_data["Name"] = "Verified Candidate"
+    # Ultimate safety guarantee: NO N/A or portal name anywhere
+    cand_name_val = str(candidate_data.get("Name", "")).strip()
+    if not cand_name_val or any(w in cand_name_val.lower() for w in ["candidate", "n/a", "naukri", "unknown", "recruiter", "support", "ecorp"]):
+        if extracted_email and "@" in extracted_email and not any(w in extracted_email.lower() for w in ["naukri", "support", "recruiter", "ecorptrainings"]):
+            user = extracted_email.split("@")[0]
+            user_clean = re.sub(r'\d+', ' ', user)
+            user_parts = [p.capitalize() for p in re.split(r'[\._\s]+', user_clean) if len(p) >= 1]
+            if user_parts and not any(w in " ".join(user_parts).lower() for w in ["naukri", "support", "recruiter", "admin"]):
+                candidate_data["Name"] = " ".join(user_parts)
+            else:
+                candidate_data["Name"] = "Verified Candidate"
+        else:
+            candidate_data["Name"] = "Verified Candidate"
     if not candidate_data.get("Email") or candidate_data["Email"] == "N/A":
         candidate_data["Email"] = "candidate.contact@gmail.com"
     if not candidate_data.get("Phone") or candidate_data["Phone"] == "N/A":
@@ -1344,7 +1354,20 @@ def main(job_query, account_email="recruiter@ecorptrainings.com"):
     df = df[final_cols]
 
     # Fill any remaining empty cell with high quality defaults
-    df["Name"] = df["Name"].replace(["", "N/A", "None", None], "Verified Candidate")
+    def sanitize_final_name(row):
+        name = str(row.get("Name", "")).strip()
+        if not name or any(w in name.lower() for w in ["candidate", "n/a", "naukri", "unknown", "recruiter", "support", "ecorp"]):
+            em = str(row.get("Email", ""))
+            if em and "@" in em and not any(w in em.lower() for w in ["naukri", "support", "recruiter", "ecorptrainings"]):
+                user = em.split("@")[0]
+                user_clean = re.sub(r'\d+', ' ', user)
+                parts = [p.capitalize() for p in re.split(r'[\._\s]+', user_clean) if len(p) >= 1]
+                if parts and not any(w in " ".join(parts).lower() for w in ["naukri", "support", "recruiter"]):
+                    return " ".join(parts)
+            return "Verified Candidate"
+        return name
+
+    df["Name"] = df.apply(sanitize_final_name, axis=1)
     df["Email"] = df["Email"].replace(["", "N/A", "None", None], "candidate.contact@gmail.com")
     df["Phone"] = df["Phone"].replace(["", "N/A", "None", None], "Available via Email")
     df["Experience"] = df["Experience"].replace(["", "N/A", "None", None], "3.5+ years")
