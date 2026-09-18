@@ -243,11 +243,13 @@ def get_matching_emails(service, search_query, max_results=60):
                 break
     except Exception as e:
         err_msg = str(e)
-    except Exception as e:
-        err_msg = str(e)
-        if "accessNotConfigured" in err_msg or "has not been used in project" in err_msg:
-            raise RuntimeError("Gmail API is not enabled in your Google Cloud Project. Please enable it by visiting: https://console.developers.google.com/apis/api/gmail.googleapis.com/overview?project=754867537718")
         logging.error(f"Error fetching emails from Gmail: {e}")
+        if "accessNotConfigured" in err_msg or "has not been used in project" in err_msg:
+            # Extract project number if present
+            proj_match = re.search(r'project\s+(\d+)', err_msg)
+            proj_id = proj_match.group(1) if proj_match else ""
+            link = f"https://console.developers.google.com/apis/api/gmail.googleapis.com/overview?project={proj_id}" if proj_id else "https://console.cloud.google.com/apis/library/gmail.googleapis.com"
+            raise RuntimeError(f"Gmail API is disabled for this Google Cloud Project. Please enable it by visiting: {link}")
         raise
 
     # Fallback if 0 messages
@@ -264,7 +266,10 @@ def get_matching_emails(service, search_query, max_results=60):
         except Exception as e:
             err_msg = str(e)
             if "accessNotConfigured" in err_msg or "has not been used in project" in err_msg:
-                raise RuntimeError("Gmail API is not enabled in your Google Cloud Project. Please enable it by visiting: https://console.developers.google.com/apis/api/gmail.googleapis.com/overview?project=754867537718")
+                proj_match = re.search(r'project\s+(\d+)', err_msg)
+                proj_id = proj_match.group(1) if proj_match else ""
+                link = f"https://console.developers.google.com/apis/api/gmail.googleapis.com/overview?project={proj_id}" if proj_id else "https://console.cloud.google.com/apis/library/gmail.googleapis.com"
+                raise RuntimeError(f"Gmail API is disabled for this Google Cloud Project. Please enable it by visiting: {link}")
             logging.error(f"Broad search fallback failed: {e}")
 
     logging.info(f"Total matching email messages found: {len(all_messages)}")
