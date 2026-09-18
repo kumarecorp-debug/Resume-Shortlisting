@@ -459,23 +459,35 @@ def extract_text_from_bytes(file_bytes, filename):
 # ==========================================
 def is_system_or_portal_email(email_str, current_account=""):
     """
-    Checks if an email is a system, notification, mailbox owner, or job portal robot address.
+    Checks if an email is a system, notification, mailbox owner, or company robot address.
     """
     if not email_str or "@" not in email_str or email_str == "N/A":
         return True
     email_lower = email_str.lower().strip()
     
-    # Exclude mailbox owners and known automated bot accounts
+    # Exclude all configured mailbox owners and internal bots
     excluded_exact_emails = [
         "recruiter@ecorptrainings.com",
         "jai.ecorp@gmail.com",
+        "kumar.ecorp@gmail.com",
+        "pushpa@ecorptrainings.com",
+        "mahi@ecorptrainings.com",
+        "contact@ecorptrainings.com",
+        "support@ecorptrainings.com",
         "donotreply@naukri.com",
-        "no-reply@naukri.com"
+        "no-reply@naukri.com",
+        "support@naukri.com",
+        "notifications@linkedin.com",
+        "noreply@linkedin.com"
     ]
     if current_account:
         excluded_exact_emails.append(current_account.lower().strip())
         
     if any(email_lower == ex for ex in excluded_exact_emails):
+        return True
+
+    # Exclude company mailbox domains (these are employers/recruiters, not candidates)
+    if email_lower.endswith("@ecorptrainings.com") or "@ecorp" in email_lower:
         return True
 
     # Exclude system prefixes
@@ -489,7 +501,7 @@ def is_system_or_portal_email(email_str, current_account=""):
     if any(user_part == sys_p or user_part.startswith(sys_p) for sys_p in system_prefixes):
         return True
 
-    # Exclude job board and company notification domains
+    # Exclude job board and notification domains
     portal_domains = [
         "naukri.com", "naukri.org", "monster.com", "monsterindia.com", 
         "linkedin.com", "indeed.com", "foundit.in", "shine.com", 
@@ -969,7 +981,14 @@ TECH_TITLES_AND_BUZZWORDS = {
     'declaration', 'achievements', 'activities', 'education', 'qualifications', 'academic',
     'personal', 'details', 'contact', 'information', 'skills', 'technologies', 'certifications',
     'core', 'finance', 'financial', 'procurement', 'purchasing', 'inventory', 'human',
-    'capital', 'spend', 'order', 'management', 'integration', 'industry', 'supply', 'chain'
+    'capital', 'spend', 'order', 'management', 'integration', 'industry', 'supply', 'chain',
+    'parttime', 'part', 'time', 'trainer', 'required', 'online', 'demo', 'assignment',
+    'support', 'job', 'learn', 'anyone', 'gems', 'pvt', 'ltd', 'private', 'limited',
+    'company', 'kumar', 'ecorp', 'ecorptrainings', 'recruiter', 'pushpa', 'mahi',
+    'contact', 'jai', 'report', 'confirmation', 'vacancy', 'requirement', 'training',
+    'student', 'faculty', 'session', 'institute', 'organization', 'services', 'solutions',
+    'consulting', 'technologies', 'infotech', 'software', 'naukri', 'linkedin', 'indeed',
+    'applicant', 'candidate', 'navagraha'
 }
 
 TECH_ACRONYMS = {
@@ -1266,7 +1285,7 @@ def main(job_query, account_email="recruiter@ecorptrainings.com"):
     service = auto_authenticate_google(email_key)
     
     search_query = build_gmail_search_query(job_query)
-    messages = get_matching_emails(service, search_query, max_results=100)
+    messages = get_matching_emails(service, search_query, max_results=200)
     
     default_cols = ["Rank", "Name", "Email", "Phone", "Experience", "Skill Set", "Matched Skills", "Match Score", "Match Reason"]
 
@@ -1308,6 +1327,18 @@ def main(job_query, account_email="recruiter@ecorptrainings.com"):
                     saved_resume_filename = filename
                     resume_text = extract_text_from_bytes(file_bytes, filename)
             
+            # Strict Resume & Candidate Validation:
+            # Must have an attached resume document OR structured CV text in the email body
+            has_valid_attachment = bool(valid_files and len(resume_text.strip().split()) >= 20)
+            has_structured_cv_body = (
+                len(email_body.strip().split()) >= 40 and 
+                any(sec in email_body.lower() for sec in ["experience", "skill", "education", "project", "curriculum vitae", "summary", "responsibilities", "applicant"])
+            )
+            
+            if not has_valid_attachment and not has_structured_cv_body:
+                # No actual resume in this email (e.g. general trainer inquiry or marketing) -> skip
+                continue
+
             candidate = extract_candidate_entities_with_ai(
                 resume_text=resume_text,
                 email_body=email_body,
@@ -1318,12 +1349,36 @@ def main(job_query, account_email="recruiter@ecorptrainings.com"):
                 subject=subject
             )
 
-            # Deduplication key across email or name
-            dedup_key = candidate["Email"].lower() if candidate["Email"] not in ["N/A", "candidate.contact@gmail.com"] else (candidate["Name"].lower() + str(idx))
+            # Reject mailbox owners or company email addresses as candidate emails
+            cand_email = str(candidate.get("Email", "")).lower().strip()
+            if is_system_or_portal_email(cand_email, email_key):
+                # Search for personal email in resume text or body
+                pers_match = re.findall(r'[A-Za-z0-9._%+-]+@(?!ecorptrainings|ecorp|naukri|linkedin|indeed)[A-Za-z0-9.-]+\.[A-Za-z]{2,6}', resume_text + " " + email_body, re.IGNORECASE)
+                if pers_match:
+                    candidate["Email"] = pers_match[0]
+                else:
+                    # No actual candidate email found (email was from mailbox owner/company) -> skip
+                    continue
+
+            # Reject noise names like Parttime, Learn Any One, Company names, or Mailbox names
+            cand_name = str(candidate.get("Name", "")).strip()
+            if cand_name.lower() in ["candidate", "n/a", "verified candidate", "parttime", "learn any one", "kumar ecorp", "recruiter", "navagraha gems pvt. ltd"] or any(w in cand_name.lower() for w in ["parttime", "pvt ltd", "private limited", "ecorp", "recruiter"]):
+                # Try deriving from candidate's real personal email username
+                if candidate["Email"] and "@" in candidate["Email"] and not is_system_or_portal_email(candidate["Email"]):
+                    u = candidate["Email"].split("@")[0]
+                    u_clean = re.sub(r'\d+', ' ', u)
+                    u_parts = [p.capitalize() for p in re.split(r'[\._\s]+', u_clean) if len(p) >= 2]
+                    if u_parts and not any(w in " ".join(u_parts).lower() for w in ["naukri", "support", "recruiter", "admin", "parttime", "learn", "ecorp"]):
+                        candidate["Name"] = " ".join(u_parts)
+                    else:
+                        continue
+                else:
+                    continue
+
+            # Deduplication key across candidate email
+            dedup_key = candidate["Email"].lower()
             if dedup_key not in seen_identifiers:
                 seen_identifiers.add(dedup_key)
-                candidates.append(candidate)
-            else:
                 candidates.append(candidate)
 
         except Exception as e:

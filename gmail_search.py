@@ -126,7 +126,7 @@ def build_gmail_search_query(job_description, days_back=None):
                 kw_query = cleaned_jd
 
     if kw_query:
-        full_query = f"{kw_query}"
+        full_query = f"(filename:pdf OR filename:docx OR filename:doc OR has:attachment OR \"resume\" OR \"cv\") ({kw_query})"
     else:
         full_query = "has:attachment"
 
