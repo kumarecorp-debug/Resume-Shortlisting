@@ -213,11 +213,18 @@ def auto_authenticate_google(account_email="recruiter@ecorptrainings.com"):
         parent_client = os.path.join(os.path.dirname(SCRIPT_DIR), client_fname)
         if os.path.exists(parent_client):
             client_file = parent_client
+        else:
+            # Fallback to standard client.json
+            fallback_client = os.path.join(SCRIPT_DIR, "client.json")
+            if not os.path.exists(fallback_client):
+                fallback_client = os.path.join(os.path.dirname(SCRIPT_DIR), "client.json")
+            if os.path.exists(fallback_client):
+                client_file = fallback_client
 
     if not creds or not creds.valid:
         if not os.path.exists(client_file):
             raise FileNotFoundError(
-                f"{client_fname} not found. When deploying on Vercel/Cloud, add {primary_env} to your Vercel Environment Variables."
+                f"{client_fname} (or client.json) not found. When deploying on Vercel/Cloud, add {primary_env} to your Vercel Environment Variables."
             )
         try:
             flow = InstalledAppFlow.from_client_secrets_file(client_file, SCOPES)
