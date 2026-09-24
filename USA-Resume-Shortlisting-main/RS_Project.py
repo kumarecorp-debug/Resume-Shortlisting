@@ -44,13 +44,18 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(
 
 # Paths and Config
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-try:
-    RESUME_FOLDER = os.path.join(SCRIPT_DIR, "Resumes")
-    os.makedirs(RESUME_FOLDER, exist_ok=True)
-except Exception:
+if os.environ.get("VERCEL") or os.environ.get("AWS_LAMBDA_FUNCTION_NAME"):
     import tempfile
     RESUME_FOLDER = os.path.join(tempfile.gettempdir(), "Resumes")
-    os.makedirs(RESUME_FOLDER, exist_ok=True)
+else:
+    try:
+        RESUME_FOLDER = os.path.join(SCRIPT_DIR, "Resumes")
+        os.makedirs(RESUME_FOLDER, exist_ok=True)
+    except Exception:
+        import tempfile
+        RESUME_FOLDER = os.path.join(tempfile.gettempdir(), "Resumes")
+
+os.makedirs(RESUME_FOLDER, exist_ok=True)
 
 OUTPUT_CSV = os.path.join(RESUME_FOLDER, "resume_analysis.csv")
 CLIENT_SECRET_FILE = os.path.join(SCRIPT_DIR, "client.json")

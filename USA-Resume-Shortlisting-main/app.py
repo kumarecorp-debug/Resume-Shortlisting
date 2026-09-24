@@ -24,10 +24,11 @@ supabase_client: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
-try:
-    os.chdir(project_root)
-except Exception:
-    pass
+if not os.environ.get("VERCEL"):
+    try:
+        os.chdir(project_root)
+    except Exception:
+        pass
 
 def login_required(f):
     @wraps(f)
