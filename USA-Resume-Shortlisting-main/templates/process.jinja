@@ -1,0 +1,747 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Resume Shortlisting & Mail Search</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='index.css') }}">
+    <style>
+        html, body {
+            margin: 0;
+            padding: 0;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f8fafc;
+        }
+        .container {
+            flex: 1;
+            max-width: 1350px;
+            margin: 0 auto;
+            padding: 20px;
+            width: 96%;
+        }
+        .card {
+            background: #ffffff;
+            border-radius: 12px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.06);
+            padding: 28px;
+            margin-bottom: 24px;
+        }
+        .form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            margin-top: 10px;
+        }
+        .form-group label {
+            font-weight: 600;
+            color: #1e293b;
+            font-size: 1.05rem;
+        }
+        .search-input {
+            width: 100%;
+            padding: 14px 18px;
+            border: 1.5px solid #cbd5e1;
+            border-radius: 8px;
+            font-size: 1rem;
+            transition: border-color 0.2s;
+            box-sizing: border-box;
+        }
+        .search-input:focus {
+            outline: none;
+            border-color: #2563eb;
+            box-shadow: 0 0 0 3px rgba(37,99,235,0.15);
+        }
+        .btn-submit {
+            background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+            color: #ffffff;
+            font-size: 1rem;
+            font-weight: 600;
+            padding: 14px 28px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s;
+            align-self: flex-start;
+        }
+        .btn-submit:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(37,99,235,0.25);
+        }
+        .account-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            background: #eff6ff;
+            color: #1e40af;
+            padding: 6px 14px;
+            border-radius: 20px;
+            font-size: 0.88rem;
+            font-weight: 500;
+        }
+        .account-select-bar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            background: #f1f5f9;
+            border: 1.5px solid #cbd5e1;
+            padding: 12px 18px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+            gap: 12px;
+        }
+        .account-select-left {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+        .account-select-left label {
+            font-weight: 700;
+            color: #0f172a;
+            font-size: 0.95rem;
+            margin: 0;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .account-dropdown {
+            padding: 8px 14px;
+            border-radius: 8px;
+            border: 1.5px solid #2563eb;
+            background-color: #ffffff;
+            font-weight: 600;
+            font-size: 0.92rem;
+            color: #1e3a8a;
+            cursor: pointer;
+            outline: none;
+            transition: all 0.2s ease;
+        }
+        .account-dropdown:focus {
+            border-color: #1d4ed8;
+            box-shadow: 0 0 0 3px rgba(37,99,235,0.2);
+        }
+        .query-hints {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+            margin: 4px 0 8px 0;
+            font-size: 0.85rem;
+        }
+        .hint-label {
+            color: #64748b;
+            font-weight: 600;
+        }
+        .chip-btn {
+            background: #f1f5f9;
+            color: #334155;
+            border: 1px solid #cbd5e1;
+            padding: 4px 10px;
+            border-radius: 16px;
+            font-size: 0.82rem;
+            cursor: pointer;
+            transition: all 0.15s ease;
+        }
+        .chip-btn:hover {
+            background: #e2e8f0;
+            border-color: #94a3b8;
+            color: #0f172a;
+        }
+        .table-wrapper {
+            max-height: 560px;
+            overflow-y: auto;
+            overflow-x: auto;
+            border-radius: 8px;
+            border: 1px solid #e2e8f0;
+            margin-top: 15px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+        }
+        .results-table {
+            width: 100%;
+            table-layout: fixed;
+            border-collapse: collapse;
+            font-size: 0.92rem;
+            background: #ffffff;
+        }
+        .results-table th {
+            position: sticky;
+            top: 0;
+            z-index: 10;
+            background-color: #1e293b;
+            color: #ffffff;
+            text-align: left;
+            padding: 12px 10px;
+            font-weight: 600;
+            font-size: 0.9rem;
+            border-bottom: 2px solid #334155;
+            box-sizing: border-box;
+        }
+        .results-table td {
+            padding: 10px 10px;
+            border-bottom: 1px solid #f1f5f9;
+            color: #334155;
+            vertical-align: middle;
+            font-size: 0.9rem;
+            box-sizing: border-box;
+        }
+        .results-table tr:hover {
+            background-color: #f8fafc;
+        }
+        .tag-rank {
+            background: #e0f2fe;
+            color: #0369a1;
+            font-weight: 700;
+            padding: 4px 8px;
+            border-radius: 6px;
+            display: inline-block;
+        }
+        .tag-score {
+            background: #dcfce7;
+            color: #15803d;
+            font-weight: 700;
+            padding: 4px 8px;
+            border-radius: 6px;
+            display: inline-block;
+        }
+        .tag-matched {
+            background: #f0fdf4;
+            color: #166534;
+            border: 1px solid #bbf7d0;
+            padding: 2px 6px;
+            border-radius: 4px;
+            display: inline-block;
+            font-size: 0.82rem;
+            line-height: 1.3;
+        }
+        .slider-box {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            background: #f8fafc;
+            border: 1.5px solid #cbd5e1;
+            padding: 6px 14px;
+            border-radius: 8px;
+        }
+        .table-controls {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+            gap: 15px;
+            flex-wrap: wrap;
+        }
+        .filter-input {
+            padding: 8px 14px;
+            border: 1px solid #cbd5e1;
+            border-radius: 6px;
+            font-size: 0.9rem;
+        }
+        .btn-download {
+            background-color: #0f766e;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: background 0.2s;
+        }
+        .btn-download:hover {
+            background-color: #115e59;
+        }
+        .loader-box {
+            text-align: center;
+            padding: 30px;
+            background: #f1f5f9;
+            border-radius: 8px;
+            margin-top: 20px;
+        }
+        .spinner {
+            border: 4px solid #cbd5e1;
+            border-top: 4px solid #2563eb;
+            border-radius: 50%;
+            width: 36px;
+            height: 36px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 12px auto;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        footer {
+            padding: 16px;
+            text-align: center;
+            color: #64748b;
+            font-size: 0.9rem;
+            border-top: 1px solid #e2e8f0;
+            background: #ffffff;
+        }
+        .copy-btn {
+            background: none;
+            border: none;
+            cursor: pointer;
+            font-size: 1rem;
+            margin-left: 4px;
+            opacity: 0.7;
+            transition: opacity 0.2s;
+            padding: 0;
+        }
+        .copy-btn:hover {
+            opacity: 1;
+        }
+    </style>
+</head>
+<body>
+    <header style="text-align: center; padding: 24px 0 10px 0; position: relative;">
+        <div style="position: absolute; right: 24px; top: 20px; display: flex; align-items: center; gap: 10px;">
+            <span style="font-size: 0.88rem; color: #475569; background: #e2e8f0; padding: 6px 12px; border-radius: 20px; font-weight: 500;">
+                👤 {{ session['user']['email'] if session.get('user') else 'Authenticated User' }}
+            </span>
+            <a href="{{ url_for('logout') }}" style="background: #dc2626; color: white; padding: 6px 14px; border-radius: 6px; text-decoration: none; font-size: 0.88rem; font-weight: 600; transition: background 0.2s;">
+                Sign Out 🚪
+            </a>
+        </div>
+        <h1 style="margin: 0; color: #0f172a;">AI Mail Resume Search & Extraction</h1>
+        <p style="color: #64748b; margin-top: 6px;">Automatically scan mail inbox, download matching resumes, and extract key candidate details</p>
+    </header>
+
+    <div class="container">
+        <div class="card">
+            <div class="account-select-bar">
+                <div class="account-select-left">
+                    <label for="account_email">📬 Select Mailbox Account:</label>
+                    <select name="account_email" id="account_email" form="search-form" class="account-dropdown" onchange="updateAccountBadge(this.value)">
+                        {% for acct in available_accounts %}
+                            <option value="{{ acct.email }}" {% if selected_account == acct.email %}selected{% endif %}>
+                                {{ acct.name }} ({{ acct.email }})
+                            </option>
+                        {% endfor %}
+                    </select>
+
+                    <label for="max_candidates" style="margin-left: 14px;">🎯 Max Candidate Limit:</label>
+                    <select name="max_candidates" id="max_candidates" form="search-form" class="account-dropdown" style="padding: 6px 12px;">
+                        <option value="25" {% if max_candidates == 25 or not max_candidates %}selected{% endif %}>⚡ Fast Batch (25 Candidates)</option>
+                        <option value="50" {% if max_candidates == 50 %}selected{% endif %}>📊 Medium Batch (50 Candidates)</option>
+                        <option value="100" {% if max_candidates == 100 %}selected{% endif %}>🚀 Large Batch (100 Candidates)</option>
+                        <option value="200" {% if max_candidates == 200 %}selected{% endif %}>🔥 Full Scanning (All ~200 Candidates)</option>
+                    </select>
+                </div>
+                <div class="account-badge">
+                    <span>Active Mail: <strong id="active-mail-label">{{ selected_account }}</strong></span>
+                </div>
+            </div>
+            
+            {% with messages = get_flashed_messages(with_categories=true) %}
+                {% if messages %}
+                    {% for category, message in messages %}
+                        <div class="{{ category }}" style="padding: 12px 16px; margin-bottom: 14px; border-radius: 6px; background-color: #fee2e2; color: #991b1b; border: 1px solid #f87171;">
+                            {{ message }}
+                        </div>
+                    {% endfor %}
+                {% endif %}
+            {% endwith %}
+
+            <form method="POST" action="{{ url_for('process') }}" id="search-form">
+                <div class="form-group">
+                    <label for="job_query">Enter Job Role, Keywords, or Paste Full Job Description (supports <code>AND</code> / <code>OR</code>):</label>
+                    <textarea 
+                        name="job_query" 
+                        id="job_query" 
+                        class="search-input" 
+                        rows="2"
+                        placeholder="e.g. Python AND SQL, SFDC agentic core workflows, or paste a full Job Description..." 
+                        style="resize: vertical; min-height: 48px; font-family: inherit; line-height: 1.4;"
+                        required
+                    >{{ job_query if job_query else '' }}</textarea>
+                    <div class="query-hints">
+                        <span class="hint-label">⚡ Quick Boolean Filters:</span>
+                        <button type="button" class="chip-btn" onclick="setQuery('Python AND SQL')">Python AND SQL</button>
+                        <button type="button" class="chip-btn" onclick="setQuery('Python OR SQL')">Python OR SQL</button>
+                        <button type="button" class="chip-btn" onclick="setQuery('React AND Node.js AND MongoDB')">React AND Node.js AND MongoDB</button>
+                        <button type="button" class="chip-btn" onclick="setQuery('Oracle SCM AND Fusion')">Oracle SCM AND Fusion</button>
+                        <button type="button" class="chip-btn" onclick="setQuery('SAP GRC OR Security')">SAP GRC OR Security</button>
+                        <button type="button" class="chip-btn" onclick="setQuery('AWS OR Azure')">AWS OR Azure</button>
+                    </div>
+                    <button type="submit" class="btn-submit">🔍 Search Mailbox & Extract Resumes</button>
+                </div>
+            </form>
+
+            <div id="loading-indicator" class="loader-box" style="display: none;">
+                <div class="spinner"></div>
+                <h4 id="loading-message" style="margin: 0; color: #1e293b;">Connecting to mailbox...</h4>
+                <p style="color: #64748b; font-size: 0.88rem; margin-top: 6px;">Please wait while we search emails, download attachments, and extract candidate details with AI.</p>
+            </div>
+        </div>
+
+        {% if table_data is not none and table_data|length > 0 %}
+            <div class="card">
+                <div class="table-controls">
+                    <div>
+                        <h2 style="margin: 0; font-size: 1.3rem; color: #0f172a;" id="candidates-count-title">
+                            Shortlisted Candidates (<span id="visible-count">{{ table_data|length }}</span> of {{ table_data|length }})
+                        </h2>
+                        {% if job_role %}
+                            <p style="margin: 4px 0 0 0; color: #64748b; font-size: 0.9rem;" title="{{ job_role }}">
+                                Target JD / Role: <strong>{{ job_role[:110] }}{% if job_role|length > 110 %}...{% endif %}</strong>
+                            </p>
+                        {% endif %}
+                    </div>
+                    <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
+                        <!-- View View Toggle Tabs (All vs Selected Only) -->
+                        <div style="display: flex; border: 1.5px solid #cbd5e1; border-radius: 8px; overflow: hidden; background: #f8fafc;">
+                            <button type="button" id="tab-all" onclick="setSelectionFilter('all')" style="padding: 6px 14px; font-weight: 600; font-size: 0.88rem; border: none; background: #2563eb; color: white; cursor: pointer;">
+                                👥 All Trainers (<span id="count-all-tab">{{ table_data|length }}</span>)
+                            </button>
+                            <button type="button" id="tab-selected" onclick="setSelectionFilter('selected')" style="padding: 6px 14px; font-weight: 600; font-size: 0.88rem; border: none; background: transparent; color: #475569; cursor: pointer;">
+                                ⭐ Selected Trainers (<span id="count-selected-tab">0</span>)
+                            </button>
+                        </div>
+
+                        <!-- Match Score Slider Filter -->
+                        <div class="slider-box">
+                            <label for="score-slider" style="font-weight: 600; font-size: 0.88rem; color: #1e293b; white-space: nowrap;">
+                                🎯 Show only matches above: <strong id="slider-val" style="color: #2563eb;">0%</strong>
+                            </label>
+                            <input 
+                                type="range" 
+                                id="score-slider" 
+                                min="0" 
+                                max="100" 
+                                value="0" 
+                                step="5" 
+                                oninput="updateScoreFilter(this.value)"
+                                style="cursor: pointer; accent-color: #2563eb; width: 110px;"
+                            >
+                        </div>
+                        <input type="text" id="filter-box" class="filter-input" placeholder="Search by Name, Skill..." oninput="filterTable()">
+                        <button class="btn-download" onclick="downloadCSV()">Download CSV 📥</button>
+                    </div>
+                </div>
+
+                <div class="table-wrapper">
+                    <table class="results-table" id="results-table">
+                        <colgroup>
+                            <col style="width: 4%;">
+                            <col style="width: 5%;">
+                            <col style="width: 12%;">
+                            <col style="width: 7%;">
+                            <col style="width: 15%;">
+                            <col style="width: 11%;">
+                            <col style="width: 8%;">
+                            <col style="width: 14%;">
+                            <col style="width: 11%;">
+                            <col style="width: 5%;">
+                            <col style="width: 8%;">
+                        </colgroup>
+                        <thead>
+                            <tr>
+                                <th style="text-align: center;">
+                                    <input type="checkbox" id="select-all-checkbox" onchange="toggleSelectAll(this)" title="Select/Deselect All Trainers" style="cursor: pointer; transform: scale(1.2);">
+                                </th>
+                                <th style="text-align: center;">Rank</th>
+                                <th>Name <button class="copy-btn" onclick="copyColumnData(2)" title="Copy Name column">📋</button></th>
+                                <th>Gender <button class="copy-btn" onclick="copyColumnData(3)" title="Copy Gender column">📋</button></th>
+                                <th>Email <button class="copy-btn" onclick="copyColumnData(4)" title="Copy Email column">📋</button></th>
+                                <th>Phone <button class="copy-btn" onclick="copyColumnData(5)" title="Copy Phone column">📋</button></th>
+                                <th style="text-align: center;">Experience <button class="copy-btn" onclick="copyColumnData(6)" title="Copy Experience column">📋</button></th>
+                                <th>Skill Set <button class="copy-btn" onclick="copyColumnData(7)" title="Copy Skill Set column">📋</button></th>
+                                <th>Matched Skills <button class="copy-btn" onclick="copyColumnData(8)" title="Copy Matched Skills column">📋</button></th>
+                                <th style="text-align: center;">Match Score <button class="copy-btn" onclick="copyColumnData(9)" title="Copy Match Score column">📋</button></th>
+                                <th>Match Reason <button class="copy-btn" onclick="copyColumnData(10)" title="Copy Match Reason column">📋</button></th>
+                            </tr>
+                        </thead>
+                        <tbody id="table-body">
+                            {% for row in table_data %}
+                                <tr data-score="{{ row['Match Score'] if 'Match Score' in row else 0 }}" id="row-{{ loop.index }}">
+                                    <td style="text-align: center;">
+                                        <input type="checkbox" class="trainer-checkbox" onchange="onTrainerSelectChange(this)" style="cursor: pointer; transform: scale(1.15);">
+                                    </td>
+                                    <td style="text-align: center;">
+                                        <span class="tag-rank">#{{ row['Rank'] if 'Rank' in row else loop.index }}</span>
+                                    </td>
+                                    <td style="font-weight: 600; color: #0f172a; word-break: break-word;">
+                                        {{ row['Name'] }}
+                                    </td>
+                                    <td style="font-weight: 500; color: #475569;">
+                                        {{ row['Gender'] if 'Gender' in row else 'Unknown' }}
+                                    </td>
+                                    <td style="word-break: break-word; overflow-wrap: anywhere;">
+                                        {% if row['Email'] and row['Email'] != 'N/A' %}
+                                            <a href="mailto:{{ row['Email'] }}" style="color: #2563eb; text-decoration: none; font-weight: 500; word-break: break-word;">{{ row['Email'] }}</a>
+                                        {% else %}
+                                            <span style="color: #94a3b8;">N/A</span>
+                                        {% endif %}
+                                    </td>
+                                    <td style="white-space: nowrap;">
+                                        {% if row['Phone'] and row['Phone'] != 'N/A' %}
+                                            <a href="tel:{{ row['Phone'] }}" style="color: #047857; text-decoration: none; font-weight: 600;">{{ row['Phone'] }}</a>
+                                        {% else %}
+                                            <span style="color: #94a3b8;">N/A</span>
+                                        {% endif %}
+                                    </td>
+                                    <td style="text-align: center; white-space: nowrap; font-weight: 500;">
+                                        {{ row['Experience'] }}
+                                    </td>
+                                    <td style="font-size: 0.86rem; line-height: 1.35; color: #334155; word-break: break-word;">
+                                        {{ row['Skill Set'] }}
+                                    </td>
+                                    <td style="word-break: break-word;">
+                                        {% if row['Matched Skills'] and row['Matched Skills'] not in ['None', 'N/A'] %}
+                                            <span class="tag-matched">{{ row['Matched Skills'] }}</span>
+                                        {% else %}
+                                            <span style="color: #94a3b8; font-size: 0.84rem;">None</span>
+                                        {% endif %}
+                                    </td>
+                                    <td style="text-align: center; white-space: nowrap;">
+                                        <span class="tag-score">{{ row['Match Score'] }}{% if '%' not in (row['Match Score']|string) %}%{% endif %}</span>
+                                    </td>
+                                    <td style="font-size: 0.83rem; line-height: 1.3; color: #475569; word-break: break-word;">
+                                        {{ row['Match Reason'] if row['Match Reason'] and row['Match Reason'] != 'N/A' else '-' }}
+                                    </td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        {% elif job_query %}
+            <div class="card" style="text-align: center; padding: 40px;">
+                <h3 style="color: #475569;">No resumes found for "{{ job_query }}"</h3>
+                <p style="color: #94a3b8;">Ensure matching emails with resume attachments (.pdf, .docx) are present in the mailbox.</p>
+            </div>
+        {% endif %}
+    </div>
+
+    <footer>
+        <p>© 2026 Ecorp Trainings - Resume Shortlisting & Candidate Extraction Engine</p>
+    </footer>
+
+    <script>
+        function updateAccountBadge(accountEmail) {
+            const badge = document.getElementById('active-mail-label');
+            if (badge) {
+                badge.textContent = accountEmail;
+            }
+            try {
+                localStorage.setItem('preferred_account', accountEmail);
+            } catch(e) {}
+        }
+
+        document.getElementById('search-form').addEventListener('submit', function() {
+            const indicator = document.getElementById('loading-indicator');
+            const messageElem = document.getElementById('loading-message');
+            const selectedMail = document.getElementById('account_email') ? document.getElementById('account_email').value : 'selected mailbox';
+            indicator.style.display = 'block';
+
+            const progressSteps = [
+                `Authenticating with ${selectedMail}...`,
+                `Searching mailbox ${selectedMail} for relevant candidate emails...`,
+                "Filtering and downloading resume attachments (.pdf, .docx, .doc)...",
+                "Extracting candidate contact info (Email & Phone Number)...",
+                "Analyzing Skills & Work Experience with AI...",
+                "Calculating JD Match Scores & Ranking Candidates..."
+            ];
+
+            let stepIdx = 0;
+            messageElem.textContent = progressSteps[stepIdx];
+            const interval = setInterval(() => {
+                stepIdx = (stepIdx + 1) % progressSteps.length;
+                messageElem.textContent = progressSteps[stepIdx];
+            }, 2500);
+
+            sessionStorage.setItem('loadingInterval', interval);
+        });
+
+        window.addEventListener('load', function() {
+            const interval = sessionStorage.getItem('loadingInterval');
+            if (interval) {
+                clearInterval(interval);
+                sessionStorage.removeItem('loadingInterval');
+            }
+        });
+
+        function setQuery(text) {
+            const input = document.getElementById('job_query');
+            if (input) {
+                input.value = text;
+                input.focus();
+            }
+        }
+
+        function updateScoreFilter(val) {
+            const label = document.getElementById('slider-val');
+            if (label) {
+                label.textContent = val + '%';
+            }
+            filterTable();
+        }
+
+        let currentFilterTab = 'all';
+
+        function setSelectionFilter(mode) {
+            currentFilterTab = mode;
+            const tabAll = document.getElementById('tab-all');
+            const tabSelected = document.getElementById('tab-selected');
+            
+            if (mode === 'all') {
+                tabAll.style.background = '#2563eb';
+                tabAll.style.color = 'white';
+                tabSelected.style.background = 'transparent';
+                tabSelected.style.color = '#475569';
+            } else {
+                tabSelected.style.background = '#2563eb';
+                tabSelected.style.color = 'white';
+                tabAll.style.background = 'transparent';
+                tabAll.style.color = '#475569';
+            }
+            filterTable();
+        }
+
+        function onTrainerSelectChange(checkbox) {
+            updateSelectedCount();
+            if (currentFilterTab === 'selected') {
+                filterTable();
+            }
+        }
+
+        function toggleSelectAll(masterCheckbox) {
+            const checkboxes = document.querySelectorAll('.trainer-checkbox');
+            checkboxes.forEach(cb => {
+                cb.checked = masterCheckbox.checked;
+            });
+            updateSelectedCount();
+            if (currentFilterTab === 'selected') {
+                filterTable();
+            }
+        }
+
+        function updateSelectedCount() {
+            const checkboxes = document.querySelectorAll('.trainer-checkbox');
+            let selectedCount = 0;
+            checkboxes.forEach(cb => {
+                if (cb.checked) selectedCount++;
+            });
+            const selectedTabElem = document.getElementById('count-selected-tab');
+            if (selectedTabElem) {
+                selectedTabElem.textContent = selectedCount;
+            }
+        }
+
+        function filterTable() {
+            const filterInput = document.getElementById('filter-box');
+            const filterValue = filterInput ? filterInput.value.toLowerCase().trim() : '';
+            const slider = document.getElementById('score-slider');
+            const minScore = slider ? parseFloat(slider.value) : 0;
+            
+            const tableBody = document.getElementById('table-body');
+            if (!tableBody) return;
+            const rows = tableBody.getElementsByTagName('tr');
+            let visibleCount = 0;
+
+            for (let i = 0; i < rows.length; i++) {
+                const row = rows[i];
+                const checkbox = row.querySelector('.trainer-checkbox');
+                const isChecked = checkbox ? checkbox.checked : false;
+
+                const rawScore = row.getAttribute('data-score') || '0';
+                const scoreNum = parseFloat(String(rawScore).replace(/[^\d.]/g, '')) || 0;
+                const text = row.textContent.toLowerCase();
+
+                const matchesText = !filterValue || text.includes(filterValue);
+                const matchesScore = scoreNum >= minScore;
+                const matchesTab = (currentFilterTab === 'all') || (currentFilterTab === 'selected' && isChecked);
+
+                if (matchesText && matchesScore && matchesTab) {
+                    row.style.display = '';
+                    visibleCount++;
+                } else {
+                    row.style.display = 'none';
+                }
+            }
+
+            const visibleCountElem = document.getElementById('visible-count');
+            if (visibleCountElem) {
+                visibleCountElem.textContent = visibleCount;
+            }
+            updateSelectedCount();
+        }
+
+        {% if table_data is not none and table_data|length > 0 %}
+        const columns = {{ columns|tojson | safe }};
+        const tableData = {{ table_data|tojson | safe }};
+
+        function copyColumnData(colIndex) {
+            const tableBody = document.getElementById('table-body');
+            if (!tableBody) return;
+            const rows = tableBody.getElementsByTagName('tr');
+            const dataToCopy = [];
+
+            for (let i = 0; i < rows.length; i++) {
+                if (rows[i].style.display !== 'none') {
+                    const cell = rows[i].cells[colIndex];
+                    if (cell) {
+                        dataToCopy.push(cell.innerText.trim());
+                    }
+                }
+            }
+
+            if (dataToCopy.length > 0) {
+                const text = dataToCopy.join('\n');
+                if (navigator.clipboard && navigator.clipboard.writeText) {
+                    navigator.clipboard.writeText(text).then(() => {
+                        alert('Copied ' + dataToCopy.length + ' rows to clipboard!');
+                    }).catch(err => {
+                        console.error('Failed to copy: ', err);
+                        alert('Failed to copy data.');
+                    });
+                } else {
+                    // Fallback for older browsers
+                    const textArea = document.createElement("textarea");
+                    textArea.value = text;
+                    document.body.appendChild(textArea);
+                    textArea.select();
+                    try {
+                        document.execCommand('copy');
+                        alert('Copied ' + dataToCopy.length + ' rows to clipboard!');
+                    } catch (err) {
+                        console.error('Failed to copy: ', err);
+                    }
+                    document.body.removeChild(textArea);
+                }
+            }
+        }
+
+        function downloadCSV() {
+            let csv = [];
+            csv.push(columns.join(','));
+
+            tableData.forEach(row => {
+                let rowValues = columns.map(col => {
+                    let val = row[col] ? String(row[col]) : '';
+                    val = val.replace(/"/g, '""');
+                    if (val.includes(',') || val.includes('\n') || val.includes('"')) {
+                        val = `"${val}"`;
+                    }
+                    return val;
+                });
+                csv.push(rowValues.join(','));
+            });
+
+            const blob = new Blob([csv.join('\n')], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement('a');
+            const url = URL.createObjectURL(blob);
+            link.setAttribute('href', url);
+            link.setAttribute('download', `shortlisted_candidates_${new Date().toISOString().slice(0,10)}.csv`);
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+        {% endif %}
+    </script>
+</body>
+</html>
