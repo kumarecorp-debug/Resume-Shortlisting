@@ -1,0 +1,30 @@
+# Credentials, Tokens & Secrets
+.env
+token*.json
+client*.json
+*.pem
+*.key
+
+# Resumes and Output Data
+Resumes/
+**/Resumes/
+*.csv
+
+# Python Cache & Environments
+__pycache__/
+**/__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+.venv
+
+# IDEs & System
+.vscode/
+.idea/
+.kilo/
+.DS_Store
+Thumbs.db
