@@ -401,6 +401,14 @@
                             </option>
                         {% endfor %}
                     </select>
+
+                    <label for="max_candidates" style="margin-left: 14px;">🎯 Max Candidate Limit:</label>
+                    <select name="max_candidates" id="max_candidates" form="search-form" class="account-dropdown" style="padding: 6px 12px;">
+                        <option value="25" {% if max_candidates == 25 %}selected{% endif %}>⚡ Fast Batch (25 Candidates)</option>
+                        <option value="50" {% if max_candidates == 50 or not max_candidates %}selected{% endif %}>📊 Medium Batch (50 Candidates)</option>
+                        <option value="100" {% if max_candidates == 100 %}selected{% endif %}>🚀 Large Batch (100 Candidates)</option>
+                        <option value="200" {% if max_candidates == 200 %}selected{% endif %}>🔥 Full Scanning (All ~200 Candidates)</option>
+                    </select>
                 </div>
                 <div class="account-badge">
                     <span>Active Mail: <strong id="active-mail-label">{{ selected_account }}</strong></span>
@@ -464,30 +472,43 @@
                             </p>
                         {% endif %}
                     </div>
-                    <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
-                        <!-- Status Filter Dropdown -->
-                        <div style="display: flex; align-items: center; gap: 6px;">
-                            <label for="status-filter-select" style="font-weight: 600; font-size: 0.88rem; color: #1e293b; white-space: nowrap;">Filter:</label>
+                    
+                    <!-- Tabs, Slider & Filters Toolbar -->
+                    <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap; width: 100%; justify-content: space-between; margin-top: 10px;">
+                        <div style="display: flex; gap: 6px; background: #e2e8f0; padding: 4px; border-radius: 8px;">
+                            <button type="button" id="tab-all-trainers" class="chip-btn" onclick="switchTrainerTab('all')" style="background: #2563eb; color: white; border: none; font-weight: 700; padding: 6px 16px; border-radius: 6px;">🎥 All Trainers ({{ table_data|length }})</button>
+                            <button type="button" id="tab-selected-trainers" class="chip-btn" onclick="switchTrainerTab('selected')" style="background: transparent; color: #475569; border: none; font-weight: 600; padding: 6px 16px; border-radius: 6px;">⭐ Selected Trainers (<span id="tab-selected-count">0</span>)</button>
+                        </div>
+
+                        <div class="slider-box" style="display: flex; align-items: center; gap: 10px; background: #ffffff; border: 1.5px solid #cbd5e1; padding: 6px 14px; border-radius: 8px;">
+                            <label for="score-slider" style="font-weight: 600; font-size: 0.88rem; color: #1e293b; white-space: nowrap;">🎯 Show only matches above: <span id="score-slider-val" style="color: #2563eb; font-weight: 700;">0%</span></label>
+                            <input type="range" id="score-slider" min="0" max="100" value="0" step="5" oninput="document.getElementById('score-slider-val').textContent = this.value + '%'; applyTableFilters();" style="cursor: pointer;">
+                        </div>
+
+                        <div style="display: flex; align-items: center; gap: 10px;">
+                            <!-- Status Filter Dropdown -->
                             <select id="status-filter-select" onchange="applyTableFilters()" class="filter-input" style="padding: 6px 10px; font-weight: 600; cursor: pointer;">
                                 <option value="all">All Statuses</option>
                                 <option value="new">New Only 🟢</option>
                                 <option value="used">Used Only 🔵</option>
                                 <option value="not_used">Not Used Only 🟡</option>
                             </select>
+
+                            <!-- Hide Used Checkbox -->
+                            <label style="display: inline-flex; align-items: center; gap: 6px; font-weight: 600; color: #1e293b; font-size: 0.88rem; cursor: pointer;">
+                                <input type="checkbox" id="chk-hide-used" onchange="applyTableFilters()" checked style="transform: scale(1.15); cursor: pointer;">
+                                <span>☑ Hide candidates marked as Used</span>
+                            </label>
+
+                            <input type="text" id="filter-box" class="filter-input" placeholder="Search by Name, Skill..." oninput="applyTableFilters()" style="width: 200px;">
+
+                            <button type="button" class="btn-download" onclick="downloadCSV()" style="display: inline-flex; align-items: center; gap: 6px;">Download CSV 📥</button>
                         </div>
-
-                        <!-- Hide Used Checkbox -->
-                        <label style="display: inline-flex; align-items: center; gap: 6px; font-weight: 600; color: #1e293b; font-size: 0.88rem; cursor: pointer;">
-                            <input type="checkbox" id="chk-hide-used" onchange="applyTableFilters()" checked style="transform: scale(1.15); cursor: pointer;">
-                            <span>☑ Hide candidates marked as Used</span>
-                        </label>
-
-                        <input type="text" id="filter-box" class="filter-input" placeholder="Search by Name, Skill..." oninput="applyTableFilters()">
                     </div>
                 </div>
 
                 <!-- Bulk Actions Toolbar -->
-                <div class="bulk-bar" style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; background: #f8fafc; border: 1.5px solid #e2e8f0; padding: 10px 16px; border-radius: 8px; margin-bottom: 14px;">
+                <div class="bulk-bar" style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; background: #f8fafc; border: 1.5px solid #e2e8f0; padding: 10px 16px; border-radius: 8px; margin-bottom: 14px; margin-top: 14px;">
                     <div style="display: flex; align-items: center; gap: 12px;">
                         <input type="checkbox" id="select-all-checkbox" onchange="toggleSelectAll(this)" title="Select All" style="cursor: pointer; transform: scale(1.2);">
                         <span style="font-weight: 700; color: #1e293b; font-size: 0.9rem;">Select All (<span id="selected-count-badge">0</span> selected)</span>
@@ -498,18 +519,22 @@
                 </div>
 
                 <div class="table-wrapper">
-                    <table class="results-table" id="results-table">
+                    <table class="results-table" id="results-table" style="min-width: 1250px;">
                         <thead>
                             <tr>
-                                <th style="text-align: center; width: 40px;">☐</th>
-                                <th style="text-align: center; width: 50px;">Rank</th>
-                                <th>Name</th>
-                                <th>Email</th>
-                                <th>Phone</th>
-                                <th style="text-align: center;">Exp</th>
-                                <th>Skill Set</th>
-                                <th style="text-align: center;">Status</th>
-                                <th style="text-align: center;">Copy</th>
+                                <th style="text-align: center; width: 35px;">☐</th>
+                                <th style="text-align: center; width: 45px;">Rank</th>
+                                <th style="text-align: center; width: 95px;">Status</th>
+                                <th style="width: 130px;">Name <button type="button" class="copy-btn" onclick="copyColumnData('Name', 4)" title="Copy all visible Names">📋</button></th>
+                                <th style="width: 75px;">Gender <button type="button" class="copy-btn" onclick="copyColumnData('Gender', 5)" title="Copy all visible Genders">📋</button></th>
+                                <th style="width: 170px;">Email <button type="button" class="copy-btn" onclick="copyColumnData('Email', 6)" title="Copy all visible Emails">📋</button></th>
+                                <th style="width: 150px;">Phone <button type="button" class="copy-btn" onclick="copyColumnData('Phone', 7)" title="Copy all visible Phone Numbers">📋</button></th>
+                                <th style="text-align: center; width: 85px;">Exp <button type="button" class="copy-btn" onclick="copyColumnData('Experience', 8)" title="Copy all visible Experience">📋</button></th>
+                                <th style="width: 160px;">Skill Set <button type="button" class="copy-btn" onclick="copyColumnData('Skill Set', 9)" title="Copy all visible Skill Sets">📋</button></th>
+                                <th style="width: 130px;">Matched Skills <button type="button" class="copy-btn" onclick="copyColumnData('Matched Skills', 10)" title="Copy all visible Matched Skills">📋</button></th>
+                                <th style="text-align: center; width: 70px;">Score <button type="button" class="copy-btn" onclick="copyColumnData('Match Score', 11)" title="Copy all visible Match Scores">📋</button></th>
+                                <th style="width: 150px;">Reason <button type="button" class="copy-btn" onclick="copyColumnData('Match Reason', 12)" title="Copy all visible Match Reasons">📋</button></th>
+                                <th style="text-align: center; width: 75px;">Copy</th>
                             </tr>
                         </thead>
                         <tbody id="table-body">
@@ -521,21 +546,6 @@
                                     </td>
                                     <td style="text-align: center;">
                                         <span class="tag-rank">#{{ row['Rank'] if 'Rank' in row else loop.index }}</span>
-                                    </td>
-                                    <td class="cand-name" style="font-weight: 600; color: #0f172a; word-break: break-word;">
-                                        {{ row['Name'] }}
-                                    </td>
-                                    <td class="cand-email" style="word-break: break-word; color: #334155; font-size: 0.88rem;">
-                                        {{ row['Email'] if row['Email'] else 'N/A' }}
-                                    </td>
-                                    <td class="cand-phone" style="white-space: nowrap; color: #334155; font-size: 0.88rem;">
-                                        {{ row['Phone'] if row['Phone'] else 'N/A' }}
-                                    </td>
-                                    <td style="text-align: center; white-space: nowrap; font-weight: 500;">
-                                        {{ row['Experience'] }}
-                                    </td>
-                                    <td style="font-size: 0.85rem; line-height: 1.35; color: #334155; word-break: break-word;">
-                                        {{ row['Skill Set'] }}
                                     </td>
                                     <td class="status-cell" style="text-align: center;">
                                         <div class="status-dropdown-wrapper" style="position: relative; display: inline-block;">
@@ -549,6 +559,33 @@
                                             </div>
                                         </div>
                                     </td>
+                                    <td class="cand-name" style="font-weight: 600; color: #0f172a; word-break: break-word;">
+                                        {{ row['Name'] }}
+                                    </td>
+                                    <td style="font-size: 0.88rem; color: #334155;">
+                                        {{ row['Gender'] if row['Gender'] else 'N/A' }}
+                                    </td>
+                                    <td class="cand-email" style="word-break: break-word; color: #334155; font-size: 0.88rem;">
+                                        {{ row['Email'] if row['Email'] else 'N/A' }}
+                                    </td>
+                                    <td class="cand-phone" style="padding-right: 12px; color: #334155; font-size: 0.88rem; word-break: break-word;">
+                                        {{ row['Phone'] if row['Phone'] else 'N/A' }}
+                                    </td>
+                                    <td style="text-align: center; padding-left: 8px; padding-right: 8px; white-space: nowrap; font-weight: 500;">
+                                        {{ row['Experience'] }}
+                                    </td>
+                                    <td style="font-size: 0.85rem; line-height: 1.35; color: #334155; word-break: break-word;">
+                                        {{ row['Skill Set'] }}
+                                    </td>
+                                    <td style="font-size: 0.85rem; line-height: 1.35; color: #166534; word-break: break-word;">
+                                        {{ row['Matched Skills'] if 'Matched Skills' in row else 'N/A' }}
+                                    </td>
+                                    <td style="text-align: center;">
+                                        <span class="tag-score">{{ row['Match Score'] if 'Match Score' in row else 'N/A' }}</span>
+                                    </td>
+                                    <td style="font-size: 0.82rem; line-height: 1.3; color: #475569; word-break: break-word;">
+                                        {{ row['Match Reason'] if 'Match Reason' in row else 'N/A' }}
+                                    </td>
                                     <td style="text-align: center;">
                                         <button type="button" class="btn-action-small btn-copy-action" onclick="copySingleCandidate(this)" title="Copy Candidate Info & Mark as Used">📋 Copy</button>
                                     </td>
@@ -558,17 +595,7 @@
                     </table>
                 </div>
 
-                <!-- Pagination Footer Bar (Below Table) -->
-                <div id="pagination-bar" style="display: flex; justify-content: flex-end; align-items: center; gap: 16px; margin-top: 18px; padding-top: 14px; border-top: 1.5px solid #e2e8f0; font-size: 0.95rem; font-weight: 600; color: #334155;">
-                    <span id="pagination-counter">Showing {{ table_data|length }} of {{ total_matches or table_data|length }} matches</span>
-                    <button type="button" id="btn-load-more" onclick="loadNextBatch()" class="btn-submit" style="padding: 8px 20px; font-size: 0.9rem; background: #2563eb; cursor: pointer; display: inline-flex; align-items: center; gap: 6px;">
-                        Load Next 25 →
-                    </button>
-                    <span id="pagination-finished" style="display: none; color: #166534; font-weight: 700;">All {{ total_matches or table_data|length }} matches loaded.</span>
-                </div>
-                <div id="load-more-error" style="display: none; text-align: right; color: #dc2626; margin-top: 6px; font-size: 0.88rem; font-weight: 600;">
-                    Could not load more candidates. <button type="button" onclick="loadNextBatch()" style="color: #2563eb; text-decoration: underline; background: none; border: none; cursor: pointer; font-weight: 700;">[Retry]</button>
-                </div>
+
             </div>
         {% elif job_query %}
             <div class="card" style="text-align: center; padding: 40px;">

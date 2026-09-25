@@ -1287,13 +1287,14 @@ Return strictly valid JSON format without markdown code blocks:
 Content:
 {combined_text}
 """
+        parsed = None
         try:
             if not AI_MODEL_DISABLED:
                 config = types.GenerateContentConfig(
                     automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True)
                 )
                 response = None
-                models_to_try = [WORKING_GEMINI_MODEL] if WORKING_GEMINI_MODEL else ["gemini-3.6-flash", "gemini-3.5-flash", "gemini-3.1-flash-lite"]
+                models_to_try = [WORKING_GEMINI_MODEL] if WORKING_GEMINI_MODEL else ["gemini-2.5-flash", "gemini-1.5-flash"]
                 last_err = None
                 for model_id in models_to_try:
                     if not model_id: continue
@@ -1309,10 +1310,12 @@ Content:
                             break
                     except Exception as ex_m:
                         last_err = ex_m
+                        if "404" in str(ex_m) or "not found" in str(ex_m).lower():
+                            WORKING_GEMINI_MODEL = None
 
                 if not response or not getattr(response, 'text', None):
                     AI_FAILED_COUNT += 1
-                    if AI_FAILED_COUNT >= 2:
+                    if AI_FAILED_COUNT >= 1:
                         AI_MODEL_DISABLED = True
                         logging.warning("Gemini AI API endpoints unavailable. Switching to ultra-fast deterministic precision parsing.")
                     if last_err: raise last_err
@@ -1322,47 +1325,48 @@ Content:
                 res_text = re.sub(r'^```(?:json)?\s*|\s*```$', '', res_text, flags=re.MULTILINE).strip()
                 parsed = json.loads(res_text)
             
-            if parsed.get("name") and parsed["name"].lower() not in ["candidate", "n/a", "unknown"]:
-                ai_clean_name = clean_candidate_name(parsed["name"].strip())
-                if ai_clean_name not in ["Candidate", "N/A"]:
-                    candidate_data["Name"] = ai_clean_name
+            if parsed and isinstance(parsed, dict):
+                if parsed.get("name") and parsed["name"].lower() not in ["candidate", "n/a", "unknown"]:
+                    ai_clean_name = clean_candidate_name(parsed["name"].strip())
+                    if ai_clean_name not in ["Candidate", "N/A"]:
+                        candidate_data["Name"] = ai_clean_name
+                        
+                if parsed.get("email") and parsed["email"].lower() != "n/a" and "@" in parsed["email"]:
+                    clean_em = clean_extracted_email(parsed["email"].strip())
+                    if clean_em != "N/A":
+                        candidate_data["Email"] = clean_em
+                        
+                if parsed.get("phone") and parsed["phone"].lower() not in ["n/a", "none"]:
+                    clean_ph = extract_phone_smart(parsed["phone"].strip(), "")
+                    if clean_ph != "N/A":
+                        candidate_data["Phone"] = clean_ph
+                        
+                if parsed.get("skills") and parsed["skills"].lower() != "n/a":
+                    candidate_data["Skill Set"] = parsed["skills"].strip()
                     
-            if parsed.get("email") and parsed["email"].lower() != "n/a" and "@" in parsed["email"]:
-                clean_em = clean_extracted_email(parsed["email"].strip())
-                if clean_em != "N/A":
-                    candidate_data["Email"] = clean_em
-                    
-            if parsed.get("phone") and parsed["phone"].lower() not in ["n/a", "none"]:
-                clean_ph = extract_phone_smart(parsed["phone"].strip(), "")
-                if clean_ph != "N/A":
-                    candidate_data["Phone"] = clean_ph
-                    
-            if parsed.get("skills") and parsed["skills"].lower() != "n/a":
-                candidate_data["Skill Set"] = parsed["skills"].strip()
-                
-            if parsed.get("experience") and parsed["experience"].lower() not in ["0 years", "n/a"]:
-                exp_cand = extract_experience_from_text(parsed["experience"].strip())
-                if exp_cand != "2.0 years":
-                    candidate_data["Experience"] = exp_cand
-                else:
-                    candidate_data["Experience"] = parsed["experience"].strip()
-                    
-            if parsed.get("match_score") is not None:
-                try:
-                    score_num = int(re.sub(r'[^\d]', '', str(parsed["match_score"])))
-                    if 10 <= score_num <= 100:
-                        candidate_data["Match Score"] = score_num
-                except Exception:
-                    pass
+                if parsed.get("experience") and parsed["experience"].lower() not in ["0 years", "n/a"]:
+                    exp_cand = extract_experience_from_text(parsed["experience"].strip())
+                    if exp_cand != "2.0 years":
+                        candidate_data["Experience"] = exp_cand
+                    else:
+                        candidate_data["Experience"] = parsed["experience"].strip()
+                        
+                if parsed.get("match_score") is not None:
+                    try:
+                        score_num = int(re.sub(r'[^\d]', '', str(parsed["match_score"])))
+                        if 10 <= score_num <= 100:
+                            candidate_data["Match Score"] = score_num
+                    except Exception:
+                        pass
 
-            if parsed.get("matched_skills") and str(parsed["matched_skills"]).lower() != "n/a":
-                candidate_data["Matched Skills"] = str(parsed["matched_skills"]).strip()
+                if parsed.get("matched_skills") and str(parsed["matched_skills"]).lower() != "n/a":
+                    candidate_data["Matched Skills"] = str(parsed["matched_skills"]).strip()
 
-            if parsed.get("match_reason") and str(parsed["match_reason"]).lower() != "n/a":
-                candidate_data["Match Reason"] = str(parsed["match_reason"]).strip()
+                if parsed.get("match_reason") and str(parsed["match_reason"]).lower() != "n/a":
+                    candidate_data["Match Reason"] = str(parsed["match_reason"]).strip()
 
-            if parsed.get("gender") and str(parsed["gender"]).lower() not in ["n/a", "unknown"]:
-                candidate_data["Gender"] = str(parsed["gender"]).strip().capitalize()
+                if parsed.get("gender") and str(parsed["gender"]).lower() not in ["n/a", "unknown"]:
+                    candidate_data["Gender"] = str(parsed["gender"]).strip().capitalize()
 
         except Exception as e:
             logging.info(f"AI parsing note (using deterministic precision): {e}")

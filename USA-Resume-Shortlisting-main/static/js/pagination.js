@@ -27,13 +27,41 @@ document.addEventListener('DOMContentLoaded', function () {
         state.jobQuery = metaContainer.getAttribute('data-job-query') || '';
         state.mailbox = metaContainer.getAttribute('data-mailbox') || '';
         state.total = parseInt(metaContainer.getAttribute('data-total') || '0', 10);
-        state.offset = parseInt(metaContainer.getAttribute('data-offset') || '25', 10);
-        state.limit = parseInt(metaContainer.getAttribute('data-limit') || '25', 10);
     }
 
-    updatePaginationUI();
     applyTableFilters();
 });
+
+// ============================================================
+// COLUMN COPY FUNCTIONALITY
+// ============================================================
+function copyColumnData(columnName, cellIndex) {
+    const visibleRows = Array.from(document.querySelectorAll('#table-body tr'))
+        .filter(r => r.style.display !== 'none');
+
+    if (visibleRows.length === 0) {
+        showToast('⚠️ No visible rows to copy.', true);
+        return;
+    }
+
+    const values = visibleRows.map(row => {
+        const cell = row.cells[cellIndex - 1]; // 1-indexed to 0-indexed
+        return cell ? cell.textContent.trim() : '';
+    }).filter(val => val.length > 0 && val !== 'N/A');
+
+    if (values.length === 0) {
+        showToast(`⚠️ No ${columnName} data found to copy.`, true);
+        return;
+    }
+
+    const copyText = values.join('\n');
+    navigator.clipboard.writeText(copyText).then(() => {
+        showToast(`📋 Copied ${values.length} ${columnName} entries to clipboard!`, false);
+    }).catch(err => {
+        console.error('Column copy failed:', err);
+        showToast('❌ Failed to copy to clipboard.', true);
+    });
+}
 
 // ============================================================
 // PAGINATION ("LOAD MORE") LOGIC
@@ -433,12 +461,32 @@ function toggleSelectAll(masterCb) {
     onTrainerSelectChange();
 }
 
+let currentTab = 'all';
+
+function switchTrainerTab(tab) {
+    currentTab = tab;
+    const tabAll = document.getElementById('tab-all-trainers');
+    const tabSel = document.getElementById('tab-selected-trainers');
+
+    if (tab === 'all') {
+        if (tabAll) { tabAll.style.background = '#2563eb'; tabAll.style.color = '#ffffff'; }
+        if (tabSel) { tabSel.style.background = 'transparent'; tabSel.style.color = '#475569'; }
+    } else {
+        if (tabSel) { tabSel.style.background = '#2563eb'; tabSel.style.color = '#ffffff'; }
+        if (tabAll) { tabAll.style.background = 'transparent'; tabAll.style.color = '#475569'; }
+    }
+
+    applyTableFilters();
+}
+
 function onTrainerSelectChange() {
     const checked = document.querySelectorAll('.trainer-checkbox:checked');
     const badge = document.getElementById('selected-count-badge');
+    const tabBadge = document.getElementById('tab-selected-count');
     const copyBtn = document.getElementById('btn-copy-selected');
 
     if (badge) badge.textContent = checked.length;
+    if (tabBadge) tabBadge.textContent = checked.length;
     if (copyBtn) copyBtn.textContent = `📋 Copy Selected (${checked.length})`;
 }
 
@@ -446,6 +494,7 @@ function applyTableFilters() {
     const statusFilter = document.getElementById('status-filter-select')?.value || 'all';
     const hideUsed = document.getElementById('chk-hide-used')?.checked ?? true;
     const textFilter = document.getElementById('filter-box')?.value.toLowerCase().trim() || '';
+    const minScore = parseInt(document.getElementById('score-slider')?.value || '0', 10);
 
     const rows = document.querySelectorAll('#table-body tr');
     let visibleCount = 0;
@@ -453,9 +502,27 @@ function applyTableFilters() {
     rows.forEach(row => {
         const status = row.getAttribute('data-status') || 'new';
         const rowText = row.textContent.toLowerCase();
+        const cb = row.querySelector('.trainer-checkbox');
+        const isChecked = cb && cb.checked;
 
+        // Tab filter
+        let showByTab = true;
+        if (currentTab === 'selected' && !isChecked) {
+            showByTab = false;
+        }
+
+        // Score filter
+        let showByScore = true;
+        if (minScore > 0) {
+            const scoreText = row.cells[10] ? row.cells[10].textContent.replace(/[^\d]/g, '') : '';
+            const scoreVal = parseInt(scoreText || '0', 10);
+            if (scoreVal < minScore) {
+                showByScore = false;
+            }
+        }
+
+        // Status filter
         let showByStatus = true;
-
         if (hideUsed && status === 'used') {
             showByStatus = false;
         } else if (statusFilter === 'new' && status !== 'new') {
@@ -468,7 +535,7 @@ function applyTableFilters() {
 
         let showByText = !textFilter || rowText.includes(textFilter);
 
-        if (showByStatus && showByText) {
+        if (showByTab && showByScore && showByStatus && showByText) {
             row.style.display = '';
             visibleCount++;
         } else {
@@ -479,5 +546,47 @@ function applyTableFilters() {
     const visibleBadge = document.getElementById('visible-count');
     if (visibleBadge) visibleBadge.textContent = visibleCount;
 
-    onTrainerSelectChange();
+    const checked = document.querySelectorAll('.trainer-checkbox:checked');
+    const tabBadge = document.getElementById('tab-selected-count');
+    if (tabBadge) tabBadge.textContent = checked.length;
+}
+
+function downloadCSV() {
+    const visibleRows = Array.from(document.querySelectorAll('#table-body tr'))
+        .filter(r => r.style.display !== 'none');
+
+    if (visibleRows.length === 0) {
+        showToast('⚠️ No visible candidate rows to export.', true);
+        return;
+    }
+
+    const headers = ["Rank", "Status", "Name", "Gender", "Email", "Phone", "Experience", "Skill Set", "Matched Skills", "Match Score", "Match Reason"];
+    const csvLines = [headers.join(",")];
+
+    visibleRows.forEach(row => {
+        const rowData = [
+            `"${(row.cells[1]?.textContent.trim() || '').replace(/"/g, '""')}"`,
+            `"${(row.getAttribute('data-status') || '').replace(/"/g, '""')}"`,
+            `"${(row.cells[3]?.textContent.trim() || '').replace(/"/g, '""')}"`,
+            `"${(row.cells[4]?.textContent.trim() || '').replace(/"/g, '""')}"`,
+            `"${(row.cells[5]?.textContent.trim() || '').replace(/"/g, '""')}"`,
+            `"${(row.cells[6]?.textContent.trim() || '').replace(/"/g, '""')}"`,
+            `"${(row.cells[7]?.textContent.trim() || '').replace(/"/g, '""')}"`,
+            `"${(row.cells[8]?.textContent.trim() || '').replace(/"/g, '""')}"`,
+            `"${(row.cells[9]?.textContent.trim() || '').replace(/"/g, '""')}"`,
+            `"${(row.cells[10]?.textContent.trim() || '').replace(/"/g, '""')}"`,
+            `"${(row.cells[11]?.textContent.trim() || '').replace(/"/g, '""')}"`
+        ];
+        csvLines.push(rowData.join(","));
+    });
+
+    const csvBlob = new Blob([csvLines.join("\n")], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(csvBlob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", `Shortlisted_Candidates_${new Date().toISOString().slice(0,10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    showToast(`📥 Exported ${visibleRows.length} candidates to CSV!`, false);
 }

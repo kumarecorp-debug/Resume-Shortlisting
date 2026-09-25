@@ -234,7 +234,8 @@ def process():
                 page_size=25
             )
 
-        df = execute_full_candidate_search(job_query, selected_account, max_candidates=50)
+        max_candidates = int(request.form.get('max_candidates', 50))
+        df = execute_full_candidate_search(job_query, selected_account, max_candidates=max_candidates)
         
         if df.empty:
             flash(f'No candidate resumes found for "{job_query}" in mailbox {selected_account}. Try broader search terms.', 'error')
@@ -248,7 +249,7 @@ def process():
                 columns=[],
                 search_id=None,
                 total_matches=0,
-                page_size=25
+                max_candidates=max_candidates
             )
 
         # Attach persistent candidate status from Supabase
@@ -275,17 +276,12 @@ def process():
                 user_email=user_email,
                 mailbox_account=selected_account,
                 job_description=job_query,
-                batch_size=25,
+                batch_size=max_candidates,
                 results_count=total_matches,
                 candidates_seen=cand_list
             )
         except Exception as e_hist:
             logging.warning(f"Error saving search history: {e_hist}")
-
-        # Cache all records for pagination
-        db.cache_search_results(search_id, all_records)
-        page_size = 25
-        table_data = all_records[:page_size]
 
         return render_template(
             'process.jinja',
@@ -293,11 +289,11 @@ def process():
             job_role=job_query,
             selected_account=selected_account,
             available_accounts=available_accounts,
-            table_data=table_data,
+            table_data=all_records,
             columns=columns_order,
             search_id=search_id,
             total_matches=total_matches,
-            page_size=page_size
+            max_candidates=max_candidates
         )
 
     selected_account = request.args.get('account_email') or session.get('selected_account', default_account)
