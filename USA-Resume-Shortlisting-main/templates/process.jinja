@@ -409,11 +409,6 @@
                         <option value="100" {% if max_candidates == 100 %}selected{% endif %}>🚀 Large Batch (100 Candidates)</option>
                         <option value="200" {% if max_candidates == 200 %}selected{% endif %}>🔥 Full Scanning (All ~200 Candidates)</option>
                     </select>
-
-                    <label style="display: inline-flex; align-items: center; gap: 6px; margin-left: 12px; font-weight: 600; color: #1e293b; font-size: 0.92rem; cursor: pointer;">
-                        <input type="checkbox" name="skip_seen" id="skip_seen" form="search-form" {% if skip_seen or skip_seen is none %}checked{% endif %} style="transform: scale(1.2); cursor: pointer;">
-                        <span>⚡ Skip already-seen candidates</span>
-                    </label>
                 </div>
                 <div class="account-badge">
                     <span>Active Mail: <strong id="active-mail-label">{{ selected_account }}</strong></span>
@@ -634,29 +629,11 @@
                     </table>
                 </div>
 
-                {% if seen_hidden_count and seen_hidden_count > 0 %}
-                    <div style="background: #eff6ff; border: 1.5px solid #bfdbfe; color: #1e40af; padding: 12px 18px; border-radius: 8px; margin-top: 16px; font-size: 0.92rem; font-weight: 600; display: flex; justify-content: space-between; align-items: center;">
-                        <span>Showing {{ table_data|length }} new candidates. {{ seen_hidden_count }} already seen (hidden).</span>
-                        <button type="button" onclick="showSeenCandidatesToo()" class="btn-action-small btn-used-action" style="padding: 6px 14px; font-size: 0.86rem; cursor: pointer;">[Show seen too]</button>
-                    </div>
-                {% endif %}
-
                 {% if table_data is not none and table_data|length < max_candidates and table_data|length > 0 %}
                     <div style="background: #fefce8; border: 1.5px solid #fef08a; color: #854d0e; padding: 10px 16px; border-radius: 8px; margin-top: 10px; font-size: 0.88rem; font-weight: 500;">
-                        ⚠️ Only {{ table_data|length }} new candidates found in this inbox. Try increasing batch size or broadening keywords.
+                        ⚠️ Only {{ table_data|length }} candidates found in this inbox. Try increasing batch size or broadening keywords.
                     </div>
                 {% endif %}
-            </div>
-        {% elif job_query and seen_hidden_count and seen_hidden_count > 0 %}
-            <div class="card" style="text-align: center; padding: 36px 24px; background: #eff6ff; border: 2px solid #bfdbfe; border-radius: 12px; margin-top: 20px;">
-                <div style="font-size: 2.5rem; margin-bottom: 8px;">ℹ️</div>
-                <h3 style="color: #1e40af; margin-bottom: 8px; font-size: 1.25rem;">All {{ seen_hidden_count }} matching candidates were already seen in previous searches</h3>
-                <p style="color: #3b82f6; max-width: 650px; margin: 0 auto 18px auto; font-size: 0.95rem; line-height: 1.5;">
-                    Your search for <strong>"{{ job_query }}"</strong> matched <strong>{{ seen_hidden_count }}</strong> candidates in <em>{{ selected_account }}</em>, but all of them were hidden because <strong>"Skip already-seen candidates"</strong> is enabled.
-                </p>
-                <button type="button" onclick="showSeenCandidatesToo()" class="btn-submit" style="padding: 10px 24px; font-size: 0.95rem; background: #2563eb; display: inline-flex; align-items: center; gap: 8px; margin: 0 auto; cursor: pointer;">
-                    🔄 Show All {{ seen_hidden_count }} Seen Candidates
-                </button>
             </div>
         {% elif job_query %}
             <div class="card" style="text-align: center; padding: 40px;">
@@ -671,16 +648,6 @@
     </footer>
 
     <script>
-        function showSeenCandidatesToo() {
-            const cb = document.getElementById('skip_seen');
-            if (cb) {
-                cb.checked = false;
-            }
-            const form = document.getElementById('search-form');
-            if (form) {
-                form.submit();
-            }
-        }
         function updateAccountBadge(accountEmail) {
             const badge = document.getElementById('active-mail-label');
             if (badge) {
