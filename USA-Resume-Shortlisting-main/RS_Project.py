@@ -1286,22 +1286,24 @@ Content:
             config = types.GenerateContentConfig(
                 automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True)
             )
-            try:
-                response = genai_client.models.generate_content(
-                    model="gemini-2.0-flash",
-                    contents=prompt,
-                    config=config
-                )
-            except Exception as e_primary:
+            response = None
+            models_to_try = ["gemini-2.0-flash-exp", "gemini-1.5-flash", "gemini-1.5-pro", "gemini-2.0-flash", "gemini-2.5-flash"]
+            last_err = None
+            for model_id in models_to_try:
                 try:
-                    time.sleep(0.5)
                     response = genai_client.models.generate_content(
-                        model="gemini-1.5-flash",
+                        model=model_id,
                         contents=prompt,
                         config=config
                     )
-                except Exception:
-                    raise e_primary
+                    if response and getattr(response, 'text', None):
+                        break
+                except Exception as ex_m:
+                    last_err = ex_m
+                    time.sleep(0.2)
+            if not response or not getattr(response, 'text', None):
+                if last_err: raise last_err
+                raise ValueError("No Gemini model response returned.")
 
             res_text = response.text.strip()
             res_text = re.sub(r'^```(?:json)?\s*|\s*```$', '', res_text, flags=re.MULTILINE).strip()

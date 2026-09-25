@@ -647,6 +647,17 @@
                     </div>
                 {% endif %}
             </div>
+        {% elif job_query and seen_hidden_count and seen_hidden_count > 0 %}
+            <div class="card" style="text-align: center; padding: 36px 24px; background: #eff6ff; border: 2px solid #bfdbfe; border-radius: 12px; margin-top: 20px;">
+                <div style="font-size: 2.5rem; margin-bottom: 8px;">ℹ️</div>
+                <h3 style="color: #1e40af; margin-bottom: 8px; font-size: 1.25rem;">All {{ seen_hidden_count }} matching candidates were already seen in previous searches</h3>
+                <p style="color: #3b82f6; max-width: 650px; margin: 0 auto 18px auto; font-size: 0.95rem; line-height: 1.5;">
+                    Your search for <strong>"{{ job_query }}"</strong> matched <strong>{{ seen_hidden_count }}</strong> candidates in <em>{{ selected_account }}</em>, but all of them were hidden because <strong>"Skip already-seen candidates"</strong> is enabled.
+                </p>
+                <button type="button" onclick="showSeenCandidatesToo()" class="btn-submit" style="padding: 10px 24px; font-size: 0.95rem; background: #2563eb; display: inline-flex; align-items: center; gap: 8px; margin: 0 auto; cursor: pointer;">
+                    🔄 Show All {{ seen_hidden_count }} Seen Candidates
+                </button>
+            </div>
         {% elif job_query %}
             <div class="card" style="text-align: center; padding: 40px;">
                 <h3 style="color: #475569;">No resumes found for "{{ job_query }}"</h3>
