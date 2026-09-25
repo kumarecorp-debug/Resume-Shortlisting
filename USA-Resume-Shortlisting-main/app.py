@@ -90,41 +90,6 @@ def logout():
     flash('You have been logged out successfully.', 'success')
     return redirect(url_for('login'))
 
-@app.route('/', methods=['GET', 'POST'])
-@app.route('/process', methods=['GET', 'POST'])
-@login_required
-def process():
-    available_accounts = list(RS_Project.SUPPORTED_ACCOUNTS.values())
-    default_account = "recruiter@ecorptrainings.com"
-
-    if request.method == 'POST':
-        # Accepts job description, role keywords, or Job ID
-        job_query = request.form.get('job_query') or request.form.get('job_id') or request.form.get('job_description')
-        selected_account = request.form.get('account_email') or session.get('selected_account', default_account)
-        selected_account = selected_account.strip()
-        session['selected_account'] = selected_account
-        
-        try:
-            max_candidates = int(request.form.get('max_candidates', 25))
-        except (ValueError, TypeError):
-            max_candidates = 25
-
-        if job_query:
-            job_query = job_query.strip()
-
-        if not job_query:
-            flash('Job Description or Keywords are required to search for resumes', 'error')
-            return render_template(
-                'process.jinja',
-                job_query=None,
-                job_role=None,
-                selected_account=selected_account,
-                available_accounts=available_accounts,
-                max_candidates=max_candidates,
-                table_data=[],
-                columns=[]
-            )
-
 def execute_full_candidate_search(job_query, selected_account, max_candidates=200):
     resume_folder = RS_Project.RESUME_FOLDER
     try:
@@ -241,6 +206,7 @@ def execute_full_candidate_search(job_query, selected_account, max_candidates=20
 
     return df
 
+@app.route('/', methods=['GET', 'POST'])
 @app.route('/process', methods=['GET', 'POST'])
 @login_required
 def process():
