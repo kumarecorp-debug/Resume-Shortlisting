@@ -234,3 +234,123 @@ def get_search_history_item(search_id: str) -> dict:
     except Exception as e:
         logging.error(f"Error fetching search_history item {search_id}: {e}")
         return None
+
+# ============================================================
+# FEATURE 2: CUMULATIVE BATCH SEARCH & SEEN CANDIDATES TRACKING
+# ============================================================
+def compute_jd_hash(job_query: str) -> str:
+    """
+    Computes a normalized SHA-256 hash string for the job query string.
+    """
+    if not job_query:
+        return ""
+    normalized = " ".join(job_query.strip().lower().split())
+    return hashlib.sha256(normalized.encode('utf-8')).hexdigest()
+
+def get_seen_candidate_emails(mailbox_account: str, job_description_hash: str) -> set:
+    """
+    Returns a set of candidate_emails previously seen for this mailbox & job description.
+    """
+    if not mailbox_account or not job_description_hash:
+        return set()
+    client = get_supabase()
+    if not client:
+        return set()
+        
+    try:
+        res = client.table("seen_candidates") \
+            .select("candidate_email") \
+            .eq("mailbox_account", mailbox_account.strip().lower()) \
+            .eq("job_description_hash", job_description_hash) \
+            .execute()
+            
+        seen_set = set()
+        if res.data:
+            for r in res.data:
+                em = r.get("candidate_email", "").strip().lower()
+                if em:
+                    seen_set.add(em)
+        return seen_set
+    except Exception as e:
+        logging.error(f"Error querying seen_candidates: {e}")
+        return set()
+
+def record_seen_candidates(mailbox_account: str, job_description_hash: str, candidates: list) -> int:
+    """
+    Inserts newly discovered candidates into seen_candidates table.
+    candidates is a list of dicts [{'email': ..., 'name': ...}, ...] or strings.
+    """
+    if not mailbox_account or not job_description_hash or not candidates:
+        return 0
+    client = get_supabase()
+    if not client:
+        return 0
+        
+    m_account = mailbox_account.strip().lower()
+    now_iso = datetime.now(timezone.utc).isoformat()
+    
+    payloads = []
+    for cand in candidates:
+        if isinstance(cand, dict):
+            em = cand.get("email") or cand.get("Email") or cand.get("candidate_email", "")
+            nm = cand.get("name") or cand.get("Name") or cand.get("candidate_name", "")
+        else:
+            em = str(cand)
+            nm = ""
+            
+        em = em.strip().lower()
+        if em and em != 'n/a':
+            payloads.append({
+                "mailbox_account": m_account,
+                "job_description_hash": job_description_hash,
+                "candidate_email": em,
+                "candidate_name": nm,
+                "first_seen_at": now_iso,
+                "last_seen_at": now_iso
+            })
+            
+    if not payloads:
+        return 0
+        
+    try:
+        client.table("seen_candidates").upsert(payloads, on_conflict="mailbox_account,job_description_hash,candidate_email").execute()
+        logging.info(f"Recorded {len(payloads)} seen candidates for {m_account}")
+        return len(payloads)
+    except Exception as e:
+        logging.error(f"Error recording seen_candidates: {e}")
+        return 0
+
+def get_table_debug_status() -> dict:
+    """
+    Returns table existence status and row counts for troubleshooting.
+    """
+    client = get_supabase()
+    tables = ["candidate_status", "search_history", "seen_candidates"]
+    result = {
+        "supabase_configured": bool(client),
+        "supabase_url": SUPABASE_URL,
+        "tables": {}
+    }
+    
+    if not client:
+        for t in tables:
+            result["tables"][t] = {"exists": False, "row_count": 0, "error": "Supabase client uninitialized"}
+        return result
+        
+    for t in tables:
+        try:
+            res = client.table(t).select("id", count="exact").limit(1).execute()
+            row_count = res.count if hasattr(res, 'count') and res.count is not None else len(res.data or [])
+            result["tables"][t] = {
+                "exists": True,
+                "row_count": row_count,
+                "error": None
+            }
+        except Exception as e:
+            result["tables"][t] = {
+                "exists": False,
+                "row_count": 0,
+                "error": str(e)
+            }
+            
+    return result

@@ -304,6 +304,26 @@ def process():
                         axis=1
                     )
 
+        # Feature 2: Cumulative Batch Search (Skip Already-Seen Candidates)
+        skip_seen = (request.form.get('skip_seen') == 'on') or ('skip_seen' not in request.form)
+        seen_hidden_count = 0
+        jd_hash = db.compute_jd_hash(job_query)
+
+        if not df.empty and 'Email' in df.columns:
+            if skip_seen:
+                seen_set = db.get_seen_candidate_emails(selected_account, jd_hash)
+                initial_count = len(df)
+                df = df[~df['Email'].astype(str).str.strip().str.lower().isin(seen_set)].reset_index(drop=True)
+                seen_hidden_count = initial_count - len(df)
+                df = df.head(max_candidates)
+                if 'Rank' in df.columns:
+                    df['Rank'] = range(1, len(df) + 1)
+            
+            # Record newly returned candidates into seen_candidates
+            if not df.empty and 'Email' in df.columns and 'Name' in df.columns:
+                cands_to_record = df[['Name', 'Email']].dropna().to_dict(orient='records')
+                db.record_seen_candidates(selected_account, jd_hash, cands_to_record)
+
         # Attach persistent candidate status from Supabase
         if not df.empty and 'Email' in df.columns:
             emails_list = df['Email'].dropna().tolist()
@@ -341,6 +361,8 @@ def process():
             selected_account=selected_account,
             available_accounts=available_accounts,
             max_candidates=max_candidates,
+            skip_seen=skip_seen,
+            seen_hidden_count=seen_hidden_count,
             table_data=table_data,
             columns=columns_order
         )
@@ -353,9 +375,16 @@ def process():
         selected_account=selected_account,
         available_accounts=available_accounts,
         max_candidates=25,
+        skip_seen=True,
+        seen_hidden_count=0,
         table_data=[],
         columns=[]
     )
+
+@app.route('/debug-status')
+def debug_status():
+    status_info = db.get_table_debug_status()
+    return jsonify(status_info)
 
 @app.route('/history')
 @login_required

@@ -409,6 +409,11 @@
                         <option value="100" {% if max_candidates == 100 %}selected{% endif %}>🚀 Large Batch (100 Candidates)</option>
                         <option value="200" {% if max_candidates == 200 %}selected{% endif %}>🔥 Full Scanning (All ~200 Candidates)</option>
                     </select>
+
+                    <label style="display: inline-flex; align-items: center; gap: 6px; margin-left: 12px; font-weight: 600; color: #1e293b; font-size: 0.92rem; cursor: pointer;">
+                        <input type="checkbox" name="skip_seen" id="skip_seen" form="search-form" {% if skip_seen or skip_seen is none %}checked{% endif %} style="transform: scale(1.2); cursor: pointer;">
+                        <span>⚡ Skip already-seen candidates</span>
+                    </label>
                 </div>
                 <div class="account-badge">
                     <span>Active Mail: <strong id="active-mail-label">{{ selected_account }}</strong></span>
@@ -628,6 +633,19 @@
                         </tbody>
                     </table>
                 </div>
+
+                {% if seen_hidden_count and seen_hidden_count > 0 %}
+                    <div style="background: #eff6ff; border: 1.5px solid #bfdbfe; color: #1e40af; padding: 12px 18px; border-radius: 8px; margin-top: 16px; font-size: 0.92rem; font-weight: 600; display: flex; justify-content: space-between; align-items: center;">
+                        <span>Showing {{ table_data|length }} new candidates. {{ seen_hidden_count }} already seen (hidden).</span>
+                        <button type="button" onclick="showSeenCandidatesToo()" class="btn-action-small btn-used-action" style="padding: 6px 14px; font-size: 0.86rem; cursor: pointer;">[Show seen too]</button>
+                    </div>
+                {% endif %}
+
+                {% if table_data is not none and table_data|length < max_candidates and table_data|length > 0 %}
+                    <div style="background: #fefce8; border: 1.5px solid #fef08a; color: #854d0e; padding: 10px 16px; border-radius: 8px; margin-top: 10px; font-size: 0.88rem; font-weight: 500;">
+                        ⚠️ Only {{ table_data|length }} new candidates found in this inbox. Try increasing batch size or broadening keywords.
+                    </div>
+                {% endif %}
             </div>
         {% elif job_query %}
             <div class="card" style="text-align: center; padding: 40px;">
@@ -642,6 +660,16 @@
     </footer>
 
     <script>
+        function showSeenCandidatesToo() {
+            const cb = document.getElementById('skip_seen');
+            if (cb) {
+                cb.checked = false;
+            }
+            const form = document.getElementById('search-form');
+            if (form) {
+                form.submit();
+            }
+        }
         function updateAccountBadge(accountEmail) {
             const badge = document.getElementById('active-mail-label');
             if (badge) {
