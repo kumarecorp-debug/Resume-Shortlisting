@@ -319,6 +319,21 @@ def process():
         columns_order = [col for col in columns_order if col in df.columns]
         table_data = df[columns_order].fillna("N/A").to_dict(orient='records')
 
+        # Save Search History in Supabase
+        try:
+            user_email = session.get('user', {}).get('email') if isinstance(session.get('user'), dict) else selected_account
+            cand_list = df[['Name', 'Email']].fillna('N/A').to_dict(orient='records') if not df.empty and 'Name' in df.columns and 'Email' in df.columns else []
+            db.save_search_history(
+                user_email=user_email,
+                mailbox_account=selected_account,
+                job_description=job_query,
+                batch_size=max_candidates,
+                results_count=len(table_data),
+                candidates_seen=cand_list
+            )
+        except Exception as e_hist:
+            logging.warning(f"Error saving search history: {e_hist}")
+
         return render_template(
             'process.jinja',
             job_query=job_query,
@@ -341,6 +356,62 @@ def process():
         table_data=[],
         columns=[]
     )
+
+@app.route('/history')
+@login_required
+def search_history_page():
+    available_accounts = list(RS_Project.SUPPORTED_ACCOUNTS.values())
+    selected_account = request.args.get('account_email', '')
+    from_date = request.args.get('from', '')
+    to_date = request.args.get('to', '')
+    try:
+        days = int(request.args.get('days', 30))
+    except (ValueError, TypeError):
+        days = 30
+
+    history_records = db.get_search_history(
+        mailbox_account=selected_account if selected_account else None,
+        from_date=from_date if from_date else None,
+        to_date=to_date if to_date else None,
+        days=days
+    )
+
+    return render_template(
+        'history.jinja',
+        available_accounts=available_accounts,
+        selected_account=selected_account,
+        from_date=from_date,
+        to_date=to_date,
+        days=days,
+        history_records=history_records
+    )
+
+@app.route('/api/history')
+@login_required
+def api_get_history():
+    from_date = request.args.get('from')
+    to_date = request.args.get('to')
+    try:
+        days = int(request.args.get('days', 30))
+    except (ValueError, TypeError):
+        days = 30
+    mailbox = request.args.get('account_email')
+
+    records = db.get_search_history(
+        mailbox_account=mailbox,
+        from_date=from_date,
+        to_date=to_date,
+        days=days
+    )
+    return jsonify({'success': True, 'count': len(records), 'history': records})
+
+@app.route('/api/history/<search_id>')
+@login_required
+def api_get_history_item(search_id):
+    item = db.get_search_history_item(search_id)
+    if not item:
+        return jsonify({'success': False, 'error': 'Search history record not found'}), 404
+    return jsonify({'success': True, 'data': item})
 
 @app.route('/mark-status', methods=['POST'])
 @app.route('/api/candidate-status', methods=['POST'])

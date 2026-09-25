@@ -378,6 +378,9 @@
             <span style="font-size: 0.88rem; color: #475569; background: #e2e8f0; padding: 6px 12px; border-radius: 20px; font-weight: 500;">
                 👤 {{ session['user']['email'] if session.get('user') else 'Authenticated User' }}
             </span>
+            <a href="{{ url_for('search_history_page') }}" style="background: #2563eb; color: white; padding: 6px 14px; border-radius: 6px; text-decoration: none; font-size: 0.88rem; font-weight: 600; transition: background 0.2s;">
+                📜 Search History
+            </a>
             <a href="{{ url_for('logout') }}" style="background: #dc2626; color: white; padding: 6px 14px; border-radius: 6px; text-decoration: none; font-size: 0.88rem; font-weight: 600; transition: background 0.2s;">
                 Sign Out 🚪
             </a>

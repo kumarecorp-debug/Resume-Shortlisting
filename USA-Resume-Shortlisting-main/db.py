@@ -138,3 +138,99 @@ def bulk_update_candidate_status(mailbox_account: str, candidates: list, status:
     except Exception as e:
         logging.error(f"Error bulk updating candidate status: {e}")
         return 0
+
+# ============================================================
+# FEATURE 1: SEARCH HISTORY (LAST 30 DAYS & CALENDAR PICKER)
+# ============================================================
+def save_search_history(user_email: str, mailbox_account: str, job_description: str, batch_size: int, results_count: int, candidates_seen: list = None) -> str:
+    """
+    Inserts a row into search_history table and returns the generated UUID.
+    """
+    client = get_supabase()
+    if not client:
+        return None
+        
+    u_email = user_email.strip().lower() if user_email else "user@ecorptrainings.com"
+    m_account = mailbox_account.strip().lower() if mailbox_account else "recruiter@ecorptrainings.com"
+    j_desc = job_description.strip() if job_description else ""
+    c_list = candidates_seen if isinstance(candidates_seen, list) else []
+    
+    payload = {
+        "user_email": u_email,
+        "mailbox_account": m_account,
+        "job_description": j_desc,
+        "batch_size": int(batch_size or 25),
+        "results_count": int(results_count or 0),
+        "searched_at": datetime.now(timezone.utc).isoformat(),
+        "candidates_seen": c_list
+    }
+    
+    try:
+        res = client.table("search_history").insert(payload).execute()
+        if res.data and len(res.data) > 0:
+            rec_id = res.data[0].get("id")
+            logging.info(f"Saved search_history record: {rec_id} ({results_count} results)")
+            return rec_id
+        return None
+    except Exception as e:
+        logging.error(f"Error saving search_history: {e}")
+        return None
+
+def get_search_history(user_email: str = None, mailbox_account: str = None, from_date: str = None, to_date: str = None, days: int = 30) -> list:
+    """
+    Queries search_history filtered by date range or default (last N days).
+    from_date / to_date are strings formatted 'YYYY-MM-DD'.
+    """
+    client = get_supabase()
+    if not client:
+        return []
+        
+    try:
+        query = client.table("search_history").select("id, user_email, mailbox_account, job_description, batch_size, results_count, searched_at")
+        
+        if mailbox_account:
+            query = query.eq("mailbox_account", mailbox_account.strip().lower())
+            
+        if from_date:
+            try:
+                dt_from = datetime.strptime(from_date, "%Y-%m-%d").replace(hour=0, minute=0, second=0, tzinfo=timezone.utc)
+                query = query.gte("searched_at", dt_from.isoformat())
+            except ValueError:
+                pass
+                
+        if to_date:
+            try:
+                dt_to = datetime.strptime(to_date, "%Y-%m-%d").replace(hour=23, minute=59, second=59, tzinfo=timezone.utc)
+                query = query.lte("searched_at", dt_to.isoformat())
+            except ValueError:
+                pass
+                
+        if not from_date and not to_date:
+            try:
+                cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+                query = query.gte("searched_at", cutoff.isoformat())
+            except Exception:
+                pass
+                
+        res = query.order("searched_at", desc=True).limit(200).execute()
+        return res.data or []
+    except Exception as e:
+        logging.error(f"Error querying search_history: {e}")
+        return []
+
+def get_search_history_item(search_id: str) -> dict:
+    """
+    Fetches a single search_history record by ID including candidates_seen.
+    """
+    client = get_supabase()
+    if not client or not search_id:
+        return None
+        
+    try:
+        res = client.table("search_history").select("*").eq("id", search_id).execute()
+        if res.data and len(res.data) > 0:
+            return res.data[0]
+        return None
+    except Exception as e:
+        logging.error(f"Error fetching search_history item {search_id}: {e}")
+        return None
