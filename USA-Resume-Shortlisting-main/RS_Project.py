@@ -1288,19 +1288,19 @@ Content:
             )
             try:
                 response = genai_client.models.generate_content(
-                    model="gemini-2.5-flash",
+                    model="gemini-2.0-flash",
                     contents=prompt,
                     config=config
                 )
             except Exception as e_primary:
-                if "503" in str(e_primary) or "429" in str(e_primary):
-                    time.sleep(1)
+                try:
+                    time.sleep(0.5)
                     response = genai_client.models.generate_content(
-                        model="gemini-2.0-flash",
+                        model="gemini-1.5-flash",
                         contents=prompt,
                         config=config
                     )
-                else:
+                except Exception:
                     raise e_primary
 
             res_text = response.text.strip()
