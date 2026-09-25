@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, redirect, url_for, flash, session
+from flask import Flask, render_template, request, redirect, url_for, flash, session, jsonify
 import re
 import pandas as pd
 from io import StringIO
@@ -8,6 +8,7 @@ from contextlib import redirect_stdout, redirect_stderr
 from functools import wraps
 import RS_Project
 import os
+import db
 from supabase import create_client, Client
 
 project_root = os.path.dirname(os.path.abspath(__file__))
@@ -303,9 +304,17 @@ def process():
                         axis=1
                     )
 
+        # Attach persistent candidate status from Supabase
+        if not df.empty and 'Email' in df.columns:
+            emails_list = df['Email'].dropna().tolist()
+            status_map = db.get_candidate_statuses(selected_account, emails_list)
+            df['Status'] = df['Email'].apply(lambda e: status_map.get(str(e).strip().lower(), 'new'))
+        else:
+            df['Status'] = 'new'
+
         # Define standard display columns
         columns_order = [
-            "Rank", "Name", "Gender", "Email", "Phone", "Experience", "Skill Set", "Matched Skills", "Match Score", "Match Reason"
+            "Rank", "Status", "Name", "Gender", "Email", "Phone", "Experience", "Skill Set", "Matched Skills", "Match Score", "Match Reason"
         ]
         columns_order = [col for col in columns_order if col in df.columns]
         table_data = df[columns_order].fillna("N/A").to_dict(orient='records')
@@ -332,6 +341,37 @@ def process():
         table_data=[],
         columns=[]
     )
+
+@app.route('/mark-status', methods=['POST'])
+@app.route('/api/candidate-status', methods=['POST'])
+@login_required
+def mark_candidate_status():
+    data = request.get_json(silent=True) or request.form.to_dict() or {}
+    mailbox_account = data.get('mailbox_account') or session.get('selected_account', 'recruiter@ecorptrainings.com')
+    candidate_email = data.get('candidate_email') or data.get('email')
+    candidate_name = data.get('candidate_name') or data.get('name') or ''
+    status = data.get('status', 'used')
+    notes = data.get('notes')
+
+    if not candidate_email:
+        return jsonify({'success': False, 'error': 'Candidate email is required'}), 400
+
+    success = db.update_candidate_status(mailbox_account, candidate_email, candidate_name, status, notes)
+    return jsonify({'success': success, 'status': status, 'email': candidate_email})
+
+@app.route('/bulk-mark', methods=['POST'])
+@login_required
+def bulk_mark_candidate_status():
+    data = request.get_json(silent=True) or {}
+    mailbox_account = data.get('mailbox_account') or session.get('selected_account', 'recruiter@ecorptrainings.com')
+    candidates = data.get('candidates', [])
+    status = data.get('status', 'used')
+
+    if not candidates:
+        return jsonify({'success': False, 'error': 'No candidates provided'}), 400
+
+    count = db.bulk_update_candidate_status(mailbox_account, candidates, status)
+    return jsonify({'success': True, 'count': count, 'status': status})
 
 if __name__ == '__main__':
     app.run(debug=True)
