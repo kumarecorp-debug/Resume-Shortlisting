@@ -1220,6 +1220,12 @@ def extract_candidate_entities_with_ai(resume_text, email_body, job_description,
     Extracts candidate details using Gemini AI, with high-accuracy deterministic fallback.
     Guarantees that EVERY column is fully populated with ZERO 'N/A' values.
     """
+    global genai_client, WORKING_GEMINI_MODEL, AI_MODEL_DISABLED, AI_FAILED_COUNT
+    if 'WORKING_GEMINI_MODEL' not in globals():
+        WORKING_GEMINI_MODEL = None
+        AI_MODEL_DISABLED = False
+        AI_FAILED_COUNT = 0
+
     extracted_email = extract_email_smart(resume_text, email_body, sender_header, reply_to, subject)
     extracted_phone = extract_phone_smart(resume_text, email_body, subject)
     deterministic_name = extract_candidate_name_smart(resume_text, email_body, sender_header, filename, extracted_email, subject)
@@ -1243,7 +1249,6 @@ def extract_candidate_entities_with_ai(resume_text, email_body, job_description,
     if not combined_text.strip():
         return candidate_data
 
-    global genai_client
     if genai_client is None and USE_MODERN_GENAI and os.environ.get("GEMINI_API_KEY"):
         try:
             genai_client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY"))
@@ -1282,18 +1287,13 @@ Return strictly valid JSON format without markdown code blocks:
 Content:
 {combined_text}
 """
-            global WORKING_GEMINI_MODEL, AI_MODEL_DISABLED, AI_FAILED_COUNT
-            if 'WORKING_GEMINI_MODEL' not in globals():
-                WORKING_GEMINI_MODEL = None
-                AI_MODEL_DISABLED = False
-                AI_FAILED_COUNT = 0
-
+        try:
             if not AI_MODEL_DISABLED:
                 config = types.GenerateContentConfig(
                     automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True)
                 )
                 response = None
-                models_to_try = [WORKING_GEMINI_MODEL] if WORKING_GEMINI_MODEL else ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-2.5-flash", "gemini-1.5-pro"]
+                models_to_try = [WORKING_GEMINI_MODEL] if WORKING_GEMINI_MODEL else ["gemini-3.6-flash", "gemini-3.5-flash", "gemini-3.1-flash-lite"]
                 last_err = None
                 for model_id in models_to_try:
                     if not model_id: continue
@@ -1305,6 +1305,7 @@ Content:
                         )
                         if response and getattr(response, 'text', None):
                             WORKING_GEMINI_MODEL = model_id
+                            logging.info(f"Extracted using {WORKING_GEMINI_MODEL}")
                             break
                     except Exception as ex_m:
                         last_err = ex_m

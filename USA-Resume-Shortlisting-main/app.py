@@ -319,6 +319,24 @@ def debug_status():
     status_info = db.get_table_debug_status()
     return jsonify(status_info)
 
+@app.route('/debug-models')
+def debug_models():
+    """Calls Gemini ListModels API and returns available model names."""
+    try:
+        from google import genai
+        api_key = os.environ.get("GEMINI_API_KEY", "")
+        if not api_key and hasattr(RS_Project, 'GEMINI_API_KEY'):
+            api_key = RS_Project.GEMINI_API_KEY
+        if not api_key:
+            return jsonify({'success': False, 'error': 'GEMINI_API_KEY environment variable not set'}), 400
+            
+        client = RS_Project.genai_client if getattr(RS_Project, 'genai_client', None) else genai.Client(api_key=api_key)
+        models_pager = client.models.list()
+        model_names = [m.name for m in models_pager if hasattr(m, 'name')]
+        return jsonify({'success': True, 'count': len(model_names), 'models': model_names})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
 @app.route('/history')
 @login_required
 def search_history_page():
