@@ -1282,32 +1282,44 @@ Return strictly valid JSON format without markdown code blocks:
 Content:
 {combined_text}
 """
-        try:
-            config = types.GenerateContentConfig(
-                automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True)
-            )
-            response = None
-            models_to_try = ["gemini-2.0-flash-exp", "gemini-1.5-flash", "gemini-1.5-pro", "gemini-2.0-flash", "gemini-2.5-flash"]
-            last_err = None
-            for model_id in models_to_try:
-                try:
-                    response = genai_client.models.generate_content(
-                        model=model_id,
-                        contents=prompt,
-                        config=config
-                    )
-                    if response and getattr(response, 'text', None):
-                        break
-                except Exception as ex_m:
-                    last_err = ex_m
-                    time.sleep(0.2)
-            if not response or not getattr(response, 'text', None):
-                if last_err: raise last_err
-                raise ValueError("No Gemini model response returned.")
+            global WORKING_GEMINI_MODEL, AI_MODEL_DISABLED, AI_FAILED_COUNT
+            if 'WORKING_GEMINI_MODEL' not in globals():
+                WORKING_GEMINI_MODEL = None
+                AI_MODEL_DISABLED = False
+                AI_FAILED_COUNT = 0
 
-            res_text = response.text.strip()
-            res_text = re.sub(r'^```(?:json)?\s*|\s*```$', '', res_text, flags=re.MULTILINE).strip()
-            parsed = json.loads(res_text)
+            if not AI_MODEL_DISABLED:
+                config = types.GenerateContentConfig(
+                    automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True)
+                )
+                response = None
+                models_to_try = [WORKING_GEMINI_MODEL] if WORKING_GEMINI_MODEL else ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-2.5-flash", "gemini-1.5-pro"]
+                last_err = None
+                for model_id in models_to_try:
+                    if not model_id: continue
+                    try:
+                        response = genai_client.models.generate_content(
+                            model=model_id,
+                            contents=prompt,
+                            config=config
+                        )
+                        if response and getattr(response, 'text', None):
+                            WORKING_GEMINI_MODEL = model_id
+                            break
+                    except Exception as ex_m:
+                        last_err = ex_m
+
+                if not response or not getattr(response, 'text', None):
+                    AI_FAILED_COUNT += 1
+                    if AI_FAILED_COUNT >= 2:
+                        AI_MODEL_DISABLED = True
+                        logging.warning("Gemini AI API endpoints unavailable. Switching to ultra-fast deterministic precision parsing.")
+                    if last_err: raise last_err
+                    raise ValueError("No Gemini model response returned.")
+
+                res_text = response.text.strip()
+                res_text = re.sub(r'^```(?:json)?\s*|\s*```$', '', res_text, flags=re.MULTILINE).strip()
+                parsed = json.loads(res_text)
             
             if parsed.get("name") and parsed["name"].lower() not in ["candidate", "n/a", "unknown"]:
                 ai_clean_name = clean_candidate_name(parsed["name"].strip())

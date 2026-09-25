@@ -234,7 +234,7 @@ def process():
                 page_size=25
             )
 
-        df = execute_full_candidate_search(job_query, selected_account, max_candidates=200)
+        df = execute_full_candidate_search(job_query, selected_account, max_candidates=50)
         
         if df.empty:
             flash(f'No candidate resumes found for "{job_query}" in mailbox {selected_account}. Try broader search terms.', 'error')
@@ -460,7 +460,7 @@ def api_search():
     if not search_id:
         search_id = str(uuid.uuid4())
 
-    df = execute_full_candidate_search(job_query, selected_account, max_candidates=200)
+    df = execute_full_candidate_search(job_query, selected_account, max_candidates=50)
     total = len(df)
     logging.info(f"Search started: JD={job_query} mailbox={selected_account} total={total}")
 
