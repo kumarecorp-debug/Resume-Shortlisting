@@ -125,78 +125,153 @@ def process():
                 columns=[]
             )
 
-        resume_folder = RS_Project.RESUME_FOLDER
-        try:
-            if not os.path.exists(resume_folder):
-                os.makedirs(resume_folder, exist_ok=True)
-            test_file = os.path.join(resume_folder, "test_write.txt")
-            with open(test_file, 'w') as f:
-                f.write("Test")
-            os.remove(test_file)
-        except Exception:
-            import tempfile
-            resume_folder = os.path.join(tempfile.gettempdir(), "Resumes")
+def execute_full_candidate_search(job_query, selected_account, max_candidates=200):
+    resume_folder = RS_Project.RESUME_FOLDER
+    try:
+        if not os.path.exists(resume_folder):
             os.makedirs(resume_folder, exist_ok=True)
-            RS_Project.RESUME_FOLDER = resume_folder
-            RS_Project.OUTPUT_CSV = os.path.join(resume_folder, "resume_analysis.csv")
+        test_file = os.path.join(resume_folder, "test_write.txt")
+        with open(test_file, 'w') as f:
+            f.write("Test")
+        os.remove(test_file)
+    except Exception:
+        import tempfile
+        resume_folder = os.path.join(tempfile.gettempdir(), "Resumes")
+        os.makedirs(resume_folder, exist_ok=True)
+        RS_Project.RESUME_FOLDER = resume_folder
+        RS_Project.OUTPUT_CSV = os.path.join(resume_folder, "resume_analysis.csv")
 
-        stdout_buffer = StringIO()
-        stderr_buffer = StringIO()
-        with redirect_stdout(stdout_buffer), redirect_stderr(stderr_buffer):
-            try:
-                RS_Project.main(job_query, account_email=selected_account, max_candidates=max_candidates)
-            except Exception as e:
-                flash(f'Error processing resumes for {selected_account}: {str(e)}', 'error')
-                logging.error(f"Error in processing: {e}")
-                logging.error(f"Captured stdout: {stdout_buffer.getvalue()}")
-                logging.error(f"Captured stderr: {stderr_buffer.getvalue()}")
-                return render_template(
-                    'process.jinja',
-                    job_query=job_query,
-                    job_role=job_query,
-                    selected_account=selected_account,
-                    available_accounts=available_accounts,
-                    table_data=[],
-                    columns=[]
-                )
-
-        stdout_output = stdout_buffer.getvalue()
-        stderr_output = stderr_buffer.getvalue()
-        logging.info(f"RS_Project.main stdout: {stdout_output}")
-        logging.info(f"RS_Project.main stderr: {stderr_output}")
-
-        output_csv = RS_Project.OUTPUT_CSV
-        if not os.path.exists(output_csv):
-            error_message = f'No resumes found matching "{job_query}" in mailbox {selected_account}. Please check your mailbox.'
-            flash(error_message, 'error')
-            logging.error(f"Output CSV not found: {output_csv}")
-            return render_template(
-                'process.jinja',
-                job_query=job_query,
-                job_role=job_query,
-                selected_account=selected_account,
-                available_accounts=available_accounts,
-                table_data=[],
-                columns=[]
-            )
-
+    stdout_buffer = StringIO()
+    stderr_buffer = StringIO()
+    with redirect_stdout(stdout_buffer), redirect_stderr(stderr_buffer):
         try:
-            df = pd.read_csv(output_csv)
-            if df.empty:
-                flash(f'No candidate resumes found for "{job_query}" in mailbox {selected_account}. Try broader search terms.', 'error')
-                logging.warning(f"Output CSV is empty: {output_csv}")
-                return render_template(
-                    'process.jinja',
-                    job_query=job_query,
-                    job_role=job_query,
-                    selected_account=selected_account,
-                    available_accounts=available_accounts,
-                    table_data=[],
-                    columns=[]
-                )
+            RS_Project.main(job_query, account_email=selected_account, max_candidates=max_candidates)
         except Exception as e:
-            flash(f'Failed to read results: {str(e)}', 'error')
-            logging.error(f"Error reading CSV: {e}")
+            logging.error(f"Error in RS_Project.main: {e}")
+
+    output_csv = RS_Project.OUTPUT_CSV
+    if not os.path.exists(output_csv):
+        return pd.DataFrame()
+
+    try:
+        df = pd.read_csv(output_csv)
+        if df.empty:
+            return pd.DataFrame()
+    except Exception as e:
+        logging.error(f"Error reading output CSV: {e}")
+        return pd.DataFrame()
+
+    if not df.empty:
+        def reorder_skills(row):
+            matched = str(row.get('Matched Skills', '')).split(',')
+            all_skills = str(row.get('Skill Set', '')).split(',')
+            matched_clean = [m.strip().lower() for m in matched if m.strip()]
+            first_part = []
+            second_part = []
+            for s in all_skills:
+                s_clean = s.strip()
+                if not s_clean: continue
+                if any(m in s_clean.lower() or s_clean.lower() in m for m in matched_clean):
+                    first_part.append(s_clean)
+                else:
+                    second_part.append(s_clean)
+            return ', '.join(first_part + second_part)
+
+        if 'Skill Set' in df.columns:
+            df['Skill Set'] = df.apply(reorder_skills, axis=1)
+
+        if 'Experience' in df.columns:
+            def extract_years(exp):
+                import re
+                match = re.search(r'[\d.]+', str(exp))
+                if match: return float(match.group())
+                return 0.0
+            df['Exp_Num'] = df['Experience'].apply(extract_years)
+            df = df.sort_values(by=['Exp_Num'], ascending=[False]).reset_index(drop=True)
+            df['Rank'] = range(1, len(df) + 1)
+
+        gender_detector = None
+        try:
+            import gender_guesser.detector as gender
+            gender_detector = gender.Detector()
+        except ImportError:
+            pass
+
+        def guess_gender(name):
+            name_parts = str(name).strip().split()
+            if not name_parts or name.lower() in ['verified candidate', 'candidate', 'n/a']:
+                return 'Male'
+            first_name = name_parts[0].capitalize()
+            first_name_lower = first_name.lower()
+            female_names = {
+                'pooja', 'priya', 'neha', 'anjali', 'swati', 'divya', 'kavita', 'deepa', 'megha', 'shweta',
+                'sunita', 'anita', 'kiran', 'rekha', 'rashmi', 'sneha', 'jyoti', 'monika', 'payal', 'richa',
+                'sonam', 'smita', 'bhavna', 'sapna', 'archana', 'simran', 'preeti', 'renu', 'seema', 'tanvi',
+                'radha', 'sheetal', 'harshita', 'apoorva', 'srishti', 'kriti', 'nisha', 'sakshi', 'shikha',
+                'shipra', 'garima', 'pallavi', 'surabhi', 'saloni', 'sonia', 'vandana', 'komal', 'namrata'
+            }
+            male_exceptions = {
+                'karan', 'bhavin', 'gulab', 'sudhakar', 'nagarjuna', 'krishna', 'rama', 'aditya', 'surya',
+                'shiva', 'pavan', 'vijay', 'ajay', 'sanjay', 'jay', 'rahul', 'amit', 'sumit', 'vince',
+                'anil', 'sunil', 'rajesh', 'suresh', 'ramesh', 'dinesh', 'manish', 'mukesh', 'nilesh',
+                'harish', 'gopal', 'mohan', 'sohan', 'rohan', 'varun', 'tarun', 'arun', 'alok', 'ashok'
+            }
+            if first_name_lower in female_names:
+                return 'Female'
+            if first_name_lower in male_exceptions:
+                return 'Male'
+            if gender_detector:
+                gen = gender_detector.get_gender(first_name)
+                if gen in ['male', 'mostly_male']: return 'Male'
+                if gen in ['female', 'mostly_female']: return 'Female'
+            if first_name_lower.endswith(('a', 'i')) and len(first_name_lower) > 3: 
+                return 'Female'
+            return 'Male'
+
+        if 'Name' in df.columns:
+            if 'Gender' not in df.columns:
+                df['Gender'] = df['Name'].apply(guess_gender)
+            else:
+                df['Gender'] = df.apply(
+                    lambda row: guess_gender(row['Name']) 
+                    if pd.isna(row.get('Gender')) or str(row.get('Gender')).strip().lower() in ['unknown', 'n/a', ''] 
+                    else row['Gender'], 
+                    axis=1
+                )
+
+    return df
+
+@app.route('/process', methods=['GET', 'POST'])
+@login_required
+def process():
+    available_accounts = list(RS_Project.SUPPORTED_ACCOUNTS.values())
+    default_account = available_accounts[0] if available_accounts else "recruiter@ecorptrainings.com"
+    
+    if request.method == 'POST':
+        import uuid
+        job_query = request.form.get('job_query', '').strip()
+        selected_account = request.form.get('account_email', default_account)
+        session['selected_account'] = selected_account
+
+        if not job_query:
+            flash('Please enter a job description, role, or keywords.', 'error')
+            return render_template(
+                'process.jinja',
+                job_query=None,
+                job_role=None,
+                selected_account=selected_account,
+                available_accounts=available_accounts,
+                table_data=[],
+                columns=[],
+                search_id=None,
+                total_matches=0,
+                page_size=25
+            )
+
+        df = execute_full_candidate_search(job_query, selected_account, max_candidates=200)
+        
+        if df.empty:
+            flash(f'No candidate resumes found for "{job_query}" in mailbox {selected_account}. Try broader search terms.', 'error')
             return render_template(
                 'process.jinja',
                 job_query=job_query,
@@ -204,105 +279,11 @@ def process():
                 selected_account=selected_account,
                 available_accounts=available_accounts,
                 table_data=[],
-                columns=[]
+                columns=[],
+                search_id=None,
+                total_matches=0,
+                page_size=25
             )
-
-        # Apply requested transformations
-        if not df.empty:
-            # 1. Reorder Skill Set
-            def reorder_skills(row):
-                matched = str(row.get('Matched Skills', '')).split(',')
-                all_skills = str(row.get('Skill Set', '')).split(',')
-                matched_clean = [m.strip().lower() for m in matched if m.strip()]
-                
-                first_part = []
-                second_part = []
-                
-                for s in all_skills:
-                    s_clean = s.strip()
-                    if not s_clean: continue
-                    # check if skill is in matched or matched in skill
-                    if any(m in s_clean.lower() or s_clean.lower() in m for m in matched_clean):
-                        first_part.append(s_clean)
-                    else:
-                        second_part.append(s_clean)
-                
-                return ', '.join(first_part + second_part)
-
-            if 'Skill Set' in df.columns:
-                df['Skill Set'] = df.apply(reorder_skills, axis=1)
-
-            # 2. Extract numeric experience and sort descending (Higher to Lower)
-            if 'Experience' in df.columns:
-                def extract_years(exp):
-                    import re
-                    match = re.search(r'[\d.]+', str(exp))
-                    if match: return float(match.group())
-                    return 0.0
-                
-                df['Exp_Num'] = df['Experience'].apply(extract_years)
-                # Sort by experience descending (Higher to Lower)
-                df = df.sort_values(by=['Exp_Num'], ascending=[False]).reset_index(drop=True)
-                df['Rank'] = range(1, len(df) + 1)
-            
-            # 3. Add Gender using gender-guesser or simple heuristic
-            gender_detector = None
-            try:
-                import gender_guesser.detector as gender
-                gender_detector = gender.Detector()
-            except ImportError:
-                pass
-
-            def guess_gender(name):
-                name_parts = str(name).strip().split()
-                if not name_parts or name.lower() in ['verified candidate', 'candidate', 'n/a']:
-                    return 'Male'
-                    
-                first_name = name_parts[0].capitalize()
-                first_name_lower = first_name.lower()
-
-                # Explicit Indian Female First Names
-                female_names = {
-                    'pooja', 'priya', 'neha', 'anjali', 'swati', 'divya', 'kavita', 'deepa', 'megha', 'shweta',
-                    'sunita', 'anita', 'kiran', 'rekha', 'rashmi', 'sneha', 'jyoti', 'monika', 'payal', 'richa',
-                    'sonam', 'smita', 'bhavna', 'sapna', 'archana', 'simran', 'preeti', 'renu', 'seema', 'tanvi',
-                    'radha', 'sheetal', 'harshita', 'apoorva', 'srishti', 'kriti', 'nisha', 'sakshi', 'shikha',
-                    'shipra', 'garima', 'pallavi', 'surabhi', 'saloni', 'sonia', 'vandana', 'komal', 'namrata'
-                }
-                
-                # Explicit Indian Male First Names (often ending in -a or -i)
-                male_exceptions = {
-                    'karan', 'bhavin', 'gulab', 'sudhakar', 'nagarjuna', 'krishna', 'rama', 'aditya', 'surya',
-                    'shiva', 'pavan', 'vijay', 'ajay', 'sanjay', 'jay', 'rahul', 'amit', 'sumit', 'vince',
-                    'anil', 'sunil', 'rajesh', 'suresh', 'ramesh', 'dinesh', 'manish', 'mukesh', 'nilesh',
-                    'harish', 'gopal', 'mohan', 'sohan', 'rohan', 'varun', 'tarun', 'arun', 'alok', 'ashok'
-                }
-
-                if first_name_lower in female_names:
-                    return 'Female'
-                if first_name_lower in male_exceptions:
-                    return 'Male'
-
-                if gender_detector:
-                    gen = gender_detector.get_gender(first_name)
-                    if gen in ['male', 'mostly_male']: return 'Male'
-                    if gen in ['female', 'mostly_female']: return 'Female'
-                    
-                # Precise Fallback heuristic (only 'a' or 'i' at end for female names, provided it's not in male list)
-                if first_name_lower.endswith(('a', 'i')) and len(first_name_lower) > 3: 
-                    return 'Female'
-                return 'Male'
-            
-            if 'Name' in df.columns:
-                if 'Gender' not in df.columns:
-                    df['Gender'] = df['Name'].apply(guess_gender)
-                else:
-                    df['Gender'] = df.apply(
-                        lambda row: guess_gender(row['Name']) 
-                        if pd.isna(row.get('Gender')) or str(row.get('Gender')).strip().lower() in ['unknown', 'n/a', ''] 
-                        else row['Gender'], 
-                        axis=1
-                    )
 
         # Attach persistent candidate status from Supabase
         if not df.empty and 'Email' in df.columns:
@@ -312,12 +293,13 @@ def process():
         else:
             df['Status'] = 'new'
 
-        # Define standard display columns
         columns_order = [
             "Rank", "Status", "Name", "Gender", "Email", "Phone", "Experience", "Skill Set", "Matched Skills", "Match Score", "Match Reason"
         ]
         columns_order = [col for col in columns_order if col in df.columns]
-        table_data = df[columns_order].fillna("N/A").to_dict(orient='records')
+        all_records = df[columns_order].fillna("N/A").to_dict(orient='records')
+        total_matches = len(all_records)
+        search_id = str(uuid.uuid4())
 
         # Save Search History in Supabase
         try:
@@ -327,12 +309,17 @@ def process():
                 user_email=user_email,
                 mailbox_account=selected_account,
                 job_description=job_query,
-                batch_size=max_candidates,
-                results_count=len(table_data),
+                batch_size=25,
+                results_count=total_matches,
                 candidates_seen=cand_list
             )
         except Exception as e_hist:
             logging.warning(f"Error saving search history: {e_hist}")
+
+        # Cache all records for pagination
+        db.cache_search_results(search_id, all_records)
+        page_size = 25
+        table_data = all_records[:page_size]
 
         return render_template(
             'process.jinja',
@@ -340,9 +327,11 @@ def process():
             job_role=job_query,
             selected_account=selected_account,
             available_accounts=available_accounts,
-            max_candidates=max_candidates,
             table_data=table_data,
-            columns=columns_order
+            columns=columns_order,
+            search_id=search_id,
+            total_matches=total_matches,
+            page_size=page_size
         )
 
     selected_account = request.args.get('account_email') or session.get('selected_account', default_account)
@@ -352,9 +341,11 @@ def process():
         job_role=None,
         selected_account=selected_account,
         available_accounts=available_accounts,
-        max_candidates=25,
         table_data=[],
-        columns=[]
+        columns=[],
+        search_id=None,
+        total_matches=0,
+        page_size=25
     )
 
 @app.route('/debug-status')
@@ -418,12 +409,22 @@ def api_get_history_item(search_id):
         return jsonify({'success': False, 'error': 'Search history record not found'}), 404
     return jsonify({'success': True, 'data': item})
 
+@app.route('/api/candidate/statuses', methods=['GET'])
+@login_required
+def api_get_candidate_statuses():
+    mailbox = request.args.get('mailbox') or request.args.get('mailbox_account') or session.get('selected_account', 'recruiter@ecorptrainings.com')
+    emails_str = request.args.get('emails', '')
+    emails_list = [e.strip() for e in emails_str.split(',') if e.strip()]
+    statuses = db.get_candidate_statuses(mailbox, emails_list)
+    return jsonify({'success': True, 'statuses': statuses})
+
+@app.route('/api/candidate/status', methods=['POST'])
 @app.route('/mark-status', methods=['POST'])
 @app.route('/api/candidate-status', methods=['POST'])
 @login_required
 def mark_candidate_status():
     data = request.get_json(silent=True) or request.form.to_dict() or {}
-    mailbox_account = data.get('mailbox_account') or session.get('selected_account', 'recruiter@ecorptrainings.com')
+    mailbox_account = data.get('mailbox_account') or data.get('mailbox') or session.get('selected_account', 'recruiter@ecorptrainings.com')
     candidate_email = data.get('candidate_email') or data.get('email')
     candidate_name = data.get('candidate_name') or data.get('name') or ''
     status = data.get('status', 'used')
@@ -435,12 +436,13 @@ def mark_candidate_status():
     success = db.update_candidate_status(mailbox_account, candidate_email, candidate_name, status, notes)
     return jsonify({'success': success, 'status': status, 'email': candidate_email})
 
+@app.route('/api/candidate/bulk_status', methods=['POST'])
 @app.route('/bulk-mark', methods=['POST'])
 @login_required
 def bulk_mark_candidate_status():
     data = request.get_json(silent=True) or {}
-    mailbox_account = data.get('mailbox_account') or session.get('selected_account', 'recruiter@ecorptrainings.com')
-    candidates = data.get('candidates', [])
+    mailbox_account = data.get('mailbox_account') or data.get('mailbox') or session.get('selected_account', 'recruiter@ecorptrainings.com')
+    candidates = data.get('candidates') or data.get('items', [])
     status = data.get('status', 'used')
 
     if not candidates:
@@ -448,6 +450,77 @@ def bulk_mark_candidate_status():
 
     count = db.bulk_update_candidate_status(mailbox_account, candidates, status)
     return jsonify({'success': True, 'count': count, 'status': status})
+
+@app.route('/api/search', methods=['GET'])
+@login_required
+def api_search():
+    import uuid
+    job_query = request.args.get('jd') or request.args.get('job_query') or request.args.get('q', '')
+    selected_account = request.args.get('mailbox') or request.args.get('account_email') or session.get('selected_account', 'recruiter@ecorptrainings.com')
+    search_id = request.args.get('search_id')
+    try:
+        offset = int(request.args.get('offset', 0))
+    except (ValueError, TypeError):
+        offset = 0
+    try:
+        limit = int(request.args.get('limit', 25))
+    except (ValueError, TypeError):
+        limit = 25
+
+    if offset > 0 and search_id:
+        cached = db.get_cached_results(search_id, offset, limit)
+        if not cached.get('expired'):
+            logging.info(f"Load More: search_id={search_id} offset={offset} limit={limit}")
+            candidates = cached.get('results', [])
+            total = cached.get('total', 0)
+            
+            if candidates:
+                emails = [c.get('Email') for c in candidates if c.get('Email')]
+                status_map = db.get_candidate_statuses(selected_account, emails)
+                for c in candidates:
+                    c['Status'] = status_map.get(str(c.get('Email')).strip().lower(), 'new')
+                    
+            return jsonify({
+                "search_id": search_id,
+                "candidates": candidates,
+                "total": total,
+                "offset": offset,
+                "limit": limit,
+                "has_more": (offset + limit) < total
+            })
+        else:
+            logging.info("Search cache expired or missing; rerunning")
+
+    if not search_id:
+        search_id = str(uuid.uuid4())
+
+    df = execute_full_candidate_search(job_query, selected_account, max_candidates=200)
+    total = len(df)
+    logging.info(f"Search started: JD={job_query} mailbox={selected_account} total={total}")
+
+    columns_order = [
+        "Rank", "Status", "Name", "Gender", "Email", "Phone", "Experience", "Skill Set", "Matched Skills", "Match Score", "Match Reason"
+    ]
+    cols = [c for c in columns_order if c in df.columns]
+    all_records = df[cols].fillna("N/A").to_dict(orient='records')
+
+    db.cache_search_results(search_id, all_records)
+
+    sliced_records = all_records[offset:offset+limit]
+    if sliced_records:
+        emails = [c.get('Email') for c in sliced_records if c.get('Email')]
+        status_map = db.get_candidate_statuses(selected_account, emails)
+        for c in sliced_records:
+            c['Status'] = status_map.get(str(c.get('Email')).strip().lower(), 'new')
+
+    return jsonify({
+        "search_id": search_id,
+        "candidates": sliced_records,
+        "total": total,
+        "offset": offset,
+        "limit": limit,
+        "has_more": (offset + limit) < total
+    })
 
 if __name__ == '__main__':
     app.run(debug=True)

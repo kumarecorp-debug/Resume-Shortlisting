@@ -77,7 +77,7 @@ def update_candidate_status(mailbox_account: str, candidate_email: str, candidat
         
     m_account = mailbox_account.lower().strip()
     c_email = candidate_email.lower().strip()
-    c_status = status.lower().strip() if status in ["new", "used", "skipped"] else "used"
+    c_status = status.lower().strip() if status in ["new", "used", "not_used"] else "used"
     c_name = candidate_name.strip() if candidate_name else ""
     
     payload = {
@@ -106,7 +106,7 @@ def bulk_update_candidate_status(mailbox_account: str, candidates: list, status:
         return 0
         
     m_account = mailbox_account.lower().strip()
-    c_status = status.lower().strip() if status in ["new", "used", "skipped"] else "used"
+    c_status = status.lower().strip() if status in ["new", "used", "not_used"] else "used"
     now_iso = datetime.now(timezone.utc).isoformat()
     
     payloads = []
@@ -235,12 +235,88 @@ def get_search_history_item(search_id: str) -> dict:
         logging.error(f"Error fetching search_history item {search_id}: {e}")
         return None
 
+# ============================================================
+# SEARCH CACHE FOR PAGINATION (1 HOUR TTL)
+# ============================================================
+_IN_MEMORY_SEARCH_CACHE = {}
+
+def cache_search_results(search_id: str, results: list) -> str:
+    """
+    Caches search results list in memory and Supabase search_cache table.
+    """
+    import uuid
+    if not search_id:
+        search_id = str(uuid.uuid4())
+        
+    now_dt = datetime.now(timezone.utc)
+    _IN_MEMORY_SEARCH_CACHE[search_id] = {
+        "results": results,
+        "created_at": now_dt
+    }
+    
+    # Try persisting to Supabase search_cache table if present
+    client = get_supabase()
+    if client:
+        try:
+            payload = {
+                "id": search_id,
+                "results": results,
+                "created_at": now_dt.isoformat()
+            }
+            client.table("search_cache").upsert(payload).execute()
+            # Cleanup rows older than 1 hour
+            cutoff = (now_dt - timedelta(hours=1)).isoformat()
+            client.table("search_cache").delete().lt("created_at", cutoff).execute()
+        except Exception as e:
+            logging.debug(f"Note on Supabase search_cache upsert: {e}")
+            
+    return search_id
+
+def get_cached_results(search_id: str, offset: int = 0, limit: int = 25) -> dict:
+    """
+    Retrieves slice of search results from cache (in-memory or Supabase).
+    Returns dict: {'results': [...], 'total': N, 'expired': bool}
+    """
+    if not search_id:
+        return {'results': [], 'total': 0, 'expired': True}
+        
+    now_dt = datetime.now(timezone.utc)
+    
+    # 1. Check in-memory cache
+    if search_id in _IN_MEMORY_SEARCH_CACHE:
+        item = _IN_MEMORY_SEARCH_CACHE[search_id]
+        if now_dt - item["created_at"] < timedelta(hours=1):
+            full_list = item["results"]
+            sliced = full_list[offset:offset + limit]
+            return {'results': sliced, 'total': len(full_list), 'expired': False}
+        else:
+            del _IN_MEMORY_SEARCH_CACHE[search_id]
+            
+    # 2. Check Supabase search_cache table
+    client = get_supabase()
+    if client:
+        try:
+            res = client.table("search_cache").select("results, created_at").eq("id", search_id).execute()
+            if res.data and len(res.data) > 0:
+                rec = res.data[0]
+                c_at_str = rec.get("created_at")
+                c_at = datetime.fromisoformat(c_at_str.replace("Z", "+00:00")) if c_at_str else now_dt
+                if now_dt - c_at < timedelta(hours=1):
+                    full_list = rec.get("results", [])
+                    _IN_MEMORY_SEARCH_CACHE[search_id] = {"results": full_list, "created_at": c_at}
+                    sliced = full_list[offset:offset + limit]
+                    return {'results': sliced, 'total': len(full_list), 'expired': False}
+        except Exception as e:
+            logging.debug(f"Note on Supabase search_cache query: {e}")
+            
+    return {'results': [], 'total': 0, 'expired': True}
+
 def get_table_debug_status() -> dict:
     """
     Returns table existence status and row counts for troubleshooting.
     """
     client = get_supabase()
-    tables = ["candidate_status", "search_history"]
+    tables = ["candidate_status", "search_history", "search_cache"]
     result = {
         "supabase_configured": bool(client),
         "supabase_url": SUPABASE_URL,

@@ -9,19 +9,20 @@ An intelligent automated recruitment dashboard that integrates with Gmail to sea
 - **AI-Powered Extraction**: Extracts candidate name, email, phone number, total experience, and technical skill set using Gemini AI.
 - **Match Scoring & Ranking**: Computes a 0–100 match score, identifies matched JD skills, provides a one-line justification, and ranks candidates in descending order.
 - **Candidate Status Tracking (Feature 3)**:
-  - Persistent status per candidate (`🟢 New`, `🔵 Used`, `🟡 Skipped`).
-  - Action buttons: "Mark Used", "Mark Skipped", and "📋 Copy & Mark Used".
-  - Quick status filter (`Not Used`, `New Only`, `Used Only`, `Skipped Only`).
-  - Bulk actions bar for marking multiple selected candidates simultaneously.
+  - Persistent status per candidate (`🟢 New`, `🔵 Used`, `🟡 Not Used`).
+  - Copy = Auto-Mark Used: Copying candidate info (individual or bulk) automatically updates status to `used` with optimistic UI update and a 5-second Undo Toast.
+  - Interactive Status Badge: Clickable badge popup menu (`New`, `Used`, `Not Used`) for manual status overrides.
+  - Toolbar Filters: Status filter (`All`, `New`, `Used`, `Not Used`) and default-checked `☑ Hide candidates marked as Used`.
+- **Pagination via "Load More" (25 per page)**:
+  - Replaces batch limit dropdown with smooth 25-per-page pagination.
+  - Below table indicator: `Showing 25 of N matches [Load Next 25 →]`.
+  - Caches full search result list server-side (in-memory & Supabase `search_cache`) with 1-hour TTL.
+  - Continuous ranking (#26, #27...) on subsequent page loads.
 - **Search History Log (Feature 1)**:
-  - Stores all past searches persistently in Supabase.
-  - Dedicated `/history` page with Calendar Date Range Picker (`From`, `To`, `Last 7 Days`, `Last 30 Days`).
-  - One-click **Re-run Search 🔄** functionality.
-- **Cumulative Batch Search (Feature 2)**:
-  - "Skip already-seen candidates" toggle to filter out candidates returned in previous searches.
-  - Displays summary banner showing new vs hidden candidates with `[Show seen too]` toggle.
+  - Stores all past searches persistently in Supabase (`search_history` table).
+  - Dedicated `/history` page with Calendar Date Range Picker (`From`, `To`, `Last 30 Days`) and one-click **Re-run Search 🔄**.
 - **Debug & Health Monitoring**:
-  - `/debug-status` route to verify Supabase table connectivity and row counts.
+  - `/debug-status` route to verify Supabase table connectivity (`candidate_status`, `search_history`, `search_cache`).
 
 ---
 
