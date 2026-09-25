@@ -583,6 +583,7 @@
     </footer>
 
     <script src="{{ url_for('static', filename='js/pagination.js') }}"></script>
+    <script>
         function updateAccountBadge(accountEmail) {
             const badge = document.getElementById('active-mail-label');
             if (badge) {
@@ -593,30 +594,33 @@
             } catch(e) {}
         }
 
-        document.getElementById('search-form').addEventListener('submit', function() {
-            const indicator = document.getElementById('loading-indicator');
-            const messageElem = document.getElementById('loading-message');
-            const selectedMail = document.getElementById('account_email') ? document.getElementById('account_email').value : 'selected mailbox';
-            indicator.style.display = 'block';
+        const searchForm = document.getElementById('search-form');
+        if (searchForm) {
+            searchForm.addEventListener('submit', function() {
+                const indicator = document.getElementById('loading-indicator');
+                const messageElem = document.getElementById('loading-message');
+                const selectedMail = document.getElementById('account_email') ? document.getElementById('account_email').value : 'selected mailbox';
+                if (indicator) indicator.style.display = 'block';
 
-            const progressSteps = [
-                `Authenticating with ${selectedMail}...`,
-                `Searching mailbox ${selectedMail} for relevant candidate emails...`,
-                "Filtering and downloading resume attachments (.pdf, .docx, .doc)...",
-                "Extracting candidate contact info (Email & Phone Number)...",
-                "Analyzing Skills & Work Experience with AI...",
-                "Calculating JD Match Scores & Ranking Candidates..."
-            ];
+                const progressSteps = [
+                    `Authenticating with ${selectedMail}...`,
+                    `Searching mailbox ${selectedMail} for relevant candidate emails...`,
+                    "Filtering and downloading resume attachments (.pdf, .docx, .doc)...",
+                    "Extracting candidate contact info (Email & Phone Number)...",
+                    "Analyzing Skills & Work Experience with AI...",
+                    "Calculating JD Match Scores & Ranking Candidates..."
+                ];
 
-            let stepIdx = 0;
-            messageElem.textContent = progressSteps[stepIdx];
-            const interval = setInterval(() => {
-                stepIdx = (stepIdx + 1) % progressSteps.length;
-                messageElem.textContent = progressSteps[stepIdx];
-            }, 2500);
+                let stepIdx = 0;
+                if (messageElem) messageElem.textContent = progressSteps[stepIdx];
+                const interval = setInterval(() => {
+                    stepIdx = (stepIdx + 1) % progressSteps.length;
+                    if (messageElem) messageElem.textContent = progressSteps[stepIdx];
+                }, 2500);
 
-            sessionStorage.setItem('loadingInterval', interval);
-        });
+                sessionStorage.setItem('loadingInterval', interval);
+            });
+        }
 
         window.addEventListener('load', function() {
             const interval = sessionStorage.getItem('loadingInterval');
@@ -633,313 +637,6 @@
                 input.focus();
             }
         }
-
-        function updateScoreFilter(val) {
-            const label = document.getElementById('slider-val');
-            if (label) {
-                label.textContent = val + '%';
-            }
-            filterTable();
-        }
-
-        let currentFilterTab = 'all';
-
-        function setSelectionFilter(mode) {
-            currentFilterTab = mode;
-            const tabAll = document.getElementById('tab-all');
-            const tabSelected = document.getElementById('tab-selected');
-            
-            if (mode === 'all') {
-                tabAll.style.background = '#2563eb';
-                tabAll.style.color = 'white';
-                tabSelected.style.background = 'transparent';
-                tabSelected.style.color = '#475569';
-            } else {
-                tabSelected.style.background = '#2563eb';
-                tabSelected.style.color = 'white';
-                tabAll.style.background = 'transparent';
-                tabAll.style.color = '#475569';
-            }
-            filterTable();
-        }
-
-        function onTrainerSelectChange(checkbox) {
-            updateSelectedCount();
-            if (currentFilterTab === 'selected') {
-                filterTable();
-            }
-        }
-
-        function toggleSelectAll(masterCheckbox) {
-            const checkboxes = document.querySelectorAll('.trainer-checkbox');
-            checkboxes.forEach(cb => {
-                cb.checked = masterCheckbox.checked;
-            });
-            updateSelectedCount();
-            if (currentFilterTab === 'selected') {
-                filterTable();
-            }
-        }
-
-        let currentStatusFilter = 'not_used'; // Default: Not Used (New & Skipped)
-
-        function filterStatus(val) {
-            currentStatusFilter = val;
-            filterTable();
-        }
-
-        function updateSelectedCount() {
-            const checkboxes = document.querySelectorAll('.trainer-checkbox');
-            let selectedCount = 0;
-            checkboxes.forEach(cb => {
-                if (cb.checked) selectedCount++;
-            });
-            const selectedTabElem = document.getElementById('count-selected-tab');
-            if (selectedTabElem) {
-                selectedTabElem.textContent = selectedCount;
-            }
-            const selectedBadge = document.getElementById('selected-count-badge');
-            if (selectedBadge) {
-                selectedBadge.textContent = selectedCount;
-            }
-        }
-
-        function updateRowBadge(row, status) {
-            row.setAttribute('data-status', status);
-            const statusCell = row.querySelector('.status-cell');
-            if (statusCell) {
-                if (status === 'used') {
-                    statusCell.innerHTML = '<span class="badge-status badge-status-used">🔵 Used</span>';
-                } else if (status === 'skipped') {
-                    statusCell.innerHTML = '<span class="badge-status badge-status-skipped">🟡 Skipped</span>';
-                } else {
-                    statusCell.innerHTML = '<span class="badge-status badge-status-new">🟢 New</span>';
-                }
-            }
-            filterTable();
-        }
-
-        function markSingleStatus(btn, status) {
-            const row = btn.closest('tr');
-            if (!row) return;
-            const cb = row.querySelector('.trainer-checkbox');
-            const email = cb ? cb.getAttribute('data-email') : null;
-            const name = cb ? cb.getAttribute('data-name') : '';
-            const mailbox = document.getElementById('account_email') ? document.getElementById('account_email').value : '';
-
-            if (!email) return;
-
-            fetch('/mark-status', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    mailbox_account: mailbox,
-                    candidate_email: email,
-                    candidate_name: name,
-                    status: status
-                })
-            })
-            .then(res => res.json())
-            .then(data => {
-                if (data.success) {
-                    updateRowBadge(row, status);
-                }
-            })
-            .catch(err => console.error('Error marking status:', err));
-        }
-
-        function copyAndMarkUsed(btn) {
-            const row = btn.closest('tr');
-            if (!row) return;
-            
-            const nameCell = row.querySelector('.cand-name');
-            const emailCell = row.querySelector('.cand-email');
-            const phoneCell = row.querySelector('.cand-phone');
-
-            const name = nameCell ? nameCell.innerText.trim() : '';
-            const email = emailCell ? emailCell.innerText.trim() : '';
-            const phone = phoneCell ? phoneCell.innerText.trim() : '';
-
-            const copyText = `${name} | Email: ${email} | Phone: ${phone}`;
-
-            if (navigator.clipboard && navigator.clipboard.writeText) {
-                navigator.clipboard.writeText(copyText).then(() => {
-                    markSingleStatus(btn, 'used');
-                    alert(`Copied to Clipboard & Marked as Used:\n${copyText}`);
-                }).catch(err => {
-                    markSingleStatus(btn, 'used');
-                    alert(`Marked as Used! (Data: ${copyText})`);
-                });
-            } else {
-                markSingleStatus(btn, 'used');
-                alert(`Marked as Used: ${copyText}`);
-            }
-        }
-
-        function bulkMarkSelected(status) {
-            const checkboxes = document.querySelectorAll('.trainer-checkbox:checked');
-            if (checkboxes.length === 0) {
-                alert('Please select at least one candidate first using the checkboxes.');
-                return;
-            }
-
-            const mailbox = document.getElementById('account_email') ? document.getElementById('account_email').value : '';
-            const candidates = [];
-            const rowsToUpdate = [];
-
-            checkboxes.forEach(cb => {
-                const row = cb.closest('tr');
-                const email = cb.getAttribute('data-email');
-                const name = cb.getAttribute('data-name') || '';
-                if (email) {
-                    candidates.push({ email: email, name: name });
-                    if (row) rowsToUpdate.push(row);
-                }
-            });
-
-            if (candidates.length === 0) return;
-
-            fetch('/bulk-mark', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    mailbox_account: mailbox,
-                    candidates: candidates,
-                    status: status
-                })
-            })
-            .then(res => res.json())
-            .then(data => {
-                if (data.success) {
-                    rowsToUpdate.forEach(r => updateRowBadge(r, status));
-                    alert(`Successfully updated ${candidates.length} candidates to status: ${status.toUpperCase()}`);
-                }
-            })
-            .catch(err => console.error('Error bulk updating status:', err));
-        }
-
-        function filterTable() {
-            const filterInput = document.getElementById('filter-box');
-            const filterValue = filterInput ? filterInput.value.toLowerCase().trim() : '';
-            const slider = document.getElementById('score-slider');
-            const minScore = slider ? parseFloat(slider.value) : 0;
-            const statusSelect = document.getElementById('status-filter-select');
-            if (statusSelect) {
-                currentStatusFilter = statusSelect.value;
-            }
-            
-            const tableBody = document.getElementById('table-body');
-            if (!tableBody) return;
-            const rows = tableBody.getElementsByTagName('tr');
-            let visibleCount = 0;
-
-            for (let i = 0; i < rows.length; i++) {
-                const row = rows[i];
-                const checkbox = row.querySelector('.trainer-checkbox');
-                const isChecked = checkbox ? checkbox.checked : false;
-
-                const rawScore = row.getAttribute('data-score') || '0';
-                const scoreNum = parseFloat(String(rawScore).replace(/[^\d.]/g, '')) || 0;
-                const rowStatus = (row.getAttribute('data-status') || 'new').toLowerCase();
-                const text = row.textContent.toLowerCase();
-
-                const matchesText = !filterValue || text.includes(filterValue);
-                const matchesScore = scoreNum >= minScore;
-                const matchesTab = (currentFilterTab === 'all') || (currentFilterTab === 'selected' && isChecked);
-
-                let matchesStatus = true;
-                if (currentStatusFilter === 'not_used') {
-                    matchesStatus = (rowStatus === 'new' || rowStatus === 'skipped');
-                } else if (currentStatusFilter !== 'all') {
-                    matchesStatus = (rowStatus === currentStatusFilter);
-                }
-
-                if (matchesText && matchesScore && matchesTab && matchesStatus) {
-                    row.style.display = '';
-                    visibleCount++;
-                } else {
-                    row.style.display = 'none';
-                }
-            }
-
-            const visibleCountElem = document.getElementById('visible-count');
-            if (visibleCountElem) {
-                visibleCountElem.textContent = visibleCount;
-            }
-            updateSelectedCount();
-        }
-
-        {% if table_data is not none and table_data|length > 0 %}
-        const columns = {{ columns|tojson | safe }};
-        const tableData = {{ table_data|tojson | safe }};
-
-        function copyColumnData(colIndex) {
-            const tableBody = document.getElementById('table-body');
-            if (!tableBody) return;
-            const rows = tableBody.getElementsByTagName('tr');
-            const dataToCopy = [];
-
-            for (let i = 0; i < rows.length; i++) {
-                if (rows[i].style.display !== 'none') {
-                    const cell = rows[i].cells[colIndex];
-                    if (cell) {
-                        dataToCopy.push(cell.innerText.trim());
-                    }
-                }
-            }
-
-            if (dataToCopy.length > 0) {
-                const text = dataToCopy.join('\n');
-                if (navigator.clipboard && navigator.clipboard.writeText) {
-                    navigator.clipboard.writeText(text).then(() => {
-                        alert('Copied ' + dataToCopy.length + ' rows to clipboard!');
-                    }).catch(err => {
-                        console.error('Failed to copy: ', err);
-                        alert('Failed to copy data.');
-                    });
-                } else {
-                    // Fallback for older browsers
-                    const textArea = document.createElement("textarea");
-                    textArea.value = text;
-                    document.body.appendChild(textArea);
-                    textArea.select();
-                    try {
-                        document.execCommand('copy');
-                        alert('Copied ' + dataToCopy.length + ' rows to clipboard!');
-                    } catch (err) {
-                        console.error('Failed to copy: ', err);
-                    }
-                    document.body.removeChild(textArea);
-                }
-            }
-        }
-
-        function downloadCSV() {
-            let csv = [];
-            csv.push(columns.join(','));
-
-            tableData.forEach(row => {
-                let rowValues = columns.map(col => {
-                    let val = row[col] ? String(row[col]) : '';
-                    val = val.replace(/"/g, '""');
-                    if (val.includes(',') || val.includes('\n') || val.includes('"')) {
-                        val = `"${val}"`;
-                    }
-                    return val;
-                });
-                csv.push(rowValues.join(','));
-            });
-
-            const blob = new Blob([csv.join('\n')], { type: 'text/csv;charset=utf-8;' });
-            const link = document.createElement('a');
-            const url = URL.createObjectURL(blob);
-            link.setAttribute('href', url);
-            link.setAttribute('download', `shortlisted_candidates_${new Date().toISOString().slice(0,10)}.csv`);
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-        }
-        {% endif %}
     </script>
 </body>
 </html>
