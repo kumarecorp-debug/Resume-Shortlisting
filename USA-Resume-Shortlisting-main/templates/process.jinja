@@ -464,7 +464,7 @@
                 <div class="table-controls" style="flex-wrap: wrap; gap: 14px;">
                     <div>
                         <h2 style="margin: 0; font-size: 1.3rem; color: #0f172a;" id="candidates-count-title">
-                            Shortlisted Candidates (<span id="visible-count">{{ table_data|length }}</span> of {{ total_matches or table_data|length }})
+                            Shortlisted Candidates (<span id="visible-count">{{ table_data|length }}</span> of {{ total_matches or table_data|length }} matches<span id="hidden-used-text"></span>)
                         </h2>
                         {% if job_role %}
                             <p style="margin: 4px 0 0 0; color: #64748b; font-size: 0.9rem;" title="{{ job_role }}">
@@ -495,9 +495,10 @@
                             </select>
 
                             <!-- Hide Used Checkbox -->
-                            <label style="display: inline-flex; align-items: center; gap: 6px; font-weight: 600; color: #1e293b; font-size: 0.88rem; cursor: pointer;">
-                                <input type="checkbox" id="chk-hide-used" onchange="applyTableFilters()" checked style="transform: scale(1.15); cursor: pointer;">
-                                <span>☑ Hide candidates marked as Used</span>
+                            <label for="chk-hide-used" style="display: inline-flex; align-items: center; gap: 6px; font-weight: 600; color: #1e293b; font-size: 0.88rem; cursor: pointer; user-select: none; z-index: 5; position: relative;">
+                                <input type="checkbox" id="chk-hide-used" checked style="transform: scale(1.2); cursor: pointer; pointer-events: auto;">
+                                <span>Hide candidates marked as Used</span>
+                                <span id="hide-used-spinner" class="spinner" style="display: none; width: 14px; height: 14px; border-width: 2px; margin: 0 0 0 4px;"></span>
                             </label>
 
                             <input type="text" id="filter-box" class="filter-input" placeholder="Search by Name, Skill..." oninput="applyTableFilters()" style="width: 200px;">

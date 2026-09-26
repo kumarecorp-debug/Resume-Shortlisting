@@ -29,8 +29,38 @@ document.addEventListener('DOMContentLoaded', function () {
         state.total = parseInt(metaContainer.getAttribute('data-total') || '0', 10);
     }
 
+    const chkHideUsed = document.getElementById('chk-hide-used');
+    if (chkHideUsed) {
+        // 3. State persistence: load from localStorage (default: ON / true)
+        const savedState = localStorage.getItem('pref_hide_used');
+        if (savedState !== null) {
+            chkHideUsed.checked = (savedState === 'true');
+        } else {
+            chkHideUsed.checked = true;
+        }
+
+        // 1 & 7. Explicit click / change event listener with console.log
+        chkHideUsed.addEventListener('change', function () {
+            console.log("hide_used toggled:", this.checked);
+            localStorage.setItem('pref_hide_used', this.checked);
+            onHideUsedToggled(this.checked);
+        });
+    }
+
     applyTableFilters();
 });
+
+function onHideUsedToggled(isChecked) {
+    const spinner = document.getElementById('hide-used-spinner');
+    if (spinner) spinner.style.display = 'inline-block';
+
+    // 2. Immediate filter refresh
+    applyTableFilters();
+
+    setTimeout(() => {
+        if (spinner) spinner.style.display = 'none';
+    }, 250);
+}
 
 // ============================================================
 // COLUMN COPY FUNCTIONALITY
@@ -498,6 +528,7 @@ function applyTableFilters() {
 
     const rows = document.querySelectorAll('#table-body tr');
     let visibleCount = 0;
+    let hiddenUsedCount = 0;
 
     rows.forEach(row => {
         const status = row.getAttribute('data-status') || 'new';
@@ -525,6 +556,7 @@ function applyTableFilters() {
         let showByStatus = true;
         if (hideUsed && status === 'used') {
             showByStatus = false;
+            hiddenUsedCount++;
         } else if (statusFilter === 'new' && status !== 'new') {
             showByStatus = false;
         } else if (statusFilter === 'used' && status !== 'used') {
@@ -545,6 +577,15 @@ function applyTableFilters() {
 
     const visibleBadge = document.getElementById('visible-count');
     if (visibleBadge) visibleBadge.textContent = visibleCount;
+
+    const hiddenTextElem = document.getElementById('hidden-used-text');
+    if (hiddenTextElem) {
+        if (hideUsed && hiddenUsedCount > 0) {
+            hiddenTextElem.textContent = ` (${hiddenUsedCount} hidden as Used)`;
+        } else {
+            hiddenTextElem.textContent = '';
+        }
+    }
 
     const checked = document.querySelectorAll('.trainer-checkbox:checked');
     const tabBadge = document.getElementById('tab-selected-count');

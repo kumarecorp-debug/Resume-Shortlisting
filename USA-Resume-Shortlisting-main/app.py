@@ -464,6 +464,7 @@ def api_search():
     job_query = request.args.get('jd') or request.args.get('job_query') or request.args.get('q', '')
     selected_account = request.args.get('mailbox') or request.args.get('account_email') or session.get('selected_account', 'recruiter@ecorptrainings.com')
     search_id = request.args.get('search_id')
+    hide_used = request.args.get('hide_used', 'false').lower() in ['true', '1', 'yes']
     try:
         offset = int(request.args.get('offset', 0))
     except (ValueError, TypeError):
@@ -486,12 +487,19 @@ def api_search():
                 for c in candidates:
                     c['Status'] = status_map.get(str(c.get('Email')).strip().lower(), 'new')
                     
+            hidden_used_count = 0
+            if hide_used:
+                orig_len = len(candidates)
+                candidates = [c for c in candidates if c.get('Status') != 'used']
+                hidden_used_count = orig_len - len(candidates)
+
             return jsonify({
                 "search_id": search_id,
                 "candidates": candidates,
                 "total": total,
                 "offset": offset,
                 "limit": limit,
+                "hidden_used_count": hidden_used_count,
                 "has_more": (offset + limit) < total
             })
         else:
@@ -513,11 +521,17 @@ def api_search():
     db.cache_search_results(search_id, all_records)
 
     sliced_records = all_records[offset:offset+limit]
+    hidden_used_count = 0
     if sliced_records:
         emails = [c.get('Email') for c in sliced_records if c.get('Email')]
         status_map = db.get_candidate_statuses(selected_account, emails)
         for c in sliced_records:
             c['Status'] = status_map.get(str(c.get('Email')).strip().lower(), 'new')
+            
+        if hide_used:
+            orig_len = len(sliced_records)
+            sliced_records = [c for c in sliced_records if c.get('Status') != 'used']
+            hidden_used_count = orig_len - len(sliced_records)
 
     return jsonify({
         "search_id": search_id,
@@ -525,6 +539,7 @@ def api_search():
         "total": total,
         "offset": offset,
         "limit": limit,
+        "hidden_used_count": hidden_used_count,
         "has_more": (offset + limit) < total
     })
 
