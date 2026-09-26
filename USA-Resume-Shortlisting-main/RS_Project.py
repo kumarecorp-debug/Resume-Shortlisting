@@ -1415,9 +1415,8 @@ def main(job_query, account_email="recruiter@ecorptrainings.com", max_candidates
     logging.info(f"Initiating resume search & extraction for query: '{job_query}' on account: '{email_key}' with max limit: {max_candidates}")
     service = auto_authenticate_google(email_key)
     
-    search_query = build_gmail_search_query(job_query)
-    # Fetch extra email buffer for filtering noise emails
-    fetch_buffer = max_candidates + 15 if max_candidates < 150 else max_candidates
+    # Fetch generous email buffer so non-resume emails filtered out do not prevent reaching max_candidates target
+    fetch_buffer = max(max_candidates * 3, 60)
     messages = get_matching_emails(service, search_query, max_results=fetch_buffer)
     
     default_cols = ["Rank", "Name", "Gender", "Email", "Phone", "Experience", "Skill Set", "Matched Skills", "Match Score", "Match Reason"]
