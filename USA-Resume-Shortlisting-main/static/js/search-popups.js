@@ -384,7 +384,7 @@
     // ============================================================
     // INITIALIZATION & EVENT LISTENERS
     // ============================================================
-    window.addEventListener('DOMContentLoaded', () => {
+    function setupApp() {
         initContainers();
 
         const textarea = document.getElementById('job_query');
@@ -392,7 +392,6 @@
         const selectAccount = document.getElementById('account_email');
 
         if (selectAccount) {
-            // Preload suggestions on page load for initial mailbox
             fetchSuggestions(selectAccount.value);
             selectAccount.addEventListener('change', () => {
                 fetchSuggestions(selectAccount.value);
@@ -400,12 +399,13 @@
         }
 
         if (textarea) {
-            // Focus event -> show suggestions dropdown
             textarea.addEventListener('focus', () => {
                 showSuggestions();
             });
+            textarea.addEventListener('click', () => {
+                showSuggestions();
+            });
 
-            // Input event -> debounce 500ms then check Feature A
             textarea.addEventListener('input', () => {
                 hideSuggestions();
                 clearTimeout(typingTimer);
@@ -415,16 +415,22 @@
             });
         }
 
-        // Intercept search form submission to run Feature B check
         if (form) {
             form.addEventListener('submit', function(e) {
-                if (pendingFormSubmit) return; // Allow normal submit
+                if (pendingFormSubmit) return;
                 e.preventDefault();
                 hideSuggestions();
                 hidePopupA();
                 triggerSearchFlow();
             });
         }
+    }
+
+    if (document.readyState === 'loading') {
+        window.addEventListener('DOMContentLoaded', setupApp);
+    } else {
+        setupApp();
+    }
 
         // Dismiss popups on Escape or clicking outside
         document.addEventListener('keydown', (e) => {
