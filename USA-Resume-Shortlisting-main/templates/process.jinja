@@ -486,22 +486,7 @@
                         </div>
 
                         <div style="display: flex; align-items: center; gap: 10px;">
-                            <!-- Status Filter Dropdown -->
-                            <select id="status-filter-select" onchange="applyTableFilters()" class="filter-input" style="padding: 6px 10px; font-weight: 600; cursor: pointer;">
-                                <option value="all">All Statuses</option>
-                                <option value="new">New Only 🟢</option>
-                                <option value="used">Used Only 🔵</option>
-                                <option value="not_used">Not Used Only 🟡</option>
-                            </select>
-
-                            <!-- Hide Used Checkbox -->
-                            <label for="chk-hide-used" style="display: inline-flex; align-items: center; gap: 6px; font-weight: 600; color: #1e293b; font-size: 0.88rem; cursor: pointer; user-select: none; z-index: 5; position: relative;">
-                                <input type="checkbox" id="chk-hide-used" checked style="transform: scale(1.2); cursor: pointer; pointer-events: auto;">
-                                <span>Hide candidates marked as Used</span>
-                                <span id="hide-used-spinner" class="spinner" style="display: none; width: 14px; height: 14px; border-width: 2px; margin: 0 0 0 4px;"></span>
-                            </label>
-
-                            <input type="text" id="filter-box" class="filter-input" placeholder="Search by Name, Skill..." oninput="applyTableFilters()" style="width: 200px;">
+                            <input type="text" id="filter-box" class="filter-input" placeholder="Search by Name, Skill..." oninput="applyTableFilters()" style="width: 220px;">
 
                             <button type="button" class="btn-download" onclick="downloadCSV()" style="display: inline-flex; align-items: center; gap: 6px;">Download CSV 📥</button>
                         </div>
@@ -520,44 +505,30 @@
                 </div>
 
                 <div class="table-wrapper">
-                    <table class="results-table" id="results-table" style="min-width: 1250px;">
+                    <table class="results-table" id="results-table" style="min-width: 1200px;">
                         <thead>
                             <tr>
                                 <th style="text-align: center; width: 35px;">☐</th>
                                 <th style="text-align: center; width: 45px;">Rank</th>
-                                <th style="text-align: center; width: 95px;">Status</th>
-                                <th style="width: 130px;">Name <button type="button" class="copy-btn" onclick="copyColumnData('Name', 4)" title="Copy all visible Names">📋</button></th>
-                                <th style="width: 75px;">Gender <button type="button" class="copy-btn" onclick="copyColumnData('Gender', 5)" title="Copy all visible Genders">📋</button></th>
-                                <th style="width: 170px;">Email <button type="button" class="copy-btn" onclick="copyColumnData('Email', 6)" title="Copy all visible Emails">📋</button></th>
-                                <th style="width: 150px;">Phone <button type="button" class="copy-btn" onclick="copyColumnData('Phone', 7)" title="Copy all visible Phone Numbers">📋</button></th>
-                                <th style="text-align: center; width: 85px;">Exp <button type="button" class="copy-btn" onclick="copyColumnData('Experience', 8)" title="Copy all visible Experience">📋</button></th>
-                                <th style="width: 160px;">Skill Set <button type="button" class="copy-btn" onclick="copyColumnData('Skill Set', 9)" title="Copy all visible Skill Sets">📋</button></th>
-                                <th style="width: 130px;">Matched Skills <button type="button" class="copy-btn" onclick="copyColumnData('Matched Skills', 10)" title="Copy all visible Matched Skills">📋</button></th>
-                                <th style="text-align: center; width: 70px;">Score <button type="button" class="copy-btn" onclick="copyColumnData('Match Score', 11)" title="Copy all visible Match Scores">📋</button></th>
-                                <th style="width: 150px;">Reason <button type="button" class="copy-btn" onclick="copyColumnData('Match Reason', 12)" title="Copy all visible Match Reasons">📋</button></th>
+                                <th style="width: 130px;">Name <button type="button" class="copy-btn" onclick="copyColumnData('Name', 3)" title="Copy all visible Names">📋</button></th>
+                                <th style="width: 75px;">Gender <button type="button" class="copy-btn" onclick="copyColumnData('Gender', 4)" title="Copy all visible Genders">📋</button></th>
+                                <th style="width: 170px;">Email <button type="button" class="copy-btn" onclick="copyColumnData('Email', 5)" title="Copy all visible Emails">📋</button></th>
+                                <th style="width: 150px;">Phone <button type="button" class="copy-btn" onclick="copyColumnData('Phone', 6)" title="Copy all visible Phone Numbers">📋</button></th>
+                                <th style="text-align: center; width: 85px;">Exp <button type="button" class="copy-btn" onclick="copyColumnData('Experience', 7)" title="Copy all visible Experience">📋</button></th>
+                                <th style="width: 160px;">Skill Set <button type="button" class="copy-btn" onclick="copyColumnData('Skill Set', 8)" title="Copy all visible Skill Sets">📋</button></th>
+                                <th style="width: 130px;">Matched Skills <button type="button" class="copy-btn" onclick="copyColumnData('Matched Skills', 9)" title="Copy all visible Matched Skills">📋</button></th>
+                                <th style="text-align: center; width: 70px;">Score <button type="button" class="copy-btn" onclick="copyColumnData('Match Score', 10)" title="Copy all visible Match Scores">📋</button></th>
+                                <th style="width: 150px;">Reason <button type="button" class="copy-btn" onclick="copyColumnData('Match Reason', 11)" title="Copy all visible Match Reasons">📋</button></th>
                             </tr>
                         </thead>
                         <tbody id="table-body">
                             {% for row in table_data %}
-                                {% set cand_status = row['Status'] if 'Status' in row and row['Status'] else 'new' %}
-                                <tr data-status="{{ cand_status }}" data-email="{{ row['Email'] if row['Email'] else '' }}" id="row-{{ loop.index }}">
+                                <tr id="row-{{ loop.index }}">
                                     <td style="text-align: center;">
                                         <input type="checkbox" class="trainer-checkbox" data-email="{{ row['Email'] if row['Email'] else '' }}" data-name="{{ row['Name'] if row['Name'] else '' }}" data-phone="{{ row['Phone'] if row['Phone'] else '' }}" onchange="onTrainerSelectChange()" style="cursor: pointer; transform: scale(1.15);">
                                     </td>
                                     <td style="text-align: center;">
                                         <span class="tag-rank">#{{ row['Rank'] if 'Rank' in row else loop.index }}</span>
-                                    </td>
-                                    <td class="status-cell" style="text-align: center;">
-                                        <div class="status-dropdown-wrapper" style="position: relative; display: inline-block;">
-                                            <button type="button" class="badge-status {% if cand_status == 'used' %}badge-status-used{% elif cand_status == 'not_used' or cand_status == 'skipped' %}badge-status-notused{% else %}badge-status-new{% endif %}" onclick="toggleStatusMenu(this, event)" style="cursor: pointer; border: none; font-family: inherit;">
-                                                {% if cand_status == 'used' %}🔵 Used{% elif cand_status == 'not_used' or cand_status == 'skipped' %}🟡 Not Used{% else %}🟢 New{% endif %} ▾
-                                            </button>
-                                            <div class="status-menu" style="display: none; position: absolute; top: 100%; left: 50%; transform: translateX(-50%); background: white; border: 1px solid #cbd5e1; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); z-index: 100; min-width: 110px; padding: 4px 0; text-align: left;">
-                                                <div onclick="changeCandidateStatus(this, '{{ row['Email'] }}', '{{ row['Name'] }}', 'new')" style="padding: 6px 12px; cursor: pointer; font-size: 0.86rem; font-weight: 600; color: #15803d;" onmouseover="this.style.background='#f0fdf4'" onmouseout="this.style.background='transparent'">🟢 New</div>
-                                                <div onclick="changeCandidateStatus(this, '{{ row['Email'] }}', '{{ row['Name'] }}', 'used')" style="padding: 6px 12px; cursor: pointer; font-size: 0.86rem; font-weight: 600; color: #1d4ed8;" onmouseover="this.style.background='#eff6ff'" onmouseout="this.style.background='transparent'">🔵 Used</div>
-                                                <div onclick="changeCandidateStatus(this, '{{ row['Email'] }}', '{{ row['Name'] }}', 'not_used')" style="padding: 6px 12px; cursor: pointer; font-size: 0.86rem; font-weight: 600; color: #b45309;" onmouseover="this.style.background='#fefce8'" onmouseout="this.style.background='transparent'">🟡 Not Used</div>
-                                            </div>
-                                        </div>
                                     </td>
                                     <td class="cand-name" style="font-weight: 600; color: #0f172a; word-break: break-word;">
                                         {{ row['Name'] }}
