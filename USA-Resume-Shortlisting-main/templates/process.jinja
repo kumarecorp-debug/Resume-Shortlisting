@@ -534,7 +534,6 @@
                                 <th style="width: 130px;">Matched Skills <button type="button" class="copy-btn" onclick="copyColumnData('Matched Skills', 10)" title="Copy all visible Matched Skills">📋</button></th>
                                 <th style="text-align: center; width: 70px;">Score <button type="button" class="copy-btn" onclick="copyColumnData('Match Score', 11)" title="Copy all visible Match Scores">📋</button></th>
                                 <th style="width: 150px;">Reason <button type="button" class="copy-btn" onclick="copyColumnData('Match Reason', 12)" title="Copy all visible Match Reasons">📋</button></th>
-                                <th style="text-align: center; width: 75px;">Copy</th>
                             </tr>
                         </thead>
                         <tbody id="table-body">
@@ -585,9 +584,6 @@
                                     </td>
                                     <td style="font-size: 0.82rem; line-height: 1.3; color: #475569; word-break: break-word;">
                                         {{ row['Match Reason'] if 'Match Reason' in row else 'N/A' }}
-                                    </td>
-                                    <td style="text-align: center;">
-                                        <button type="button" class="btn-action-small btn-copy-action" onclick="copySingleCandidate(this)" title="Copy Candidate Info & Mark as Used">📋 Copy</button>
                                     </td>
                                 </tr>
                             {% endfor %}
