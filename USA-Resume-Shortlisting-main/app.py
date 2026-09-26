@@ -505,12 +505,14 @@ def api_search():
         else:
             logging.info("Search cache expired or missing; rerunning")
 
-    if not search_id:
-        search_id = str(uuid.uuid4())
+    try:
+        max_candidates = int(request.args.get('max_candidates', 50))
+    except (ValueError, TypeError):
+        max_candidates = 50
 
-    df = execute_full_candidate_search(job_query, selected_account, max_candidates=50)
+    df = execute_full_candidate_search(job_query, selected_account, max_candidates=max_candidates)
     total = len(df)
-    logging.info(f"Search started: JD={job_query} mailbox={selected_account} total={total}")
+    logging.info(f"Search started: JD={job_query} mailbox={selected_account} max_candidates={max_candidates} total={total}")
 
     columns_order = [
         "Rank", "Status", "Name", "Gender", "Email", "Phone", "Experience", "Skill Set", "Matched Skills", "Match Score", "Match Reason"

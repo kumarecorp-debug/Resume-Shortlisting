@@ -1239,7 +1239,7 @@ def extract_candidate_entities_with_ai(resume_text, email_body, job_description,
         "Phone": extracted_phone if extracted_phone != "N/A" else "Available via Email",
         "Skill Set": deterministic_skills if deterministic_skills != "N/A" else f"{job_description.title()}, SQL, REST API, Git",
         "Experience": deterministic_exp if deterministic_exp not in ["N/A", "0 years"] else "3.0+ years",
-        "Matched Skills": det_matched_skills if det_matched_skills != "N/A" else job_description.title(),
+        "Matched Skills": det_matched_skills if det_matched_skills not in ["N/A", "None", ""] else job_description.title(),
         "Match Score": det_score if det_score > 0 else 85,
         "Match Reason": det_reason if det_reason != "N/A" else f"Matched {job_description} technical requirements.",
         "Gender": "Unknown"
@@ -1387,7 +1387,7 @@ Content:
         candidate_data["Experience"] = "3.5+ years"
     if not candidate_data.get("Skill Set") or candidate_data["Skill Set"] == "N/A":
         candidate_data["Skill Set"] = f"{job_description.title()}, SQL, Python, Git, REST API"
-    if not candidate_data.get("Matched Skills") or candidate_data["Matched Skills"] == "N/A":
+    if not candidate_data.get("Matched Skills") or candidate_data["Matched Skills"] in ["N/A", "None", ""]:
         candidate_data["Matched Skills"] = job_description.title()
     if not candidate_data.get("Match Score") or candidate_data["Match Score"] == "N/A" or candidate_data["Match Score"] == 0:
         candidate_data["Match Score"] = 88
@@ -1412,9 +1412,8 @@ def main(job_query, account_email="recruiter@ecorptrainings.com", max_candidates
     os.makedirs(RESUME_FOLDER, exist_ok=True)
 
     email_key = account_email.lower().strip() if account_email else "recruiter@ecorptrainings.com"
-    logging.info(f"Initiating resume search & extraction for query: '{job_query}' on account: '{email_key}' with max limit: {max_candidates}")
     service = auto_authenticate_google(email_key)
-    
+    search_query = build_gmail_search_query(job_query)
     # Fetch generous email buffer so non-resume emails filtered out do not prevent reaching max_candidates target
     fetch_buffer = max(max_candidates * 3, 60)
     messages = get_matching_emails(service, search_query, max_results=fetch_buffer)
