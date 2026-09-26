@@ -489,7 +489,7 @@ def api_history_delta():
     new_count = 0
     total_count = rec.get('results_count', 0)
     try:
-        service = RS_Project.get_gmail_service(account_email=mailbox)
+        service = RS_Project.auto_authenticate_google(account_email=mailbox)
         res = service.users().messages().list(userId='me', q=full_query, maxResults=100).execute()
         msgs = res.get('messages', [])
         new_count = len(msgs)
