@@ -513,42 +513,13 @@ def api_history_suggestions():
     mailbox = request.args.get('mailbox', '').strip()
     records = db.get_recent_unique_searches(mailbox_account=mailbox if mailbox else None, limit=10)
 
-    from datetime import datetime, timezone
-    now_utc = datetime.now(timezone.utc)
-
     items = []
     for rec in records:
-        jd = rec.get('job_description', '')
-        searched_at_str = rec.get('searched_at', '')
-        results_count = rec.get('results_count', 0)
-
-        new_count = 0
-        if searched_at_str:
-            try:
-                clean_ts = searched_at_str.replace('Z', '+00:00')
-                dt_last = datetime.fromisoformat(clean_ts)
-                if dt_last.tzinfo is None:
-                    dt_last = dt_last.replace(tzinfo=timezone.utc)
-                diff_days = (now_utc - dt_last).days
-                if diff_days <= 30:
-                    date_str = dt_last.strftime('%Y/%m/%d')
-                    base_query = gmail_search.build_gmail_search_query(jd)
-                    full_query = f"{base_query} after:{date_str}"
-                    try:
-                        service = RS_Project.get_gmail_service(account_email=mailbox if mailbox else 'recruiter@ecorptrainings.com')
-                        res = service.users().messages().list(userId='me', q=full_query, maxResults=50).execute()
-                        msgs = res.get('messages', [])
-                        new_count = len(msgs)
-                    except Exception:
-                        new_count = 0
-            except Exception:
-                pass
-
         items.append({
-            'jd': jd,
-            'last_searched_at': searched_at_str,
-            'results_count': results_count,
-            'new_count': new_count
+            'jd': rec.get('job_description', ''),
+            'last_searched_at': rec.get('searched_at', ''),
+            'results_count': rec.get('results_count', 0),
+            'new_count': 0
         })
 
     logging.info(f"[suggest] {len(items)} items")
