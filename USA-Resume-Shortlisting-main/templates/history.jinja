@@ -193,6 +193,9 @@
                         <label for="to" style="font-weight: 700; color: #0f172a; font-size: 0.92rem;">To:</label>
                         <input type="date" name="to" id="to" class="filter-input" value="{{ to_date }}">
 
+                        <label for="search_text" style="font-weight: 700; color: #0f172a; font-size: 0.92rem; margin-left: 10px;">🔍 Search Query / Skill:</label>
+                        <input type="text" id="search_text" class="filter-input" placeholder="Type JD skill (e.g. Python, D365)..." oninput="filterHistoryTable()" style="width: 220px;">
+
                         <button type="submit" class="btn-primary">Filter Date Range 🔍</button>
                     </div>
 
@@ -220,7 +223,7 @@
                     <tbody>
                         {% if history_records and history_records|length > 0 %}
                             {% for rec in history_records %}
-                                <tr>
+                                <tr class="history-row" data-jd="{{ rec['job_description']|lower }}">
                                     <td style="white-space: nowrap; font-weight: 600; color: #1e293b;">
                                         {{ rec['formatted_time'] if rec.get('formatted_time') else rec['searched_at'][:16].replace('T', ' ') }}
                                     </td>
@@ -283,6 +286,20 @@
     </div>
 
     <script>
+        function filterHistoryTable() {
+            const query = (document.getElementById('search_text')?.value || '').toLowerCase().trim();
+            const rows = document.querySelectorAll('.history-row');
+            rows.forEach(row => {
+                const jd = row.getAttribute('data-jd') || '';
+                const fullText = row.textContent.toLowerCase();
+                if (!query || jd.includes(query) || fullText.includes(query)) {
+                    row.style.display = '';
+                } else {
+                    row.style.display = 'none';
+                }
+            });
+        }
+
         function setQuickDays(d) {
             const form = document.getElementById('history-filter-form');
             document.getElementById('from').value = '';
