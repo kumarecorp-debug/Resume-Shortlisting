@@ -214,17 +214,7 @@
             if (!res.ok) { hidePopupA(); return; }
             const data = await res.json();
 
-            if (!data.found || !data.searched_at) {
-                hidePopupA();
-                return;
-            }
-
-            // Check if last search is > 24 hours old
-            const lastDate = new Date(data.searched_at.replace('Z', '+00:00'));
-            const now = new Date();
-            const diffHours = (now - lastDate) / (1000 * 60 * 60);
-
-            if (diffHours <= 24) {
+            if (!data || !data.found || !data.searched_at) {
                 hidePopupA();
                 return;
             }
@@ -241,6 +231,7 @@
 
         const dateStr = formatDateShort(data.searched_at);
         const relTime = getRelativeTimeOrDate(data.searched_at);
+        const copiedInfo = data.copied_count !== undefined ? ` (<strong>${data.copied_count} candidates copied</strong>)` : '';
 
         popup.innerHTML = `
             <div class="popup-a-card">
@@ -249,7 +240,7 @@
                 <div class="popup-a-details">
                     <div>Mailbox: <strong>${escapeHtml(mailbox)}</strong></div>
                     <div>Last searched: <strong>${dateStr} (${relTime})</strong></div>
-                    <div>Results last time: <strong>${data.results_count || 0} candidates</strong></div>
+                    <div>Results last time: <strong>${data.results_count || 0} candidates</strong>${copiedInfo}</div>
                 </div>
                 <div class="popup-a-actions">
                     <button type="button" class="btn-popup-a btn-search-again" id="popup-a-search-again">Search again</button>

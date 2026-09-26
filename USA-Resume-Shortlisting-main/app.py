@@ -436,15 +436,22 @@ def api_history_latest():
     if isinstance(candidates_seen, list):
         for c in candidates_seen:
             if isinstance(c, dict) and c.get('Email'):
-                cand_emails.append(c.get('Email'))
+                cand_emails.append(c.get('Email').strip().lower())
             elif isinstance(c, str):
-                cand_emails.append(c)
+                cand_emails.append(c.strip().lower())
 
-    logging.info(f"[popup-A] jd={jd} last_searched_at={searched_at} results={results_count}")
+    # Count how many of these candidate emails are stored as 'used' (copied) in candidate_status DB
+    copied_count = 0
+    if cand_emails:
+        statuses = db.get_candidate_statuses(mailbox, cand_emails)
+        copied_count = sum(1 for st in statuses.values() if st == 'used')
+
+    logging.info(f"[popup-A] jd={jd} last_searched_at={searched_at} results={results_count} copied={copied_count}")
     return jsonify({
         'found': True,
         'searched_at': searched_at,
         'results_count': results_count,
+        'copied_count': copied_count,
         'candidates_seen': cand_emails,
         'search_id': rec.get('id')
     })
