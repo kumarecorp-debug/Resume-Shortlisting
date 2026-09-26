@@ -352,6 +352,32 @@ def search_history_page():
         days=days
     )
 
+    # Format timestamps into user's local time zone with 12-hour AM/PM format
+    from datetime import datetime
+    formatted_records = []
+    for rec in history_records:
+        rec_copy = dict(rec)
+        raw_ts = rec_copy.get('searched_at', '')
+        if raw_ts:
+            try:
+                # Handle ISO 8601 strings from Supabase (e.g., 2026-09-26T05:22:00+00:00 or 2026-09-26T05:22:00.123456+00:00)
+                clean_ts = raw_ts.replace('Z', '+00:00')
+                dt_utc = datetime.fromisoformat(clean_ts)
+                
+                # Convert UTC to local user timezone offset (+05:30 IST / user browser)
+                # If naive, assume UTC
+                if dt_utc.tzinfo is None:
+                    dt_utc = dt_utc.replace(tzinfo=timezone.utc)
+                
+                dt_local = dt_utc.astimezone()
+                rec_copy['formatted_time'] = dt_local.strftime('%Y-%m-%d %I:%M %p')
+            except Exception as ex_ts:
+                logging.warning(f"Error parsing timestamp {raw_ts}: {ex_ts}")
+                rec_copy['formatted_time'] = raw_ts[:16].replace('T', ' ')
+        else:
+            rec_copy['formatted_time'] = 'N/A'
+        formatted_records.append(rec_copy)
+
     return render_template(
         'history.jinja',
         available_accounts=available_accounts,
@@ -359,7 +385,7 @@ def search_history_page():
         from_date=from_date,
         to_date=to_date,
         days=days,
-        history_records=history_records
+        history_records=formatted_records
     )
 
 @app.route('/api/history')

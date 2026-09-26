@@ -222,7 +222,7 @@
                             {% for rec in history_records %}
                                 <tr>
                                     <td style="white-space: nowrap; font-weight: 600; color: #1e293b;">
-                                        {{ rec['searched_at'][:16].replace('T', ' ') if rec['searched_at'] else 'N/A' }}
+                                        {{ rec['formatted_time'] if rec.get('formatted_time') else rec['searched_at'][:16].replace('T', ' ') }}
                                     </td>
                                     <td style="white-space: nowrap; font-weight: 500; color: #2563eb;">
                                         {{ rec['mailbox_account'] }}
