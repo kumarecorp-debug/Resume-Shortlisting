@@ -191,21 +191,28 @@ def get_search_history(user_email: str = None, mailbox_account: str = None, from
         if mailbox_account:
             query = query.eq("mailbox_account", mailbox_account.strip().lower())
             
+        has_date_filter = False
         if from_date:
             try:
-                dt_from = datetime.strptime(from_date, "%Y-%m-%d").replace(hour=0, minute=0, second=0, tzinfo=timezone.utc)
-                query = query.gte("searched_at", dt_from.isoformat())
+                # Convert 'YYYY-MM-DD 00:00:00' in local time to UTC ISO string for DB filter
+                dt_from_local = datetime.strptime(from_date, "%Y-%m-%d")
+                dt_from_utc = dt_from_local.astimezone(timezone.utc)
+                query = query.gte("searched_at", dt_from_utc.isoformat())
+                has_date_filter = True
             except ValueError:
                 pass
                 
         if to_date:
             try:
-                dt_to = datetime.strptime(to_date, "%Y-%m-%d").replace(hour=23, minute=59, second=59, tzinfo=timezone.utc)
-                query = query.lte("searched_at", dt_to.isoformat())
+                # Convert 'YYYY-MM-DD 23:59:59' in local time to UTC ISO string for DB filter
+                dt_to_local = datetime.strptime(to_date, "%Y-%m-%d").replace(hour=23, minute=59, second=59)
+                dt_to_utc = dt_to_local.astimezone(timezone.utc)
+                query = query.lte("searched_at", dt_to_utc.isoformat())
+                has_date_filter = True
             except ValueError:
                 pass
                 
-        if not from_date and not to_date:
+        if not has_date_filter:
             try:
                 cutoff = datetime.now(timezone.utc) - timedelta(days=days)
                 query = query.gte("searched_at", cutoff.isoformat())
