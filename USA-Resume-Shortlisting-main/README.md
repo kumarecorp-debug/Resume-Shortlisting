@@ -21,6 +21,10 @@ An intelligent automated recruitment dashboard that integrates with Gmail to sea
 - **Search History Log (Feature 1)**:
   - Stores all past searches persistently in Supabase (`search_history` table).
   - Dedicated `/history` page with Calendar Date Range Picker (`From`, `To`, `Last 30 Days`) and one-click **Re-run Search 🔄**.
+- **Smart Search Popups & History Suggestions**:
+  - **Feature A ("You searched this before")**: Displays a debounced (500ms) smart panel under the search box when searching a JD searched over 24 hours ago. Gives options to search again or view last results.
+  - **Feature B ("New candidates since last search")**: Checks for new matching emails received since the last search date (within 30 days) and presents a modal to choose between searching new resumes only or searching everything.
+  - **Feature C (Autocomplete Suggestions)**: Displays top 10 recent unique searches on search box focus with relative timestamps, last result count, and new candidate count badges.
 - **Debug & Health Monitoring**:
   - `/debug-status` route to verify Supabase table connectivity (`candidate_status`, `search_history`, `search_cache`).
 

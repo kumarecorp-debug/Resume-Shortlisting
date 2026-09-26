@@ -7,6 +7,7 @@ import logging
 from contextlib import redirect_stdout, redirect_stderr
 from functools import wraps
 import RS_Project
+import gmail_search
 import os
 import db
 from supabase import create_client, Client
@@ -414,6 +415,144 @@ def api_get_history_item(search_id):
     if not item:
         return jsonify({'success': False, 'error': 'Search history record not found'}), 404
     return jsonify({'success': True, 'data': item})
+
+@app.route('/api/history/latest', methods=['GET'])
+@login_required
+def api_history_latest():
+    mailbox = request.args.get('mailbox', '').strip()
+    jd = request.args.get('jd', '').strip()
+    if not mailbox or not jd:
+        return jsonify({'found': False, 'error': 'mailbox and jd query params are required'}), 400
+
+    rec = db.get_latest_search_history(mailbox, jd)
+    if not rec:
+        logging.info(f"[popup-A] jd={jd} last_searched_at=None results=0 (not found)")
+        return jsonify({'found': False})
+
+    searched_at = rec.get('searched_at', '')
+    results_count = rec.get('results_count', 0)
+    candidates_seen = rec.get('candidates_seen', [])
+    cand_emails = []
+    if isinstance(candidates_seen, list):
+        for c in candidates_seen:
+            if isinstance(c, dict) and c.get('Email'):
+                cand_emails.append(c.get('Email'))
+            elif isinstance(c, str):
+                cand_emails.append(c)
+
+    logging.info(f"[popup-A] jd={jd} last_searched_at={searched_at} results={results_count}")
+    return jsonify({
+        'found': True,
+        'searched_at': searched_at,
+        'results_count': results_count,
+        'candidates_seen': cand_emails,
+        'search_id': rec.get('id')
+    })
+
+@app.route('/api/history/delta', methods=['GET'])
+@login_required
+def api_history_delta():
+    mailbox = request.args.get('mailbox', '').strip()
+    jd = request.args.get('jd', '').strip()
+    if not mailbox or not jd:
+        return jsonify({'has_previous': False, 'error': 'mailbox and jd query params are required'}), 400
+
+    rec = db.get_latest_search_history(mailbox, jd)
+    if not rec:
+        logging.info(f"[popup-B] jd={jd} new=0 total=0 (no previous search)")
+        return jsonify({'has_previous': False})
+
+    searched_at_str = rec.get('searched_at', '')
+    if not searched_at_str:
+        return jsonify({'has_previous': False})
+
+    from datetime import datetime, timezone
+    try:
+        clean_ts = searched_at_str.replace('Z', '+00:00')
+        dt_last = datetime.fromisoformat(clean_ts)
+        if dt_last.tzinfo is None:
+            dt_last = dt_last.replace(tzinfo=timezone.utc)
+    except Exception as e_ts:
+        logging.warning(f"Error parsing searched_at for delta: {e_ts}")
+        return jsonify({'has_previous': False})
+
+    # Check if within last 30 days
+    now_utc = datetime.now(timezone.utc)
+    if (now_utc - dt_last).days > 30:
+        return jsonify({'has_previous': False})
+
+    # Lightweight Gmail search query with after:YYYY/MM/DD
+    date_str = dt_last.strftime('%Y/%m/%d')
+    base_query = gmail_search.build_gmail_search_query(jd)
+    full_query = f"{base_query} after:{date_str}"
+
+    new_count = 0
+    total_count = rec.get('results_count', 0)
+    try:
+        service = RS_Project.get_gmail_service(account_email=mailbox)
+        res = service.users().messages().list(userId='me', q=full_query, maxResults=100).execute()
+        msgs = res.get('messages', [])
+        new_count = len(msgs)
+    except Exception as e_gm:
+        logging.warning(f"Error in Gmail delta count query: {e_gm}")
+        new_count = 0
+
+    total_combined = total_count + new_count
+    logging.info(f"[popup-B] jd={jd} new={new_count} total={total_combined}")
+    return jsonify({
+        'has_previous': True,
+        'last_searched_at': searched_at_str,
+        'new_count': new_count,
+        'total_count': total_combined,
+        'after_date': date_str
+    })
+
+@app.route('/api/history/suggestions', methods=['GET'])
+@login_required
+def api_history_suggestions():
+    mailbox = request.args.get('mailbox', '').strip()
+    records = db.get_recent_unique_searches(mailbox_account=mailbox if mailbox else None, limit=10)
+
+    from datetime import datetime, timezone
+    now_utc = datetime.now(timezone.utc)
+
+    items = []
+    for rec in records:
+        jd = rec.get('job_description', '')
+        searched_at_str = rec.get('searched_at', '')
+        results_count = rec.get('results_count', 0)
+
+        new_count = 0
+        if searched_at_str:
+            try:
+                clean_ts = searched_at_str.replace('Z', '+00:00')
+                dt_last = datetime.fromisoformat(clean_ts)
+                if dt_last.tzinfo is None:
+                    dt_last = dt_last.replace(tzinfo=timezone.utc)
+                diff_days = (now_utc - dt_last).days
+                if diff_days <= 30:
+                    date_str = dt_last.strftime('%Y/%m/%d')
+                    base_query = gmail_search.build_gmail_search_query(jd)
+                    full_query = f"{base_query} after:{date_str}"
+                    try:
+                        service = RS_Project.get_gmail_service(account_email=mailbox if mailbox else 'recruiter@ecorptrainings.com')
+                        res = service.users().messages().list(userId='me', q=full_query, maxResults=50).execute()
+                        msgs = res.get('messages', [])
+                        new_count = len(msgs)
+                    except Exception:
+                        new_count = 0
+            except Exception:
+                pass
+
+        items.append({
+            'jd': jd,
+            'last_searched_at': searched_at_str,
+            'results_count': results_count,
+            'new_count': new_count
+        })
+
+    logging.info(f"[suggest] {len(items)} items")
+    return jsonify(items)
 
 @app.route('/api/candidate/statuses', methods=['GET'])
 @login_required
