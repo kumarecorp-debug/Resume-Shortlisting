@@ -552,7 +552,7 @@
                                         {{ row['Matched Skills'] if 'Matched Skills' in row else 'N/A' }}
                                     </td>
                                     <td style="text-align: center;">
-                                        <span class="tag-score">{{ row['Match Score'] if 'Match Score' in row else 'N/A' }}</span>
+                                        <span class="tag-score tag-score-val">{{ row['Match Score'] if 'Match Score' in row else 'N/A' }}{% if row['Match Score'] and row['Match Score'] != 'N/A' %}%{% endif %}</span>
                                     </td>
                                     <td style="font-size: 0.82rem; line-height: 1.3; color: #475569; word-break: break-word;">
                                         {{ row['Match Reason'] if 'Match Reason' in row else 'N/A' }}

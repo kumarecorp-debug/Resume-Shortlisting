@@ -206,8 +206,9 @@ function appendRowsToTable(candidates, startOffset) {
                 ${renderStatusBadge(status, row.Email, row.Name)}
             </td>
             <td style="text-align: center;">
-                <button type="button" class="btn-action-small btn-copy-action" onclick="copySingleCandidate(this)" title="Copy Candidate Info & Mark as Used">📋 Copy</button>
+                <span class="tag-score">${escapeHtml(row['Match Score'] || '85')}%</span>
             </td>
+            <td style="font-size: 0.82rem; line-height: 1.3; color: #475569; word-break: break-word;">${escapeHtml(row['Match Reason'] || 'N/A')}</td>
         `;
 
         tbody.appendChild(tr);
@@ -545,7 +546,8 @@ function applyTableFilters() {
         // Score filter
         let showByScore = true;
         if (minScore > 0) {
-            const scoreText = row.cells[10] ? row.cells[10].textContent.replace(/[^\d]/g, '') : '';
+            const scoreElem = row.querySelector('.tag-score');
+            const scoreText = scoreElem ? scoreElem.textContent.replace(/[^\d]/g, '') : '';
             const scoreVal = parseInt(scoreText || '0', 10);
             if (scoreVal < minScore) {
                 showByScore = false;
