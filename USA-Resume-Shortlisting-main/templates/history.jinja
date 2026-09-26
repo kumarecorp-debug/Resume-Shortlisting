@@ -156,7 +156,7 @@
 <body>
     <header style="text-align: center; padding: 24px 0 10px 0; position: relative;">
         <div style="position: absolute; left: 24px; top: 20px;">
-            <a href="{{ url_for('process') }}" class="btn-secondary">
+            <a href="javascript:void(0)" onclick="if (document.referrer && document.referrer.indexOf('/history') === -1) { window.history.back(); } else { window.location.href='{{ url_for('process') }}'; }" class="btn-secondary">
                 ← Back to Search
             </a>
         </div>
