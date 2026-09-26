@@ -62,10 +62,15 @@
         const textarea = document.getElementById('job_query');
         if (!textarea) return;
 
-        // Ensure parent container has relative positioning
-        const formGroup = textarea.closest('.form-group') || textarea.parentElement;
-        if (formGroup && getComputedStyle(formGroup).position === 'static') {
-            formGroup.style.position = 'relative';
+        // Wrap textarea in a relative div if not already wrapped
+        let wrapper = textarea.parentElement;
+        if (!wrapper.classList.contains('textarea-wrapper')) {
+            wrapper = document.createElement('div');
+            wrapper.className = 'textarea-wrapper';
+            wrapper.style.position = 'relative';
+            wrapper.style.width = '100%';
+            textarea.parentNode.insertBefore(wrapper, textarea);
+            wrapper.appendChild(textarea);
         }
 
         // Create Autocomplete Suggestions Container if not exists
@@ -74,11 +79,7 @@
             dropdown.id = 'search-suggestions-dropdown';
             dropdown.className = 'search-suggestions-dropdown';
             dropdown.style.display = 'none';
-            if (textarea.nextSibling) {
-                formGroup.insertBefore(dropdown, textarea.nextSibling);
-            } else {
-                formGroup.appendChild(dropdown);
-            }
+            wrapper.appendChild(dropdown);
         }
 
         // Create Feature A Popup Container if not exists
@@ -87,11 +88,7 @@
             popup.id = 'searched-before-popup';
             popup.className = 'searched-before-popup';
             popup.style.display = 'none';
-            if (textarea.nextSibling) {
-                formGroup.insertBefore(popup, textarea.nextSibling);
-            } else {
-                formGroup.appendChild(popup);
-            }
+            wrapper.appendChild(popup);
         }
 
         // Create Feature B Modal Overlay if not exists
