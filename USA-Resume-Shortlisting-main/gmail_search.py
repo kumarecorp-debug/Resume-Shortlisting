@@ -103,7 +103,7 @@ def build_gmail_search_query(job_description, days_back=None):
                 if branch_tokens:
                     valid_tokens.append(" ".join(branch_tokens))
             if len(valid_tokens) > 1:
-                kw_query = "(" + " AND ".join(valid_tokens) + ")"
+                kw_query = " ".join(valid_tokens)
             elif valid_tokens:
                 kw_query = valid_tokens[0]
             else:
@@ -126,7 +126,7 @@ def build_gmail_search_query(job_description, days_back=None):
                 kw_query = cleaned_jd
 
     if kw_query:
-        full_query = f"(filename:pdf OR filename:docx OR filename:doc OR has:attachment OR \"resume\" OR \"cv\") ({kw_query})"
+        full_query = f"{kw_query}"
     else:
         full_query = "has:attachment"
 
