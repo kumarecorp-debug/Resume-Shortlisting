@@ -761,6 +761,26 @@ def api_save_copied_history():
     )
     return jsonify({'success': True, 'id': rec_id})
 
+@app.route('/api/copied-history/bulk', methods=['POST'])
+@login_required
+def api_bulk_save_copied_history():
+    data = request.get_json(silent=True) or request.form.to_dict() or {}
+    user_email = session.get('user', {}).get('email') if isinstance(session.get('user'), dict) else None
+    mailbox = data.get('mailbox_account') or data.get('mailbox') or session.get('selected_account', 'recruiter@ecorptrainings.com')
+    job_description = data.get('job_description') or data.get('jd') or ''
+    candidates = data.get('candidates') or []
+
+    if not candidates:
+        return jsonify({'success': False, 'error': 'No candidates provided'}), 400
+
+    inserted_count = db_copied_history.save_bulk_copied_entries(
+        user_email=user_email,
+        mailbox_account=mailbox,
+        candidates=candidates,
+        job_description=job_description
+    )
+    return jsonify({'success': True, 'inserted': inserted_count})
+
 @app.route('/api/copied-history', methods=['GET'])
 @login_required
 def api_get_copied_history():
@@ -851,6 +871,21 @@ def debug_copied():
         "recent_5": recent_5,
         "supabase_connected": connected
     })
+
+@app.route('/debug-copy-test', methods=['POST'])
+def debug_copy_test():
+    try:
+        client = db.get_supabase()
+        resp = client.table('copied_history').insert({
+            'mailbox_account': 'debug@test.com',
+            'candidate_email': 'debug@example.com',
+            'candidate_name': 'Debug Candidate',
+            'candidate_phone': '+91 00000-00000',
+            'job_description': 'debug',
+        }).execute()
+        return jsonify({"ok": True, "response": resp.data})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
 
 @app.route('/api/search', methods=['GET'])
 @login_required

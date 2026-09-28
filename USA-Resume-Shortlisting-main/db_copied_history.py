@@ -91,9 +91,9 @@ def check_copies_for_search(mailbox_account: str, job_description: str) -> dict:
         clean_mailbox = mailbox_account.strip().lower()
         clean_jd = job_description.strip().lower()
         
-        # Query copied_history for matching mailbox and job_description
+        # Query copied_history for matching mailbox
         res = client.table("copied_history") \
-            .select("candidate_email, candidate_name") \
+            .select("candidate_email, candidate_name, job_description") \
             .eq("mailbox_account", clean_mailbox) \
             .execute()
             
@@ -121,6 +121,50 @@ def check_copies_for_search(mailbox_account: str, job_description: str) -> dict:
     except Exception as e:
         logging.error(f"Error in check_copies_for_search: {e}")
         return {"has_copies": False, "copied_count": 0, "candidate_emails": [], "candidate_names": []}
+
+def save_bulk_copied_entries(user_email: str, mailbox_account: str, candidates: list, job_description: str = "") -> int:
+    """
+    Saves multiple entries into copied_history table in a single batch insert.
+    Returns count of inserted rows.
+    """
+    if not mailbox_account or not candidates:
+        return 0
+        
+    client = db.get_supabase()
+    if not client:
+        return 0
+        
+    now_iso = datetime.now(timezone.utc).isoformat()
+    clean_mailbox = mailbox_account.strip().lower()
+    clean_user = (user_email or "").strip().lower()
+    clean_jd = (job_description or "").strip()
+
+    rows = []
+    for c in candidates:
+        cand_email = (c.get('email') or c.get('candidate_email') or "").strip().lower()
+        if not cand_email:
+            continue
+        rows.append({
+            "user_email": clean_user,
+            "mailbox_account": clean_mailbox,
+            "candidate_email": cand_email,
+            "candidate_name": (c.get('name') or c.get('candidate_name') or "").strip(),
+            "candidate_phone": (c.get('phone') or c.get('candidate_phone') or "").strip(),
+            "job_description": clean_jd,
+            "copied_at": now_iso
+        })
+
+    if not rows:
+        return 0
+
+    try:
+        res = client.table("copied_history").insert(rows).execute()
+        count = len(res.data) if res.data else 0
+        logging.info(f"[copied-history-bulk] inserted={count} for mailbox={clean_mailbox}")
+        return count
+    except Exception as e:
+        logging.error(f"Error saving bulk copied_history: {e}")
+        return 0
 
 def get_summary(mailbox_account: str = None) -> dict:
     """
