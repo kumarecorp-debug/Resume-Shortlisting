@@ -85,40 +85,47 @@ def build_gmail_search_query(job_description, days_back=None):
     Handles:
       1. Identifier searches (Email, Phone, Name) -> Exact string matching without splitting
       2. Explicit boolean short queries (e.g. 'Python AND SQL', 'React OR Node')
-      3. Short keyword queries (e.g. 'SFDC agentic core workflows')
+      3. Short keyword queries (e.g. 'infoarchive', 'SFDC agentic core workflows')
       4. Full long Job Descriptions -> Automatically extracts core tech stack
     """
-    cleaned_jd = job_description.strip() if job_description else ""
-    if not cleaned_jd:
+    if not job_description:
         return "has:attachment"
 
-    mode = detect_search_mode(cleaned_jd)
+    cleaned_jd = job_description.strip()
+    # Replace internal newlines and multiple spaces with a single space for clean tokenization
+    lines = [l.strip() for l in cleaned_jd.splitlines() if l.strip()]
+    normalized_jd = " ".join(lines)
+    if not normalized_jd:
+        return "has:attachment"
+
+    mode = detect_search_mode(normalized_jd)
     if mode in ['email', 'phone', 'name']:
         # Exact quote search for identifiers to avoid splitting (e.g., "vallir63@gmail.com")
-        kw_query = f'"{cleaned_jd}"'
+        kw_query = f'"{normalized_jd}"'
     else:
-        words = re.findall(r'\b[A-Za-z0-9+#.]+\b', cleaned_jd)
-        is_long_jd = len(words) > 12 or '\n' in cleaned_jd or len(cleaned_jd) > 120
+        words = re.findall(r'\b[A-Za-z0-9+#.]+\b', normalized_jd)
+        # Determine if it is a multi-line long Job Description (only if > 12 words, > 120 chars, or >= 4 lines)
+        is_long_jd = len(words) > 12 or len(normalized_jd) > 120 or len(lines) >= 4
 
         if is_long_jd:
             # Long Job Description: Extract core technical skills
-            extracted_skills = extract_tech_keywords_from_jd(cleaned_jd)
+            extracted_skills = extract_tech_keywords_from_jd(normalized_jd)
             if extracted_skills:
                 top_skills = extracted_skills[:10]
                 kw_query = "(" + " OR ".join(top_skills) + ")"
             else:
-                distinct_tokens = [w for w in words if w.lower() not in STOP_WORDS and len(w) > 2][:8]
+                distinct_tokens = [w for w in words if w.lower() not in STOP_WORDS and len(w) >= 2][:8]
                 if distinct_tokens:
                     kw_query = "(" + " OR ".join(distinct_tokens) + ")"
                 else:
-                    kw_query = ""
+                    kw_query = f'"{normalized_jd}"'
         else:
             # Short Query
-            has_explicit_or = bool(re.search(r'\bOR\b', cleaned_jd, flags=re.IGNORECASE))
-            has_explicit_and = bool(re.search(r'\bAND\b', cleaned_jd, flags=re.IGNORECASE))
+            has_explicit_or = bool(re.search(r'\bOR\b', normalized_jd, flags=re.IGNORECASE))
+            has_explicit_and = bool(re.search(r'\bAND\b', normalized_jd, flags=re.IGNORECASE))
 
             if has_explicit_or:
-                branches = [b.strip() for b in re.split(r'\bOR\b', cleaned_jd, flags=re.IGNORECASE) if b.strip()]
+                branches = [b.strip() for b in re.split(r'\bOR\b', normalized_jd, flags=re.IGNORECASE) if b.strip()]
                 valid_branches = []
                 for branch in branches:
                     branch_tokens = [t for t in re.findall(r'[a-zA-Z0-9+#.]+', branch) if t.lower() not in STOP_WORDS and t.lower() != "and"]
@@ -129,10 +136,10 @@ def build_gmail_search_query(job_description, days_back=None):
                 elif valid_branches:
                     kw_query = valid_branches[0]
                 else:
-                    kw_query = cleaned_jd
+                    kw_query = normalized_jd
 
             elif has_explicit_and:
-                branches = [b.strip() for b in re.split(r'\bAND\b', cleaned_jd, flags=re.IGNORECASE) if b.strip()]
+                branches = [b.strip() for b in re.split(r'\bAND\b', normalized_jd, flags=re.IGNORECASE) if b.strip()]
                 valid_tokens = []
                 for branch in branches:
                     branch_tokens = [t for t in re.findall(r'[a-zA-Z0-9+#.]+', branch) if t.lower() not in STOP_WORDS]
@@ -143,11 +150,16 @@ def build_gmail_search_query(job_description, days_back=None):
                 elif valid_tokens:
                     kw_query = valid_tokens[0]
                 else:
-                    kw_query = cleaned_jd
+                    kw_query = normalized_jd
 
             else:
-                # Multi-word searches without explicit AND/OR: Default to OR-joining
-                tokens = [t for t in re.findall(r'[a-zA-Z0-9+#.]+', cleaned_jd) if t.lower() not in STOP_WORDS and len(t) > 1]
+                # Multi-word or single-word searches without explicit AND/OR
+                tokens = [t for t in re.findall(r'[a-zA-Z0-9+#.]+', normalized_jd) if t.lower() not in STOP_WORDS]
+                if not tokens:
+                    tokens = [w for w in words if w.lower() not in STOP_WORDS]
+                if not tokens:
+                    tokens = words
+
                 expanded_tokens = []
                 for t in tokens:
                     expanded_tokens.append(t)
@@ -159,12 +171,9 @@ def build_gmail_search_query(job_description, days_back=None):
                 elif len(expanded_tokens) == 1:
                     kw_query = expanded_tokens[0]
                 else:
-                    kw_query = cleaned_jd
+                    kw_query = normalized_jd
 
-    if kw_query:
-        full_query = f"{kw_query}"
-    else:
-        full_query = "has:attachment"
+    full_query = f"{kw_query}" if kw_query else "has:attachment"
 
     if days_back:
         from datetime import datetime, timedelta

@@ -275,24 +275,27 @@ def get_matching_emails(service, search_query, max_results=60):
         raise
 
     # Fallback if 0 messages
-    if not all_messages and "after:" in search_query:
-        logging.info("Zero messages on strict search. Attempting broader query...")
-        broad_query = re.sub(r'has:attachment.*', 'has:attachment', search_query)
-        try:
-            results = service.users().messages().list(
-                userId="me",
-                q=broad_query,
-                maxResults=20
-            ).execute()
-            all_messages = results.get("messages", [])
-        except Exception as e:
-            err_msg = str(e)
-            if "accessNotConfigured" in err_msg or "has not been used in project" in err_msg:
-                proj_match = re.search(r'project\s+(\d+)', err_msg)
-                proj_id = proj_match.group(1) if proj_match else ""
-                link = f"https://console.developers.google.com/apis/api/gmail.googleapis.com/overview?project={proj_id}" if proj_id else "https://console.cloud.google.com/apis/library/gmail.googleapis.com"
-                raise RuntimeError(f"Gmail API is disabled for this Google Cloud Project. Please enable it by visiting: {link}")
-            logging.error(f"Broad search fallback failed: {e}")
+    if not all_messages:
+        logging.info("Zero messages on initial search. Attempting broad query fallback...")
+        broad_terms = re.findall(r'[a-zA-Z0-9+#.]+', search_query)
+        clean_terms = [t for t in broad_terms if t.lower() not in ['has', 'attachment', 'after'] and len(t) > 1]
+        if clean_terms:
+            broad_query = " ".join(clean_terms)
+            try:
+                results = service.users().messages().list(
+                    userId="me",
+                    q=broad_query,
+                    maxResults=max_results
+                ).execute()
+                all_messages = results.get("messages", [])
+            except Exception as e:
+                err_msg = str(e)
+                if "accessNotConfigured" in err_msg or "has not been used in project" in err_msg:
+                    proj_match = re.search(r'project\s+(\d+)', err_msg)
+                    proj_id = proj_match.group(1) if proj_match else ""
+                    link = f"https://console.developers.google.com/apis/api/gmail.googleapis.com/overview?project={proj_id}" if proj_id else "https://console.cloud.google.com/apis/library/gmail.googleapis.com"
+                    raise RuntimeError(f"Gmail API is disabled for this Google Cloud Project. Please enable it by visiting: {link}")
+                logging.error(f"Broad search fallback failed: {e}")
 
     logging.info(f"Total matching email messages found: {len(all_messages)}")
     return all_messages
@@ -871,9 +874,11 @@ def extract_matched_skills_and_score(resume_text, job_description):
 
     text_lower = resume_text.lower()
     raw_query = job_description.strip()
+    lines = [l.strip() for l in raw_query.splitlines() if l.strip()]
+    normalized_query = " ".join(lines)
 
-    words = re.findall(r'\b[A-Za-z0-9+#.]+\b', raw_query)
-    is_long_jd = len(words) > 12 or '\n' in raw_query or len(raw_query) > 120
+    words = re.findall(r'\b[A-Za-z0-9+#.]+\b', normalized_query)
+    is_long_jd = len(words) > 12 or len(normalized_query) > 120 or len(lines) >= 4
 
     stop_tokens = {"and", "or", "the", "for", "with", "in", "on", "to", "at", "a", "an", "is", "are", "we", "need", "developer", "engineer", "consultant"}
 
@@ -1528,10 +1533,10 @@ def main(job_query, account_email="recruiter@ecorptrainings.com", max_candidates
             
             # Strict Resume & Candidate Validation:
             # Must have an attached resume document OR structured CV text in the email body
-            has_valid_attachment = bool(valid_files and len(resume_text.strip().split()) >= 20)
+            has_valid_attachment = bool(valid_files)
             has_structured_cv_body = (
-                len(email_body.strip().split()) >= 40 and 
-                any(sec in email_body.lower() for sec in ["experience", "skill", "education", "project", "curriculum vitae", "summary", "responsibilities", "applicant"])
+                len(email_body.strip().split()) >= 10 and 
+                any(sec in email_body.lower() for sec in ["experience", "skill", "education", "project", "curriculum vitae", "summary", "responsibilities", "applicant", "training", "trainer", "support", "required", "fee", "rate", "profile", "job", "developer"])
             )
             
             if not has_valid_attachment and not has_structured_cv_body:
