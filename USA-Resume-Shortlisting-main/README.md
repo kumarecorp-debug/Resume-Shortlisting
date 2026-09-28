@@ -25,6 +25,14 @@ An intelligent automated recruitment dashboard that integrates with Gmail to sea
   - **Feature A ("You searched this before")**: Displays a debounced (500ms) smart panel under the search box when searching a JD searched over 24 hours ago. Gives options to search again or view last results.
   - **Feature B ("New candidates since last search")**: Checks for new matching emails received since the last search date (within 30 days) and presents a modal to choose between searching new resumes only or searching everything.
   - **Feature C (Autocomplete Suggestions)**: Displays top 10 recent unique searches on search box focus with relative timestamps, last result count, and new candidate count badges.
+- **Minimum Experience Filter (years)**:
+  - Input field right below the JD/keyword textarea (`Min Experience (years)`).
+  - Server-side experience parsing (handles formats like `"7 years"`, `"12.5 yrs"`, `"5 years 6 months"`, `"Over 10 years"`).
+  - Filters out candidates with parsed experience below the threshold, while keeping candidates with unknown/unparseable experience tagged with a warning badge (`⚠️ ? yrs`).
+  - Below table feedback showing exact count hidden (e.g. `Showing 25 of 100 matches · 12 hidden by experience`).
+  - Interactive Experience column header sorting (`Exp ▲/▼`).
+  - Persists `min_exp` across searches in `localStorage`.
+  - Debug route available at `/debug-parse-exp?text=5+years+6+months`.
 - **Debug & Health Monitoring**:
   - `/debug-status` route to verify Supabase table connectivity (`candidate_status`, `search_history`, `search_cache`).
 

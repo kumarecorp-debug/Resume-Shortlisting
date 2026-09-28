@@ -128,6 +128,41 @@ def matches_name(candidate, search_term):
     logging.info(f"[name-match] cand_name='{cand_name}' search_words={words} match={result}")
     return result
 
+def parse_experience_years(text):
+    """
+    Parse "X years" / "X yrs" / "X years Y months" into a float.
+    Returns None if unparseable.
+    """
+    if not text:
+        return None
+    t = str(text).lower().strip()
+    
+    # Ignore obvious non-values
+    if t in ("", "n/a", "na", "none", "null", "not mentioned", "unknown"):
+        return None
+    
+    # Pattern: "X years" or "X.Y years" or "X yrs"
+    years_match = re.search(r'(\d+(?:\.\d+)?)\s*(?:years?|yrs?|y)\b', t)
+    months_match = re.search(r'(\d+(?:\.\d+)?)\s*(?:months?|mos?)\b', t)
+    
+    years = float(years_match.group(1)) if years_match else 0.0
+    months = float(months_match.group(1)) if months_match else 0.0
+    
+    total = years + (months / 12.0)
+    
+    # If we found only months, that's OK
+    if years == 0 and months > 0:
+        return round(months / 12.0, 1)
+    
+    # If we found nothing, try to grab a bare number
+    if not years_match and not months_match:
+        bare = re.search(r'^\s*(\d+(?:\.\d+)?)\s*$', t)
+        if bare:
+            return float(bare.group(1))
+        return None
+    
+    return round(total, 1)
+
 def filter_candidates(candidates, term):
     """
     Filters candidates depending on search mode (email, phone, name, or keyword).
@@ -314,6 +349,12 @@ def process():
                 page_size=25
             )
 
+        min_exp_raw = request.form.get('min_exp') or request.args.get('min_exp')
+        try:
+            min_exp = float(min_exp_raw) if min_exp_raw is not None and str(min_exp_raw).strip() != '' else None
+        except (ValueError, TypeError):
+            min_exp = None
+
         max_candidates = int(request.form.get('max_candidates', 50))
         df = execute_full_candidate_search(job_query, selected_account, max_candidates=max_candidates)
         
@@ -329,7 +370,8 @@ def process():
                 columns=[],
                 search_id=None,
                 total_matches=0,
-                max_candidates=max_candidates
+                max_candidates=max_candidates,
+                min_exp=min_exp
             )
 
         # Attach persistent candidate status from Supabase
@@ -365,10 +407,33 @@ def process():
 
         # Detect search mode metadata
         mode_records, search_mode, exact_cnt, approx_cnt = filter_candidates(all_records, job_query)
-        if search_mode in ['email', 'phone', 'name']:
-            logging.info(f"[identifier] mode={search_mode} exact_matches={exact_cnt} approx_matches={approx_cnt}")
+        
+        # Apply min_exp filter server-side
+        hidden_by_exp = 0
+        if min_exp is not None:
+            kept = []
+            for c in mode_records:
+                years = parse_experience_years(c.get("Experience") or c.get("experience"))
+                c["experience_years"] = years
+                if years is None:
+                    c["experience_unknown"] = True
+                    kept.append(c)
+                elif years >= min_exp:
+                    kept.append(c)
+                else:
+                    hidden_by_exp += 1
+            mode_records = kept
         else:
-            logging.info(f"[search] mode={search_mode} total_matches={total_matches}")
+            for c in mode_records:
+                c["experience_years"] = parse_experience_years(c.get("Experience") or c.get("experience"))
+
+        # Sort by experience_years DESC (nulls last) if specified or default match score
+        mode_records.sort(
+            key=lambda c: (c.get("experience_years") is not None, c.get("experience_years") or -1),
+            reverse=True
+        )
+
+        logging.info(f"[search] jd={job_query} min_exp={min_exp} total={total_matches} hidden_exp={hidden_by_exp} returned={len(mode_records)}")
 
         return render_template(
             'process.jinja',
@@ -376,14 +441,16 @@ def process():
             job_role=job_query,
             selected_account=selected_account,
             available_accounts=available_accounts,
-            table_data=all_records,
+            table_data=mode_records,
             columns=columns_order,
             search_id=search_id,
             total_matches=total_matches,
             max_candidates=max_candidates,
             search_mode=search_mode,
             exact_matches=exact_cnt,
-            approx_matches=approx_cnt
+            approx_matches=approx_cnt,
+            min_exp=min_exp,
+            hidden_by_experience=hidden_by_exp
         )
 
     selected_account = request.args.get('account_email') or session.get('selected_account', default_account)
@@ -671,6 +738,13 @@ def api_search():
     selected_account = request.args.get('mailbox') or request.args.get('account_email') or session.get('selected_account', 'recruiter@ecorptrainings.com')
     search_id = request.args.get('search_id')
     hide_used = request.args.get('hide_used', 'false').lower() in ['true', '1', 'yes']
+    
+    min_exp_raw = request.args.get('min_exp')
+    try:
+        min_exp = float(min_exp_raw) if min_exp_raw is not None and str(min_exp_raw).strip() != '' else None
+    except (ValueError, TypeError):
+        min_exp = None
+
     try:
         offset = int(request.args.get('offset', 0))
     except (ValueError, TypeError):
@@ -687,6 +761,30 @@ def api_search():
             candidates = cached.get('results', [])
             total = cached.get('total', 0)
             
+            # Apply min_exp filtering on cached load more
+            hidden_exp_count = 0
+            if min_exp is not None:
+                kept = []
+                for c in candidates:
+                    years = parse_experience_years(c.get("Experience") or c.get("experience"))
+                    c["experience_years"] = years
+                    if years is None:
+                        c["experience_unknown"] = True
+                        kept.append(c)
+                    elif years >= min_exp:
+                        kept.append(c)
+                    else:
+                        hidden_exp_count += 1
+                candidates = kept
+            else:
+                for c in candidates:
+                    c["experience_years"] = parse_experience_years(c.get("Experience") or c.get("experience"))
+
+            candidates.sort(
+                key=lambda c: (c.get("experience_years") is not None, c.get("experience_years") or -1),
+                reverse=True
+            )
+
             if candidates:
                 emails = [c.get('Email') for c in candidates if c.get('Email')]
                 status_map = db.get_candidate_statuses(selected_account, emails)
@@ -706,6 +804,8 @@ def api_search():
                 "offset": offset,
                 "limit": limit,
                 "hidden_used_count": hidden_used_count,
+                "hidden_by_experience": hidden_exp_count,
+                "min_exp_applied": min_exp,
                 "has_more": (offset + limit) < total
             })
         else:
@@ -718,13 +818,37 @@ def api_search():
 
     df = execute_full_candidate_search(job_query, selected_account, max_candidates=max_candidates)
     total = len(df)
-    logging.info(f"Search started: JD={job_query} mailbox={selected_account} max_candidates={max_candidates} total={total}")
 
     columns_order = [
         "Rank", "Status", "Name", "Gender", "Email", "Phone", "Experience", "Skill Set", "Matched Skills", "Match Score", "Match Reason"
     ]
     cols = [c for c in columns_order if c in df.columns]
     all_records = df[cols].fillna("N/A").to_dict(orient='records')
+
+    hidden_exp_count = 0
+    if min_exp is not None:
+        kept = []
+        for c in all_records:
+            years = parse_experience_years(c.get("Experience") or c.get("experience"))
+            c["experience_years"] = years
+            if years is None:
+                c["experience_unknown"] = True
+                kept.append(c)
+            elif years >= min_exp:
+                kept.append(c)
+            else:
+                hidden_exp_count += 1
+        all_records = kept
+    else:
+        for c in all_records:
+            c["experience_years"] = parse_experience_years(c.get("Experience") or c.get("experience"))
+
+    all_records.sort(
+        key=lambda c: (c.get("experience_years") is not None, c.get("experience_years") or -1),
+        reverse=True
+    )
+
+    logging.info(f"[search] jd={job_query} min_exp={min_exp} total={total} hidden_exp={hidden_exp_count} returned={len(all_records)}")
 
     db.cache_search_results(search_id, all_records)
 
@@ -748,8 +872,16 @@ def api_search():
         "offset": offset,
         "limit": limit,
         "hidden_used_count": hidden_used_count,
+        "hidden_by_experience": hidden_exp_count,
+        "min_exp_applied": min_exp,
         "has_more": (offset + limit) < total
     })
+
+@app.route('/debug-parse-exp', methods=['GET'])
+def debug_parse_exp():
+    text = request.args.get('text', '')
+    parsed = parse_experience_years(text)
+    return jsonify({"text": text, "parsed": parsed})
 
 @app.route('/debug-phone-match', methods=['GET'])
 def debug_phone_match():

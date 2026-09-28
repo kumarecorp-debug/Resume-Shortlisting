@@ -15,9 +15,12 @@ let state = {
     offset: 25,
     limit: 25,
     total: 0,
+    minExp: null,
+    hiddenExp: 0,
     candidates: [],
     undoTimeout: null,
-    lastCopiedItems: []
+    lastCopiedItems: [],
+    sortExpAsc: null
 };
 
 document.addEventListener('DOMContentLoaded', function () {
@@ -27,6 +30,19 @@ document.addEventListener('DOMContentLoaded', function () {
         state.jobQuery = metaContainer.getAttribute('data-job-query') || '';
         state.mailbox = metaContainer.getAttribute('data-mailbox') || '';
         state.total = parseInt(metaContainer.getAttribute('data-total') || '0', 10);
+        const metaMin = metaContainer.getAttribute('data-min-exp');
+        state.minExp = (metaMin !== null && metaMin !== '') ? parseFloat(metaMin) : null;
+        state.hiddenExp = parseInt(metaContainer.getAttribute('data-hidden-exp') || '0', 10);
+    }
+
+    const minExpInput = document.getElementById('min_exp');
+    if (minExpInput) {
+        if (!minExpInput.value && localStorage.getItem('pref_min_exp')) {
+            minExpInput.value = localStorage.getItem('pref_min_exp');
+        }
+        minExpInput.addEventListener('input', function() {
+            localStorage.setItem('pref_min_exp', this.value.trim());
+        });
     }
 
     const chkHideUsed = document.getElementById('chk-hide-used');
@@ -106,7 +122,10 @@ function loadNextBatch() {
     btn.innerHTML = `⏳ Loading...`;
     if (errBox) errBox.style.display = 'none';
 
-    const url = `/api/search?search_id=${encodeURIComponent(state.searchId || '')}&jd=${encodeURIComponent(state.jobQuery)}&mailbox=${encodeURIComponent(state.mailbox)}&offset=${state.offset}&limit=${state.limit}`;
+    let url = `/api/search?search_id=${encodeURIComponent(state.searchId || '')}&jd=${encodeURIComponent(state.jobQuery)}&mailbox=${encodeURIComponent(state.mailbox)}&offset=${state.offset}&limit=${state.limit}`;
+    if (state.minExp !== null) {
+        url += `&min_exp=${encodeURIComponent(state.minExp)}`;
+    }
 
     fetch(url)
         .then(res => res.json())
@@ -118,6 +137,9 @@ function loadNextBatch() {
                 appendRowsToTable(data.candidates, state.offset);
                 state.offset += data.candidates.length;
                 state.total = data.total || state.total;
+                if (data.hidden_by_experience !== undefined) {
+                    state.hiddenExp = data.hidden_by_experience;
+                }
                 updatePaginationUI();
                 applyTableFilters();
             } else if (data && data.candidates && data.candidates.length === 0) {
@@ -160,7 +182,11 @@ function updatePaginationUI() {
     container.style.display = 'flex';
 
     if (counterText) {
-        counterText.textContent = `Showing ${visibleCount} of ${state.total} matches`;
+        let msg = `Showing ${visibleCount} of ${state.total} matches`;
+        if (state.hiddenExp > 0) {
+            msg += ` &nbsp;·&nbsp; ${state.hiddenExp} hidden by experience`;
+        }
+        counterText.innerHTML = msg;
     }
 
     if (visibleCount >= state.total) {
@@ -189,6 +215,14 @@ function appendRowsToTable(candidates, startOffset) {
         tr.setAttribute('id', `row-${rankNum}`);
         tr.setAttribute('data-status', status);
         tr.setAttribute('data-email', row.Email || '');
+        tr.setAttribute('data-exp-years', row.experience_years !== null && row.experience_years !== undefined ? row.experience_years : '');
+
+        let expDisplay = escapeHtml(row.Experience || 'N/A');
+        if (row.experience_years !== null && row.experience_years !== undefined) {
+            expDisplay = `${row.experience_years} yrs`;
+        } else if (row.experience_unknown || !row.Experience || row.Experience === 'N/A') {
+            expDisplay = `<span style="color: #d97706;" title="Experience unknown / unparseable">⚠️ ? yrs</span>`;
+        }
 
         tr.innerHTML = `
             <td style="text-align: center;">
@@ -198,13 +232,12 @@ function appendRowsToTable(candidates, startOffset) {
                 <span class="tag-rank">#${rankNum}</span>
             </td>
             <td style="font-weight: 600;">${escapeHtml(row.Name || 'N/A')}</td>
+            <td style="font-size: 0.88rem; color: #334155;">${escapeHtml(row.Gender || 'N/A')}</td>
             <td style="font-size: 0.88rem; color: #334155;">${escapeHtml(row.Email || 'N/A')}</td>
             <td style="font-size: 0.88rem; color: #334155;">${escapeHtml(row.Phone || 'N/A')}</td>
-            <td style="text-align: center; white-space: nowrap;">${escapeHtml(row.Experience || 'N/A')}</td>
+            <td style="text-align: center; white-space: nowrap; font-weight: 600;">${expDisplay}</td>
             <td style="font-size: 0.85rem; line-height: 1.3; color: #475569; word-break: break-word;">${escapeHtml(row['Skill Set'] || 'N/A')}</td>
-            <td class="status-cell" style="text-align: center;">
-                ${renderStatusBadge(status, row.Email, row.Name)}
-            </td>
+            <td style="font-size: 0.85rem; line-height: 1.3; color: #166534; word-break: break-word;">${escapeHtml(row['Matched Skills'] || 'N/A')}</td>
             <td style="text-align: center;">
                 <span class="tag-score">${escapeHtml(row['Match Score'] || '85')}%</span>
             </td>
@@ -213,6 +246,32 @@ function appendRowsToTable(candidates, startOffset) {
 
         tbody.appendChild(tr);
     });
+}
+
+function sortTableByExperience() {
+    const tbody = document.getElementById('table-body');
+    if (!tbody) return;
+    const rows = Array.from(tbody.querySelectorAll('tr'));
+    if (rows.length === 0) return;
+
+    state.sortExpAsc = (state.sortExpAsc === null || state.sortExpAsc === false) ? true : false;
+    const icon = document.getElementById('sort-exp-icon');
+    if (icon) icon.textContent = state.sortExpAsc ? '▲' : '▼';
+
+    rows.sort((a, b) => {
+        const valA = a.getAttribute('data-exp-years');
+        const valB = b.getAttribute('data-exp-years');
+        const numA = (valA !== null && valA !== '') ? parseFloat(valA) : -1;
+        const numB = (valB !== null && valB !== '') ? parseFloat(valB) : -1;
+
+        if (state.sortExpAsc) {
+            return numA - numB;
+        } else {
+            return numB - numA;
+        }
+    });
+
+    rows.forEach(r => tbody.appendChild(r));
 }
 
 function renderStatusBadge(status, email, name) {
