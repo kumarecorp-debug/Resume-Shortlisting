@@ -524,18 +524,23 @@ function onTrainerSelectChange() {
 function applyTableFilters() {
     const statusFilter = document.getElementById('status-filter-select')?.value || 'all';
     const hideUsed = document.getElementById('chk-hide-used')?.checked ?? true;
+    const strongOnly = document.getElementById('chk-strong-matches')?.checked ?? false;
     const textFilter = document.getElementById('filter-box')?.value.toLowerCase().trim() || '';
     const minScore = parseInt(document.getElementById('score-slider')?.value || '0', 10);
 
     const rows = document.querySelectorAll('#table-body tr');
     let visibleCount = 0;
     let hiddenUsedCount = 0;
+    let hiddenApproxCount = 0;
 
     rows.forEach(row => {
         const status = row.getAttribute('data-status') || 'new';
         const rowText = row.textContent.toLowerCase();
         const cb = row.querySelector('.trainer-checkbox');
         const isChecked = cb && cb.checked;
+        const scoreElem = row.querySelector('.tag-score');
+        const scoreText = scoreElem ? scoreElem.textContent.replace(/[^\d]/g, '') : '';
+        const scoreVal = parseInt(scoreText || '0', 10);
 
         // Tab filter
         let showByTab = true;
@@ -543,15 +548,17 @@ function applyTableFilters() {
             showByTab = false;
         }
 
+        // Strong match filter (FIX 4)
+        let showByStrong = true;
+        if (strongOnly && scoreVal < 80) {
+            showByStrong = false;
+            hiddenApproxCount++;
+        }
+
         // Score filter
         let showByScore = true;
-        if (minScore > 0) {
-            const scoreElem = row.querySelector('.tag-score');
-            const scoreText = scoreElem ? scoreElem.textContent.replace(/[^\d]/g, '') : '';
-            const scoreVal = parseInt(scoreText || '0', 10);
-            if (scoreVal < minScore) {
-                showByScore = false;
-            }
+        if (minScore > 0 && scoreVal < minScore) {
+            showByScore = false;
         }
 
         // Status filter
@@ -569,7 +576,7 @@ function applyTableFilters() {
 
         let showByText = !textFilter || rowText.includes(textFilter);
 
-        if (showByTab && showByScore && showByStatus && showByText) {
+        if (showByTab && showByStrong && showByScore && showByStatus && showByText) {
             row.style.display = '';
             visibleCount++;
         } else {
@@ -586,6 +593,15 @@ function applyTableFilters() {
             hiddenTextElem.textContent = ` (${hiddenUsedCount} hidden as Used)`;
         } else {
             hiddenTextElem.textContent = '';
+        }
+    }
+
+    const approxHiddenElem = document.getElementById('approx-hidden-text');
+    if (approxHiddenElem) {
+        if (strongOnly && hiddenApproxCount > 0) {
+            approxHiddenElem.textContent = `(${hiddenApproxCount} approximate matches hidden)`;
+        } else {
+            approxHiddenElem.textContent = '';
         }
     }
 

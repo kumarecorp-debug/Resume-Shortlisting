@@ -91,6 +91,54 @@ def logout():
     flash('You have been logged out successfully.', 'success')
     return redirect(url_for('login'))
 
+def filter_candidates(candidates, term):
+    """
+    Filters candidates depending on search mode (email, phone, name, or keyword).
+    Returns (filtered_list, mode, exact_matches_count, approx_matches_count).
+    """
+    mode = gmail_search.detect_search_mode(term)
+    term_str = term.strip()
+    
+    if mode == "email":
+        t = term_str.lower()
+        exact = [c for c in candidates if t == str(c.get("Email", "")).strip().lower()]
+        approx = [c for c in candidates if t != str(c.get("Email", "")).strip().lower()]
+        # Boost score of exact match to 100%
+        for c in exact:
+            c["Match Score"] = 100
+            c["Match Reason"] = f"Exact Email match for {term_str}."
+        return exact + approx, mode, len(exact), len(approx)
+
+    if mode == "phone":
+        t_digits = re.sub(r'\D', '', term_str)
+        exact = []
+        approx = []
+        for c in candidates:
+            c_digits = re.sub(r'\D', '', str(c.get("Phone", "")))
+            if t_digits and t_digits in c_digits:
+                c["Match Score"] = 100
+                c["Match Reason"] = f"Exact Phone match for {term_str}."
+                exact.append(c)
+            else:
+                approx.append(c)
+        return exact + approx, mode, len(exact), len(approx)
+
+    if mode == "name":
+        words = [w.lower() for w in term_str.split() if w]
+        exact = []
+        approx = []
+        for c in candidates:
+            cname = str(c.get("Name", "")).lower()
+            if all(w in cname for w in words):
+                c["Match Score"] = 95
+                c["Match Reason"] = f"Name match for {term_str}."
+                exact.append(c)
+            else:
+                approx.append(c)
+        return exact + approx, mode, len(exact), len(approx)
+
+    return candidates, mode, len(candidates), 0
+
 def execute_full_candidate_search(job_query, selected_account, max_candidates=200):
     resume_folder = RS_Project.RESUME_FOLDER
     try:
@@ -128,6 +176,19 @@ def execute_full_candidate_search(job_query, selected_account, max_candidates=20
         return pd.DataFrame()
 
     if not df.empty:
+        # Convert DataFrame to list of dicts to run precision filtering
+        records = df.to_dict(orient='records')
+        filtered_records, search_mode, exact_cnt, approx_cnt = filter_candidates(records, job_query)
+        
+        # Sort candidates strictly by Match Score DESC (FIX 2)
+        filtered_records.sort(key=lambda c: int(re.sub(r'[^\d]', '', str(c.get("Match Score", 0))) or 0), reverse=True)
+        
+        # Re-assign continuous ranks after sorting
+        for idx, rec in enumerate(filtered_records):
+            rec["Rank"] = idx + 1
+            
+        df = pd.DataFrame(filtered_records)
+
         def reorder_skills(row):
             matched = str(row.get('Matched Skills', '')).split(',')
             all_skills = str(row.get('Skill Set', '')).split(',')
@@ -145,16 +206,6 @@ def execute_full_candidate_search(job_query, selected_account, max_candidates=20
 
         if 'Skill Set' in df.columns:
             df['Skill Set'] = df.apply(reorder_skills, axis=1)
-
-        if 'Experience' in df.columns:
-            def extract_years(exp):
-                import re
-                match = re.search(r'[\d.]+', str(exp))
-                if match: return float(match.group())
-                return 0.0
-            df['Exp_Num'] = df['Experience'].apply(extract_years)
-            df = df.sort_values(by=['Exp_Num'], ascending=[False]).reset_index(drop=True)
-            df['Rank'] = range(1, len(df) + 1)
 
         gender_detector = None
         try:
@@ -284,6 +335,13 @@ def process():
         except Exception as e_hist:
             logging.warning(f"Error saving search history: {e_hist}")
 
+        # Detect search mode metadata
+        mode_records, search_mode, exact_cnt, approx_cnt = filter_candidates(all_records, job_query)
+        if search_mode in ['email', 'phone', 'name']:
+            logging.info(f"[identifier] mode={search_mode} exact_matches={exact_cnt} approx_matches={approx_cnt}")
+        else:
+            logging.info(f"[search] mode={search_mode} total_matches={total_matches}")
+
         return render_template(
             'process.jinja',
             job_query=job_query,
@@ -294,7 +352,10 @@ def process():
             columns=columns_order,
             search_id=search_id,
             total_matches=total_matches,
-            max_candidates=max_candidates
+            max_candidates=max_candidates,
+            search_mode=search_mode,
+            exact_matches=exact_cnt,
+            approx_matches=approx_cnt
         )
 
     selected_account = request.args.get('account_email') or session.get('selected_account', default_account)

@@ -463,8 +463,29 @@
             <div class="card">
                 <div class="table-controls" style="flex-wrap: wrap; gap: 14px;">
                     <div>
-                        <h2 style="margin: 0; font-size: 1.3rem; color: #0f172a;" id="candidates-count-title">
-                            Shortlisted Candidates (<span id="visible-count">{{ table_data|length }}</span> of {{ total_matches or table_data|length }} matches<span id="hidden-used-text"></span>)
+                        <h2 style="margin: 0; font-size: 1.3rem; color: #0f172a; display: flex; align-items: center; gap: 10px; flex-wrap: wrap;" id="candidates-count-title">
+                            <span>
+                                {% if search_mode == 'email' %}
+                                    {{ exact_matches if exact_matches is defined else 1 }} exact match{% if approx_matches and approx_matches > 0 %} + {{ approx_matches }} approximate{% endif %} for '{{ job_query }}'
+                                {% elif search_mode == 'phone' %}
+                                    {{ exact_matches if exact_matches is defined else 1 }} matches for '{{ job_query }}'
+                                {% elif search_mode == 'name' %}
+                                    {{ exact_matches if exact_matches is defined else 1 }} matches for '{{ job_query }}'
+                                {% else %}
+                                    Shortlisted Candidates (<span id="visible-count">{{ table_data|length }}</span> of {{ total_matches or table_data|length }} matches<span id="hidden-used-text"></span>)
+                                {% endif %}
+                            </span>
+                            
+                            <!-- Search Mode Badge (FIX 5) -->
+                            {% if search_mode in ['email', 'phone', 'name'] %}
+                                <span style="background: #dbeafe; color: #1e40af; border: 1px solid #93c5fd; padding: 3px 10px; border-radius: 12px; font-size: 0.82rem; font-weight: 700; text-transform: capitalize;">
+                                    🎯 Mode: {{ search_mode }} search
+                                </span>
+                            {% else %}
+                                <span style="background: #f1f5f9; color: #475569; border: 1px solid #cbd5e1; padding: 3px 10px; border-radius: 12px; font-size: 0.82rem; font-weight: 700; text-transform: capitalize;">
+                                    🔍 Mode: Keyword search
+                                </span>
+                            {% endif %}
                         </h2>
                         {% if job_role %}
                             <p style="margin: 4px 0 0 0; color: #64748b; font-size: 0.9rem;" title="{{ job_role }}">
@@ -478,6 +499,14 @@
                         <div style="display: flex; gap: 6px; background: #e2e8f0; padding: 4px; border-radius: 8px;">
                             <button type="button" id="tab-all-trainers" class="chip-btn" onclick="switchTrainerTab('all')" style="background: #2563eb; color: white; border: none; font-weight: 700; padding: 6px 16px; border-radius: 6px;">🎥 All Trainers ({{ table_data|length }})</button>
                             <button type="button" id="tab-selected-trainers" class="chip-btn" onclick="switchTrainerTab('selected')" style="background: transparent; color: #475569; border: none; font-weight: 600; padding: 6px 16px; border-radius: 6px;">⭐ Selected Trainers (<span id="tab-selected-count">0</span>)</button>
+                        </div>
+
+                        <!-- FIX 4: Only show strong matches (score >= 80%) toggle -->
+                        <div style="display: flex; align-items: center; gap: 8px; background: #ffffff; border: 1.5px solid #cbd5e1; padding: 6px 14px; border-radius: 8px;">
+                            <input type="checkbox" id="chk-strong-matches" onchange="applyTableFilters()" {% if search_mode in ['email', 'phone', 'name'] %}checked{% endif %} style="cursor: pointer; transform: scale(1.15);">
+                            <label for="chk-strong-matches" style="font-weight: 600; font-size: 0.88rem; color: #1e293b; cursor: pointer;">
+                                ☑ Only show strong matches (score ≥ 80%) <span id="approx-hidden-text" style="color: #64748b; font-weight: 500;"></span>
+                            </label>
                         </div>
 
                         <div class="slider-box" style="display: flex; align-items: center; gap: 10px; background: #ffffff; border: 1.5px solid #cbd5e1; padding: 6px 14px; border-radius: 8px;">

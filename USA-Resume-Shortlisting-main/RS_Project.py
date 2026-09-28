@@ -653,6 +653,20 @@ def extract_email_smart(resume_text, email_body, sender_header="", reply_to="", 
 
     return "candidate.contact@gmail.com"
 
+def clean_phone(raw):
+    """
+    Strips any label prefixes (e.g. 'ph :', 'Phone:', 'Mob.') from phone strings.
+    """
+    if not raw:
+        return ""
+    cleaned = str(raw).strip()
+    labels = ["ph :", "ph:", "phone:", "phone :", "mob.", "mob:", "mobile:", "mobile :", "cell:", "tel:", "contact:"]
+    for label in labels:
+        if cleaned.lower().startswith(label.lower()):
+            cleaned = cleaned[len(label):].strip()
+            break
+    return cleaned.strip()
+
 def extract_phone_smart(resume_text, email_body, subject=""):
     """
     Extracts phone number with high recall across subject line, resume text, body, and labeled fields.
@@ -671,6 +685,7 @@ def extract_phone_smart(resume_text, email_body, subject=""):
     for pattern in labeled_patterns:
         for match in re.finditer(pattern, combined, re.IGNORECASE):
             raw = match.group(0)
+            raw = clean_phone(raw)
             digits = re.sub(r'\D', '', raw)
             if 10 <= len(digits) <= 13:
                 if len(digits) == 10:
@@ -1337,7 +1352,8 @@ Content:
                         candidate_data["Email"] = clean_em
                         
                 if parsed.get("phone") and parsed["phone"].lower() not in ["n/a", "none"]:
-                    clean_ph = extract_phone_smart(parsed["phone"].strip(), "")
+                    clean_ph = clean_phone(parsed["phone"].strip())
+                    clean_ph = extract_phone_smart(clean_ph, "")
                     if clean_ph != "N/A":
                         candidate_data["Phone"] = clean_ph
                         
