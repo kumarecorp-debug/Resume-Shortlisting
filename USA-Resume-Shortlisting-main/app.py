@@ -141,8 +141,8 @@ def parse_experience_years(text):
     if t in ("", "n/a", "na", "none", "null", "not mentioned", "unknown"):
         return None
     
-    # Pattern: "X years" or "X.Y years" or "X yrs"
-    years_match = re.search(r'(\d+(?:\.\d+)?)\s*(?:years?|yrs?|y)\b', t)
+    # Pattern: "X years", "X+ years", "X.Y years", "X yrs"
+    years_match = re.search(r'(\d+(?:\.\d+)?)\s*\+?\s*(?:years?|yrs?|y)\b', t)
     months_match = re.search(r'(\d+(?:\.\d+)?)\s*(?:months?|mos?)\b', t)
     
     years = float(years_match.group(1)) if years_match else 0.0
@@ -154,9 +154,9 @@ def parse_experience_years(text):
     if years == 0 and months > 0:
         return round(months / 12.0, 1)
     
-    # If we found nothing, try to grab a bare number
+    # If we found nothing, try to grab a bare number or number within text
     if not years_match and not months_match:
-        bare = re.search(r'^\s*(\d+(?:\.\d+)?)\s*$', t)
+        bare = re.search(r'(\d+(?:\.\d+)?)', t)
         if bare:
             return float(bare.group(1))
         return None
