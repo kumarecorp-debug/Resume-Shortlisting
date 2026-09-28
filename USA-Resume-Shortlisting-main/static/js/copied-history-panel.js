@@ -229,7 +229,7 @@ function renderCopiedHistoryContent(summary) {
                     }
 
                     html += `
-                        <div class="copied-card" data-search-text="${escapeHtml(c.candidate_name || '')} ${escapeHtml(c.candidate_email || '')}" style="background: var(--bg-primary); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 12px 14px; font-size: 0.88rem;">
+                        <div class="copied-card" data-search-text="${escapeHtml(c.candidate_name || '')} ${escapeHtml(c.candidate_email || '')} ${escapeHtml(c.candidate_phone || '')} ${escapeHtml(c.mailbox_account || '')} ${escapeHtml(c.job_description || '')}" style="background: var(--bg-primary); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 12px 14px; font-size: 0.88rem;">
                             <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 4px;">
                                 <strong style="color: var(--text-primary); font-size: 0.92rem; display: inline-flex; align-items: center;">
                                     👤 ${escapeHtml(c.candidate_name || 'Candidate')} ${countBadge}
@@ -270,14 +270,23 @@ function renderCopiedHistoryContent(summary) {
 }
 
 function filterCopiedCards() {
-    const text = document.getElementById('copied-search-input')?.value.toLowerCase().trim() || '';
+    const rawInput = document.getElementById('copied-search-input')?.value.toLowerCase().trim() || '';
     const cards = document.querySelectorAll('.copied-card');
+    
+    if (!rawInput) {
+        cards.forEach(card => {
+            card.style.display = 'block';
+        });
+        return;
+    }
+
+    // Split input query into tokens by whitespace, commas, semicolons, or newlines
+    const terms = rawInput.split(/[\s,;\n\r]+/).filter(Boolean);
+
     cards.forEach(card => {
         const searchVal = card.getAttribute('data-search-text')?.toLowerCase() || '';
-        if (!text || searchVal.includes(text)) {
-            card.style.display = 'block';
-        } else {
-            card.style.display = 'none';
-        }
+        // Match if exact query is found OR if ANY individual email/keyword token matches
+        const isMatch = searchVal.includes(rawInput) || terms.some(term => searchVal.includes(term));
+        card.style.display = isMatch ? 'block' : 'none';
     });
 }
