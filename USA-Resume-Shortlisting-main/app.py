@@ -91,51 +91,79 @@ def logout():
     flash('You have been logged out successfully.', 'success')
     return redirect(url_for('login'))
 
+def normalize_phone(p):
+    if not p: return ""
+    return re.sub(r'\D', '', str(p))
+
+def matches_phone(candidate, search_term):
+    search_digits = normalize_phone(search_term)
+    cand_phone = str(candidate.get("Phone", ""))
+    cand_digits = normalize_phone(cand_phone)
+    result = False
+    if len(search_digits) >= 10 and len(cand_digits) >= 10:
+        result = (search_digits[-10:] == cand_digits[-10:])
+    elif search_digits and cand_digits:
+        result = (search_digits == cand_digits)
+    logging.info(f"[phone-match] cand_phone='{cand_phone}' cand_digits='{cand_digits}' search_digits='{search_digits}' match={result}")
+    return result
+
+def normalize_email(e):
+    if not e: return ""
+    return str(e).strip().lower()
+
+def matches_email(candidate, search_term):
+    t = normalize_email(search_term)
+    cand_email = normalize_email(candidate.get("Email", ""))
+    result = (t != "" and t == cand_email)
+    logging.info(f"[email-match] cand_email='{cand_email}' search_email='{t}' match={result}")
+    return result
+
+def matches_name(candidate, search_term):
+    words = [w.lower() for w in str(search_term).strip().split() if w]
+    cand_name = str(candidate.get("Name", "")).lower()
+    if not words or not cand_name:
+        return False
+    # Check word token matching
+    result = all(w in cand_name for w in words)
+    logging.info(f"[name-match] cand_name='{cand_name}' search_words={words} match={result}")
+    return result
+
 def filter_candidates(candidates, term):
     """
     Filters candidates depending on search mode (email, phone, name, or keyword).
+    For identifier modes (email, phone, name): returns ONLY exact matches with score 100%,
+    excluding non-matches.
     Returns (filtered_list, mode, exact_matches_count, approx_matches_count).
     """
     mode = gmail_search.detect_search_mode(term)
     term_str = term.strip()
     
     if mode == "email":
-        t = term_str.lower()
-        exact = [c for c in candidates if t == str(c.get("Email", "")).strip().lower()]
-        approx = [c for c in candidates if t != str(c.get("Email", "")).strip().lower()]
-        # Boost score of exact match to 100%
-        for c in exact:
-            c["Match Score"] = 100
-            c["Match Reason"] = f"Exact Email match for {term_str}."
-        return exact + approx, mode, len(exact), len(approx)
+        matched = []
+        for c in candidates:
+            if matches_email(c, term_str):
+                c["Match Score"] = 100
+                c["Match Reason"] = f"Exact Email match for {term_str}."
+                matched.append(c)
+        return matched, mode, len(matched), 0
 
     if mode == "phone":
-        t_digits = re.sub(r'\D', '', term_str)
-        exact = []
-        approx = []
+        matched = []
         for c in candidates:
-            c_digits = re.sub(r'\D', '', str(c.get("Phone", "")))
-            if t_digits and t_digits in c_digits:
+            if matches_phone(c, term_str):
                 c["Match Score"] = 100
                 c["Match Reason"] = f"Exact Phone match for {term_str}."
-                exact.append(c)
-            else:
-                approx.append(c)
-        return exact + approx, mode, len(exact), len(approx)
+                matched.append(c)
+        return matched, mode, len(matched), 0
 
     if mode == "name":
-        words = [w.lower() for w in term_str.split() if w]
-        exact = []
-        approx = []
+        matched = []
         for c in candidates:
-            cname = str(c.get("Name", "")).lower()
-            if all(w in cname for w in words):
-                c["Match Score"] = 95
-                c["Match Reason"] = f"Name match for {term_str}."
-                exact.append(c)
-            else:
-                approx.append(c)
-        return exact + approx, mode, len(exact), len(approx)
+            if matches_name(c, term_str):
+                c["Match Score"] = 100
+                c["Match Reason"] = f"Exact Name match for {term_str}."
+                matched.append(c)
+        return matched, mode, len(matched), 0
 
     return candidates, mode, len(candidates), 0
 
@@ -721,6 +749,36 @@ def api_search():
         "limit": limit,
         "hidden_used_count": hidden_used_count,
         "has_more": (offset + limit) < total
+    })
+
+@app.route('/debug-phone-match', methods=['GET'])
+def debug_phone_match():
+    term = request.args.get('term', '')
+    mailbox = request.args.get('mailbox') or session.get('selected_account', 'recruiter@ecorptrainings.com')
+    search_digits = normalize_phone(term)
+    last_10 = search_digits[-10:] if len(search_digits) >= 10 else search_digits
+    
+    df = execute_full_candidate_search(term, mailbox, max_candidates=200)
+    candidates = df.to_dict(orient='records') if not df.empty else []
+    
+    matches = []
+    matches_count = 0
+    for cand in candidates:
+        is_match = matches_phone(cand, term)
+        if is_match:
+            matches_count += 1
+        matches.append({
+            "name": cand.get("Name", ""),
+            "phone": cand.get("Phone", ""),
+            "match": is_match
+        })
+        
+    return jsonify({
+        "search_digits": search_digits,
+        "last_10": last_10,
+        "candidates_checked": len(candidates),
+        "matches_found": matches_count,
+        "matches": matches
     })
 
 if __name__ == '__main__':

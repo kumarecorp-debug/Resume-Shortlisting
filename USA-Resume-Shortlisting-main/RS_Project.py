@@ -1270,21 +1270,70 @@ def extract_candidate_entities_with_ai(resume_text, email_body, job_description,
         except Exception:
             pass
 
+    # Check search mode to prevent search term leakage into entity fields
+    import gmail_search
+    query_mode = gmail_search.detect_search_mode(job_description)
+    if query_mode in ["email", "phone", "name"]:
+        clean_jd = ""  # Do not pass identifier search terms as target skills/keywords
+    else:
+        clean_jd = job_description
+
     if genai_client:
-        prompt = f"""
+        if query_mode in ["email", "phone", "name"]:
+            prompt = f"""
 You are an expert AI Resume Screening and Entity Extraction system.
-Target Job Description / Query Keywords: "{job_description}"
+Read the resume text carefully. Extract ONLY what appears in the resume:
+- name: candidate's actual full name
+- email: candidate's actual email
+- phone: candidate's actual phone number
+- skills: actual technical skills listed in the resume
+- experience: total years of experience
+- match_score: set to 100
+- matched_skills: ""
+- match_reason: "Identifier match"
+- gender: candidate's gender (Male, Female, or Unknown)
+
+IMPORTANT:
+- Do NOT invent or copy values from any external source.
+- Do NOT include phone numbers or emails from context, only from the actual resume content.
+- If a field is not present in the resume, return empty string or N/A.
+
+Return strictly valid JSON format without markdown code blocks:
+{{
+    "name": "Candidate Full Name",
+    "email": "Candidate direct email",
+    "phone": "Candidate phone number",
+    "skills": "Comma separated top technical skills listed in resume",
+    "experience": "Total experience e.g. 5.5 years",
+    "match_score": 100,
+    "matched_skills": "",
+    "match_reason": "Exact match",
+    "gender": "Male or Female or Unknown"
+}}
+
+Content:
+{combined_text}
+"""
+        else:
+            prompt = f"""
+You are an expert AI Resume Screening and Entity Extraction system.
+Target Job Description / Query Keywords: "{clean_jd}"
 
 Analyze the resume and email text below and extract:
 1. name: Full Name of the candidate / trainer
 2. email: Direct contact email
 3. phone: Contact phone number
-4. skills: Top technical skills present
+4. skills: Top technical skills present in resume
 5. experience: Total professional work experience (e.g. "5.5 years")
-6. match_score: An integer score from 0 to 100 representing candidate match fit for "{job_description}"
+6. match_score: An integer score from 0 to 100 representing candidate match fit for "{clean_jd}"
 7. matched_skills: Comma-separated list of target JD keywords found
 8. match_reason: One concise sentence explaining the match score and skill fit
 9. gender: The candidate's gender (Male, Female, or Unknown) inferred from their name or explicitly stated in the resume
+
+IMPORTANT:
+- Do NOT invent or copy values from any external source.
+- Do NOT include phone numbers or emails from context, only from the resume text.
+- If a field is not present in the resume, return empty string.
 
 Return strictly valid JSON format without markdown code blocks:
 {{

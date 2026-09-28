@@ -465,22 +465,24 @@
                     <div>
                         <h2 style="margin: 0; font-size: 1.3rem; color: #0f172a; display: flex; align-items: center; gap: 10px; flex-wrap: wrap;" id="candidates-count-title">
                             <span>
-                                {% if search_mode == 'email' %}
-                                    {{ exact_matches if exact_matches is defined else 1 }} exact match{% if approx_matches and approx_matches > 0 %} + {{ approx_matches }} approximate{% endif %} for '{{ job_query }}'
-                                {% elif search_mode == 'phone' %}
-                                    {{ exact_matches if exact_matches is defined else 1 }} matches for '{{ job_query }}'
-                                {% elif search_mode == 'name' %}
-                                    {{ exact_matches if exact_matches is defined else 1 }} matches for '{{ job_query }}'
+                                {% if search_mode in ['email', 'phone', 'name'] %}
+                                    Search: "{{ job_query }}" &nbsp;·&nbsp; Mode: {{ search_mode|capitalize }} search &nbsp;·&nbsp;
+                                    {{ exact_matches if exact_matches is defined else table_data|length }} exact match{% if (exact_matches if exact_matches is defined else table_data|length) != 1 %}es{% endif %} &nbsp;·&nbsp; {{ approx_matches if approx_matches is defined else 0 }} approximate
                                 {% else %}
                                     Shortlisted Candidates (<span id="visible-count">{{ table_data|length }}</span> of {{ total_matches or table_data|length }} matches<span id="hidden-used-text"></span>)
                                 {% endif %}
                             </span>
                             
-                            <!-- Search Mode Badge (FIX 5) -->
+                            <!-- Search Mode Badge & Warning Badge (FIX 5) -->
                             {% if search_mode in ['email', 'phone', 'name'] %}
                                 <span style="background: #dbeafe; color: #1e40af; border: 1px solid #93c5fd; padding: 3px 10px; border-radius: 12px; font-size: 0.82rem; font-weight: 700; text-transform: capitalize;">
                                     🎯 Mode: {{ search_mode }} search
                                 </span>
+                                {% if approx_matches and approx_matches > 0 %}
+                                    <span style="background: #fef3c7; color: #92400e; border: 1px solid #fcd34d; padding: 3px 10px; border-radius: 12px; font-size: 0.82rem; font-weight: 700;">
+                                        ⚠️ Approximate matches — phone number not exact
+                                    </span>
+                                {% endif %}
                             {% else %}
                                 <span style="background: #f1f5f9; color: #475569; border: 1px solid #cbd5e1; padding: 3px 10px; border-radius: 12px; font-size: 0.82rem; font-weight: 700; text-transform: capitalize;">
                                     🔍 Mode: Keyword search
