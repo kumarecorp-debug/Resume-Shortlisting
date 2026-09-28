@@ -16,8 +16,14 @@ project_root = os.path.dirname(os.path.abspath(__file__))
 template_dir = os.path.join(project_root, 'templates')
 static_dir = os.path.join(project_root, 'static')
 
-app = Flask(__name__, template_folder=template_dir, static_folder=static_dir)
+app = Flask(__name__, template_folder=template_dir, static_folder=static_dir, static_url_path='/static')
 app.secret_key = 'your-secret-key-here-ecorp-resume'
+
+from flask import send_from_directory
+
+@app.route('/static/<path:filename>')
+def serve_static_fallback(filename):
+    return send_from_directory(static_dir, filename)
 
 # Supabase Authentication Setup
 SUPABASE_URL = os.environ.get("SUPABASE_URL", "https://fvbctgxwjrctcssckggp.supabase.co")
