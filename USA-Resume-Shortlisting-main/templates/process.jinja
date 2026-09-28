@@ -574,22 +574,22 @@
                             <tr>
                                 <th style="text-align: center; width: 35px;">☐</th>
                                 <th style="text-align: center; width: 45px;">Rank</th>
-                                <th style="width: 130px;">Name <button type="button" class="copy-btn" onclick="copyColumnData('Name', 3)" title="Copy all visible Names">📋</button></th>
-                                <th style="width: 75px;">Gender <button type="button" class="copy-btn" onclick="copyColumnData('Gender', 4)" title="Copy all visible Genders">📋</button></th>
-                                <th style="width: 170px;">Email <button type="button" class="copy-btn" onclick="copyColumnData('Email', 5)" title="Copy all visible Emails">📋</button></th>
-                                <th style="width: 150px;">Phone <button type="button" class="copy-btn" onclick="copyColumnData('Phone', 6)" title="Copy all visible Phone Numbers">📋</button></th>
+                                <th style="width: 130px;">Name <button type="button" class="copy-btn" data-column-copy="true" onclick="copyColumnData('Name', 3)" title="Copy all visible Names">📋</button></th>
+                                <th style="width: 75px;">Gender <button type="button" class="copy-btn" data-column-copy="true" onclick="copyColumnData('Gender', 4)" title="Copy all visible Genders">📋</button></th>
+                                <th style="width: 170px;">Email <button type="button" class="copy-btn" data-column-copy="true" onclick="copyColumnData('Email', 5)" title="Copy all visible Emails">📋</button></th>
+                                <th style="width: 150px;">Phone <button type="button" class="copy-btn" data-column-copy="true" onclick="copyColumnData('Phone', 6)" title="Copy all visible Phone Numbers">📋</button></th>
                                 <th style="text-align: center; width: 95px; cursor: pointer;" onclick="sortTableByExperience()" id="th-exp">
-                                    Exp <span id="sort-exp-icon">⇅</span> <button type="button" class="copy-btn" onclick="event.stopPropagation(); copyColumnData('Experience', 7)" title="Copy all visible Experience">📋</button>
+                                    Exp <span id="sort-exp-icon">⇅</span> <button type="button" class="copy-btn" data-column-copy="true" onclick="event.stopPropagation(); copyColumnData('Experience', 7)" title="Copy all visible Experience">📋</button>
                                 </th>
-                                <th style="width: 160px;">Skill Set <button type="button" class="copy-btn" onclick="copyColumnData('Skill Set', 8)" title="Copy all visible Skill Sets">📋</button></th>
-                                <th style="width: 130px;">Matched Skills <button type="button" class="copy-btn" onclick="copyColumnData('Matched Skills', 9)" title="Copy all visible Matched Skills">📋</button></th>
-                                <th style="text-align: center; width: 70px;">Score <button type="button" class="copy-btn" onclick="copyColumnData('Match Score', 10)" title="Copy all visible Match Scores">📋</button></th>
-                                <th style="width: 150px;">Reason <button type="button" class="copy-btn" onclick="copyColumnData('Match Reason', 11)" title="Copy all visible Match Reasons">📋</button></th>
+                                <th style="width: 160px;">Skill Set <button type="button" class="copy-btn" data-column-copy="true" onclick="copyColumnData('Skill Set', 8)" title="Copy all visible Skill Sets">📋</button></th>
+                                <th style="width: 130px;">Matched Skills <button type="button" class="copy-btn" data-column-copy="true" onclick="copyColumnData('Matched Skills', 9)" title="Copy all visible Matched Skills">📋</button></th>
+                                <th style="text-align: center; width: 70px;">Score <button type="button" class="copy-btn" data-column-copy="true" onclick="copyColumnData('Match Score', 10)" title="Copy all visible Match Scores">📋</button></th>
+                                <th style="width: 150px;">Reason <button type="button" class="copy-btn" data-column-copy="true" onclick="copyColumnData('Match Reason', 11)" title="Copy all visible Match Reasons">📋</button></th>
                             </tr>
                         </thead>
                         <tbody id="table-body">
                             {% for row in table_data %}
-                                <tr id="row-{{ loop.index }}" data-exp-years="{{ row['experience_years'] if row['experience_years'] is not none else '' }}">
+                                <tr id="row-{{ loop.index }}" data-email="{{ row['Email'] if row['Email'] else '' }}" data-name="{{ row['Name'] if row['Name'] else '' }}" data-phone="{{ row['Phone'] if row['Phone'] else '' }}" data-exp-years="{{ row['experience_years'] if row['experience_years'] is not none else '' }}">
                                     <td style="text-align: center;">
                                         <input type="checkbox" class="trainer-checkbox" data-email="{{ row['Email'] if row['Email'] else '' }}" data-name="{{ row['Name'] if row['Name'] else '' }}" data-phone="{{ row['Phone'] if row['Phone'] else '' }}" onchange="onTrainerSelectChange()" style="cursor: pointer; transform: scale(1.15);">
                                     </td>
@@ -714,6 +714,8 @@
     <script src="{{ url_for('static', filename='js/copied-history-panel.js') }}"></script>
     <script src="{{ url_for('static', filename='js/copy.js') }}"></script>
     <script>
+        window.__candidates = {{ table_data|tojson if table_data else [] }};
+
         function updateAccountBadge(accountEmail) {
             const badge = document.getElementById('active-mail-label');
             if (badge) {

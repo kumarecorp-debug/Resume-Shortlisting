@@ -29,7 +29,9 @@ document.addEventListener('DOMContentLoaded', function () {
 
         const mailbox = window.__currentMailbox;
         const jd = window.__currentJD;
-        const sessionKey = `copy_pref_${mailbox.toLowerCase().strip ? mailbox.toLowerCase().strip() : mailbox.toLowerCase()}_${jd.toLowerCase().trim()}`;
+        const keyMailbox = (mailbox || '').toLowerCase().trim();
+        const keyJd = (jd || '').toLowerCase().trim();
+        const sessionKey = `copy_pref_${keyMailbox}_${keyJd}`;
         const savedPref = sessionStorage.getItem(sessionKey);
 
         if (savedPref) {
@@ -60,7 +62,7 @@ document.addEventListener('DOMContentLoaded', function () {
     const currentMail = window.__currentMailbox;
     const currentJd = window.__currentJD;
     if (currentMail && currentJd) {
-        const sessionKey = `copy_pref_${currentMail.toLowerCase()}_${currentJd.toLowerCase().trim()}`;
+        const sessionKey = `copy_pref_${currentMail.toLowerCase().trim()}_${currentJd.toLowerCase().trim()}`;
         if (sessionStorage.getItem(sessionKey)) {
             const link = document.getElementById('link-change-copy-pref');
             if (link) link.style.display = 'inline-block';
@@ -80,9 +82,9 @@ async function saveCandidateToCopiedHistory(candidate) {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 mailbox_account: mailbox,
-                candidate_email: candidate.email || candidate.candidate_email || '',
-                candidate_name: candidate.name || candidate.candidate_name || '',
-                candidate_phone: candidate.phone || candidate.candidate_phone || '',
+                candidate_email: candidate.email || candidate.candidate_email || candidate.Email || '',
+                candidate_name: candidate.name || candidate.candidate_name || candidate.Name || '',
+                candidate_phone: candidate.phone || candidate.candidate_phone || candidate.Phone || '',
                 job_description: jd
             })
         });
@@ -112,9 +114,9 @@ async function saveBulkCandidatesToCopiedHistory(candidates) {
                 mailbox_account: mailbox,
                 job_description: jd,
                 candidates: (candidates || []).map(c => ({
-                    email: c.email || c.candidate_email || '',
-                    name: c.name || c.candidate_name || '',
-                    phone: c.phone || c.candidate_phone || ''
+                    email: c.email || c.candidate_email || c.Email || '',
+                    name: c.name || c.candidate_name || c.Name || '',
+                    phone: c.phone || c.candidate_phone || c.Phone || ''
                 }))
             })
         });
@@ -250,3 +252,161 @@ function reopenCopyPrefModal(e) {
             showSkipCopiedModal(mailbox, jd, data, sessionKey, document.getElementById('search-form'));
         });
 }
+
+// ============================================================
+// WIRE COPY BUTTONS TO HANDLERS
+// ============================================================
+
+window.copyCandidate = async function(candidate) {
+    console.log('[copy.js] copyCandidate called:', candidate);
+    
+    if (!candidate || (!candidate.email && !candidate.Email)) {
+        console.warn('[copy] no candidate provided');
+        return;
+    }
+
+    const cEmail = candidate.email || candidate.Email || '';
+    const cName = candidate.name || candidate.Name || '';
+    const cPhone = candidate.phone || candidate.Phone || '';
+    
+    // 1. Copy to clipboard
+    const text = `${cName} | ${cEmail} | ${cPhone}`;
+    try {
+        await navigator.clipboard.writeText(text);
+    } catch (e) {
+        console.warn('[copy] clipboard failed:', e);
+    }
+    
+    // 2. Save to copied_history (existing function)
+    await saveCandidateToCopiedHistory({ email: cEmail, name: cName, phone: cPhone });
+    
+    // 3. Mark as Used
+    try {
+        await fetch('/api/candidate/status', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                mailbox: window.__currentMailbox || document.getElementById('account_email')?.value || '',
+                email: cEmail,
+                name: cName,
+                status: 'used'
+            })
+        });
+    } catch (e) {
+        console.warn('[copy] mark-used failed:', e);
+    }
+    
+    // 4. Toast
+    if (typeof showToast === 'function') {
+        showToast(`Copied ${cName || cEmail} (marked Used)`, false);
+    }
+};
+
+window.copySelected = async function(candidates) {
+    console.log('[copy.js] copySelected called with', (candidates || []).length, 'candidates');
+    
+    if (!candidates || !candidates.length) return;
+    
+    // 1. Copy all to clipboard
+    const text = candidates.map(c => {
+        const cEmail = c.email || c.Email || '';
+        const cName = c.name || c.Name || '';
+        const cPhone = c.phone || c.Phone || '';
+        return `${cName} | ${cEmail} | ${cPhone}`;
+    }).join('\n');
+
+    try {
+        await navigator.clipboard.writeText(text);
+    } catch (e) {
+        console.warn('[copy] clipboard failed:', e);
+    }
+    
+    // 2. Bulk save to copied_history (existing function)
+    const formattedCandidates = candidates.map(c => ({
+        email: c.email || c.Email || '',
+        name: c.name || c.Name || '',
+        phone: c.phone || c.Phone || ''
+    }));
+    await saveBulkCandidatesToCopiedHistory(formattedCandidates);
+    
+    // 3. Toast
+    if (typeof showToast === 'function') {
+        showToast(`Copied ${candidates.length} candidates (marked Used)`, false);
+    }
+};
+
+// Global delegation: attach ONE listener for all copy buttons
+document.addEventListener('click', function(e) {
+    // Single-row Copy button
+    const btn = e.target.closest('.copy-btn, [data-action="copy"], .btn-copy, button[onclick*="copyRow"], button[onclick*="copySingleCandidate"]');
+    if (btn && !btn.hasAttribute('data-column-copy')) {
+        const tr = btn.closest('tr');
+        if (tr) {
+            e.preventDefault();
+            const email = btn.dataset.email 
+                       || tr?.dataset.email 
+                       || tr?.querySelector('.trainer-checkbox')?.dataset.email 
+                       || tr?.cells[3]?.textContent.trim();
+            const name = btn.dataset.name
+                      || tr?.dataset.name
+                      || tr?.querySelector('.trainer-checkbox')?.dataset.name
+                      || tr?.cells[2]?.textContent.trim();
+            const phone = btn.dataset.phone
+                       || tr?.dataset.phone
+                       || tr?.querySelector('.trainer-checkbox')?.dataset.phone
+                       || tr?.cells[4]?.textContent.trim();
+            
+            let cand = (window.__candidates || []).find(c => 
+                ((c.email || c.Email || '').toLowerCase() === (email || '').toLowerCase())
+            );
+
+            if (!cand && email) {
+                cand = { email: email, name: name, phone: phone };
+            }
+            
+            if (cand) {
+                window.copyCandidate(cand);
+            } else {
+                console.warn('[copy] candidate not found for', email);
+            }
+            return;
+        }
+    }
+    
+    // Bulk "Copy Selected" button
+    const bulkBtn = e.target.closest('#btn-copy-selected, #copy-selected-btn, [data-action="copy-selected"], .btn-copy-selected');
+    if (bulkBtn) {
+        e.preventDefault();
+        const boxes = document.querySelectorAll('.trainer-checkbox:checked, .row-checkbox:checked');
+        const selected = Array.from(boxes).map(cb => {
+            const tr = cb.closest('tr');
+            const email = cb.dataset.email 
+                       || tr?.dataset.email 
+                       || tr?.cells[3]?.textContent.trim();
+            const name = cb.dataset.name
+                      || tr?.dataset.name
+                      || tr?.cells[2]?.textContent.trim();
+            const phone = cb.dataset.phone
+                       || tr?.dataset.phone
+                       || tr?.cells[4]?.textContent.trim();
+
+            let found = (window.__candidates || []).find(c => 
+                ((c.email || c.Email || '').toLowerCase() === (email || '').toLowerCase())
+            );
+            if (!found && email) {
+                found = { email, name, phone };
+            }
+            return found;
+        }).filter(Boolean);
+        
+        if (selected.length) {
+            window.copySelected(selected);
+        } else {
+            console.warn('[copy] nothing selected');
+        }
+    }
+});
+
+console.log('[copy.js] handlers registered:', 
+            typeof window.copyCandidate, 
+            typeof window.copySelected);
