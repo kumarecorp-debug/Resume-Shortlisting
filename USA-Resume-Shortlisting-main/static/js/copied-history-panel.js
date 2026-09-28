@@ -13,22 +13,16 @@ window.escapeHtml = escapeHtml;
 function formatTimestamp(isoString) {
     if (!isoString) return '';
     const d = new Date(isoString);
-    const now = new Date();
-    const isToday = d.toDateString() === now.toDateString();
-    const yesterday = new Date(now);
-    yesterday.setDate(yesterday.getDate() - 1);
-    const isYesterday = d.toDateString() === yesterday.toDateString();
+    if (isNaN(d.getTime())) return '';
 
-    const time = d.toLocaleTimeString('en-US', {
+    const dateStr = d.toLocaleDateString('en-US', {
+        month: 'short', day: 'numeric', year: 'numeric'
+    });
+    const timeStr = d.toLocaleTimeString('en-US', {
         hour: 'numeric', minute: '2-digit'
     });
 
-    if (isToday) return `🕒 ${time}`;
-    if (isYesterday) return `🕒 Yesterday, ${time}`;
-
-    return `🕒 ${d.toLocaleDateString('en-US', {
-        month: 'short', day: 'numeric', year: 'numeric'
-    })}, ${time}`;
+    return `🕒 ${dateStr}, ${timeStr}`;
 }
 
 document.addEventListener('DOMContentLoaded', function () {
@@ -222,8 +216,8 @@ function renderCopiedHistoryContent(summary) {
                     if (!showDups && c.copy_count && c.copy_count > 1) {
                         let tooltip = `Last copied ${timeStr}`;
                         if (c.all_timestamps && c.all_timestamps.length > 1) {
-                            const others = c.all_timestamps.slice(1).map(ts => new Date(ts).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }));
-                            tooltip += `. Also copied ${others.join(', ')}`;
+                            const others = c.all_timestamps.slice(1).map(ts => formatTimestamp(ts));
+                            tooltip += `. Also copied: ${others.join('; ')}`;
                         }
                         countBadge = `<span class="tag-copy-count" style="background: #e0e7ff; color: #3730a3; font-size: 0.75rem; font-weight: 700; padding: 2px 7px; border-radius: 10px; margin-left: 6px;" title="${escapeHtml(tooltip)}">[× ${c.copy_count}]</span>`;
                     }
