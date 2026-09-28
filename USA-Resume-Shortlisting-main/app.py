@@ -172,9 +172,8 @@ def parse_experience_years(text):
 def filter_candidates(candidates, term):
     """
     Filters candidates depending on search mode (email, phone, name, or keyword).
-    For identifier modes (email, phone, name): returns ONLY exact matches with score 100%,
-    excluding non-matches.
-    Returns (filtered_list, mode, exact_matches_count, approx_matches_count).
+    For identifier modes (email, phone, name): returns matching candidates,
+    falling back to all extracted candidates if strict matching yields empty results.
     """
     mode = gmail_search.detect_search_mode(term)
     term_str = term.strip()
@@ -186,7 +185,8 @@ def filter_candidates(candidates, term):
                 c["Match Score"] = 100
                 c["Match Reason"] = f"Exact Email match for {term_str}."
                 matched.append(c)
-        return matched, mode, len(matched), 0
+        if matched:
+            return matched, mode, len(matched), 0
 
     if mode == "phone":
         matched = []
@@ -195,7 +195,8 @@ def filter_candidates(candidates, term):
                 c["Match Score"] = 100
                 c["Match Reason"] = f"Exact Phone match for {term_str}."
                 matched.append(c)
-        return matched, mode, len(matched), 0
+        if matched:
+            return matched, mode, len(matched), 0
 
     if mode == "name":
         matched = []
@@ -204,7 +205,8 @@ def filter_candidates(candidates, term):
                 c["Match Score"] = 100
                 c["Match Reason"] = f"Exact Name match for {term_str}."
                 matched.append(c)
-        return matched, mode, len(matched), 0
+        if matched:
+            return matched, mode, len(matched), 0
 
     return candidates, mode, len(candidates), 0
 

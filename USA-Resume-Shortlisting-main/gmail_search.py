@@ -67,13 +67,18 @@ def detect_search_mode(term):
     if len(digits_only) >= 7 and bool(re.match(r'^[+\d\s().-]{7,}$', t)):
         return 'phone'
         
-    # Name detection: 1-4 word alphabetic string (e.g. "John Smith", "Karan Pathak") without boolean ops
+    # Name detection: MUST be 2 to 4 words (e.g. "John Smith", "Karan Pathak", "Mohammed Sahel")
+    # Single-word queries (e.g., "infoarchive", "pega", "python") are ALWAYS keyword searches!
     words = t.split()
-    if 1 <= len(words) <= 4 and all(re.match(r'^[A-Za-z.\'-]+$', w) for w in words):
+    if 2 <= len(words) <= 4 and all(re.match(r'^[A-Za-z.\'-]+$', w) for w in words):
         upper_words = [w.upper() for w in words]
         if 'AND' not in upper_words and 'OR' not in upper_words and 'NOT' not in upper_words:
-            # If word is not a known tech stack keyword (like Python, React, Java, AWS, etc.)
-            tech_stack = set(k.lower() for k in TECH_KEYWORDS) | {'sql', 'sap', 'grc', 'scm', 'd365', 'crm', 'etl', 'hcm', 'oic', 'fusion', 'azure'}
+            tech_stack = set(k.lower() for k in TECH_KEYWORDS) | {
+                'sql', 'sap', 'grc', 'scm', 'd365', 'crm', 'etl', 'hcm', 'oic', 'fusion', 
+                'azure', 'developer', 'engineer', 'architect', 'consultant', 'lead', 
+                'admin', 'administrator', 'analyst', 'manager', 'specialist', 'trainer',
+                'support', 'infoarchive', 'opentext', 'documentum', 'servicenow'
+            }
             if not any(w.lower() in tech_stack for w in words):
                 return 'name'
 
