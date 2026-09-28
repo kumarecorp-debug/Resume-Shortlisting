@@ -799,14 +799,41 @@ def api_get_copied_history():
     except (ValueError, TypeError):
         days = 30
 
-    entries = db_copied_history.fetch_copied_history(
+    raw_entries = db_copied_history.fetch_copied_history(
         mailbox_account=mailbox,
         user_email=user_email,
         from_date=from_date,
         to_date=to_date,
         days=days
     )
-    return jsonify({'success': True, 'count': len(entries), 'history': entries})
+
+    grouped = {}
+    for item in raw_entries:
+        key = (
+            (item.get('mailbox_account') or '').strip().lower(),
+            (item.get('candidate_email') or '').strip().lower()
+        )
+        if key not in grouped:
+            grouped[key] = []
+        grouped[key].append(item)
+
+    deduped_entries = []
+    for key, items in grouped.items():
+        latest_item = dict(items[0])
+        latest_item['copy_count'] = len(items)
+        latest_item['all_timestamps'] = [it.get('copied_at') for it in items if it.get('copied_at')]
+        deduped_entries.append(latest_item)
+
+    deduped_entries.sort(key=lambda x: x.get('copied_at') or '', reverse=True)
+
+    return jsonify({
+        'success': True,
+        'count': len(deduped_entries),
+        'total_unique': len(deduped_entries),
+        'raw_total': len(raw_entries),
+        'history': deduped_entries,
+        'raw_history': raw_entries
+    })
 
 @app.route('/api/copied-history/summary', methods=['GET'])
 @login_required
