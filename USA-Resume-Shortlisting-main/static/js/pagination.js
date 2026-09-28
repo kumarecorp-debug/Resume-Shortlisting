@@ -373,12 +373,28 @@ function copySingleCandidate(btn) {
         if (cell) cell.innerHTML = renderStatusBadge('used', email, name);
         applyTableFilters();
 
-        // 3. Save to backend
-        const mailbox = state.mailbox || 'recruiter@ecorptrainings.com';
+        // 3. Save to backend (status + copied_history)
+        const mailbox = state.mailbox || document.getElementById('account_email')?.value || 'recruiter@ecorptrainings.com';
+        const jobDesc = state.jobQuery || document.getElementById('job_query')?.value || '';
+
         fetch('/api/candidate/status', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ mailbox, email, name, status: 'used' })
+        });
+
+        fetch('/api/copied-history', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                mailbox_account: mailbox,
+                candidate_email: email,
+                candidate_name: name,
+                candidate_phone: phone,
+                job_description: jobDesc
+            })
+        }).then(() => {
+            if (window.updateCopiedHistoryBadge) window.updateCopiedHistoryBadge();
         });
 
         // 4. Show 5-second Undo Toast
@@ -399,6 +415,8 @@ function copySelectedCandidates() {
     const lines = [];
     const itemsToMark = [];
     const restoreList = [];
+    const mailbox = state.mailbox || document.getElementById('account_email')?.value || 'recruiter@ecorptrainings.com';
+    const jobDesc = state.jobQuery || document.getElementById('job_query')?.value || '';
 
     checked.forEach(cb => {
         const row = cb.closest('tr');
@@ -416,6 +434,19 @@ function copySelectedCandidates() {
             const cell = row.querySelector('.status-cell');
             if (cell) cell.innerHTML = renderStatusBadge('used', email, name);
         }
+
+        // Post to copied-history
+        fetch('/api/copied-history', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                mailbox_account: mailbox,
+                candidate_email: email,
+                candidate_name: name,
+                candidate_phone: phone,
+                job_description: jobDesc
+            })
+        });
     });
 
     applyTableFilters();
@@ -423,11 +454,12 @@ function copySelectedCandidates() {
     const formattedText = lines.join('\n');
 
     navigator.clipboard.writeText(formattedText).then(() => {
-        const mailbox = state.mailbox || 'recruiter@ecorptrainings.com';
         fetch('/api/candidate/bulk_status', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ mailbox, items: itemsToMark, status: 'used' })
+        }).then(() => {
+            if (window.updateCopiedHistoryBadge) window.updateCopiedHistoryBadge();
         });
 
         showUndoToast(checked.length, restoreList);

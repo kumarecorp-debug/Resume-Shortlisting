@@ -389,6 +389,10 @@
             <button type="button" id="btn-history-panel" class="nav-btn" aria-label="View Search History">
                 📅 History
             </button>
+            <button type="button" id="btn-copied-panel" class="nav-btn" style="position: relative;" aria-label="View Copied History">
+                📋 Copied History
+                <span id="copied-history-badge" style="display: none; position: absolute; top: -6px; right: -6px; background: var(--danger); color: white; font-size: 0.72rem; font-weight: 700; padding: 2px 6px; border-radius: 10px; border: 1.5px solid #0F172A;">0</span>
+            </button>
             <div class="user-menu-btn">
                 <span>👤 {{ session['user']['email'] if session.get('user') else 'Authenticated User' }}</span>
             </div>
@@ -513,6 +517,10 @@
                                     🔍 Mode: Keyword search
                                 </span>
                             {% endif %}
+
+                            <a href="#" id="link-change-copy-pref" onclick="reopenCopyPrefModal(event)" style="font-size: 0.82rem; color: var(--accent); font-weight: 600; text-decoration: none; margin-left: 10px; display: none;">
+                                ⚙️ Change preference
+                            </a>
                         </h2>
                         {% if job_role %}
                             <p style="margin: 4px 0 0 0; color: #64748b; font-size: 0.9rem;" title="{{ job_role }}">
@@ -657,6 +665,45 @@
         </div>
     </div>
 
+    <!-- Copied History Side Panel Overlay -->
+    <div id="copied-panel-overlay" class="side-panel-overlay"></div>
+    <div id="copied-side-panel" class="side-panel" style="width: 480px;">
+        <div class="side-panel-header">
+            <h3 class="side-panel-title">📋 Copied History</h3>
+            <button type="button" id="btn-close-copied" class="side-panel-close" aria-label="Close Side Panel">✕</button>
+        </div>
+        <div id="copied-panel-content" class="side-panel-content">
+            <!-- Dynamic copied history content -->
+        </div>
+    </div>
+
+    <!-- Modal: Skip Already-Copied Prompt -->
+    <div id="skip-copied-modal-overlay" style="display: none; position: fixed; inset: 0; background: rgba(15, 23, 42, 0.5); backdrop-filter: blur(4px); z-index: 10010; align-items: center; justify-content: center; padding: 20px;" role="dialog" aria-modal="true">
+        <div style="background: var(--bg-card); color: var(--text-primary); width: 100%; max-width: 560px; border-radius: var(--radius-lg); box-shadow: var(--shadow-lg); border: 1px solid var(--border); padding: 28px; animation: slideInToast 0.25s ease-out;">
+            <div style="font-size: 1.25rem; font-weight: 700; color: var(--text-primary); margin-bottom: 12px; display: flex; align-items: center; gap: 10px;">
+                <span>🔔</span> You've copied from this search before
+            </div>
+            <div style="font-size: 0.9rem; line-height: 1.5; color: var(--text-secondary); margin-bottom: 16px;">
+                <p style="margin: 4px 0;"><strong>Mailbox:</strong> <span id="modal-skip-mailbox" style="color: var(--accent);"></span></p>
+                <p style="margin: 4px 0;"><strong>Search:</strong> "<span id="modal-skip-jd" style="color: var(--text-primary);"></span>"</p>
+                <p style="margin: 12px 0 6px 0;">You have already copied <strong id="modal-skip-count" style="color: var(--accent);">0</strong> candidate(s) for this search:</p>
+                <div id="modal-skip-list" style="background: var(--bg-primary); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 10px 16px; max-height: 120px; overflow-y: auto; font-size: 0.86rem; color: var(--text-primary);"></div>
+            </div>
+            <div style="font-weight: 600; font-size: 0.92rem; margin-bottom: 16px; color: var(--text-primary);">How should this search behave?</div>
+            <div style="display: flex; flex-direction: column; gap: 10px;">
+                <button type="button" id="btn-skip-choice-skip" style="background: var(--accent); color: white; border: none; padding: 12px 18px; border-radius: var(--radius-md); font-weight: 600; cursor: pointer; text-align: left; transition: var(--transition-fast);">
+                    🆕 Skip already-copied (<span id="btn-skip-count-text">0</span> hidden)
+                </button>
+                <button type="button" id="btn-skip-choice-show" style="background: var(--bg-primary); color: var(--text-primary); border: 1px solid var(--border); padding: 12px 18px; border-radius: var(--radius-md); font-weight: 600; cursor: pointer; text-align: left; transition: var(--transition-fast);">
+                    🔁 Show everything (including <span id="btn-show-count-text">0</span>)
+                </button>
+                <button type="button" id="btn-skip-choice-cancel" style="background: transparent; color: var(--text-muted); border: none; padding: 8px; font-size: 0.88rem; cursor: pointer; margin-top: 4px;">
+                    Cancel
+                </button>
+            </div>
+        </div>
+    </div>
+
     <footer>
         <p>© 2026 ResuMatch — AI Resume Shortlisting & Candidate Extraction Engine</p>
     </footer>
@@ -664,6 +711,8 @@
     <script src="{{ url_for('static', filename='js/ui.js') }}"></script>
     <script src="{{ url_for('static', filename='js/pagination.js') }}"></script>
     <script src="{{ url_for('static', filename='js/search-popups.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/copied-history-panel.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/copy.js') }}"></script>
     <script>
         function updateAccountBadge(accountEmail) {
             const badge = document.getElementById('active-mail-label');

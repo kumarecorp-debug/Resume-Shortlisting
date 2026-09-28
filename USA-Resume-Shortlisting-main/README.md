@@ -33,15 +33,25 @@ An intelligent automated recruitment dashboard that integrates with Gmail to sea
   - Interactive Experience column header sorting (`Exp ▲/▼`).
   - Persists `min_exp` across searches in `localStorage`.
   - Debug route available at `/debug-parse-exp?text=5+years+6+months`.
+- **Copied History Panel**:
+  - Slide-in side panel from right (`📋 Copied History` button in top nav) showing all candidate copies grouped by date (`Today`, `Yesterday`, `This Week`, `Older`).
+  - Search box to filter copies by candidate name or email, date range buttons, mailbox filter, and CSV export (`📥 Export CSV`).
+  - Counter badge on top nav button showing weekly copy count.
+- **Skip Already-Copied Prompt on Re-Search**:
+  - Automatically checks if candidates were copied for the same `(mailbox, job_description)`.
+  - Prompts modal: `🆕 Skip already-copied` or `🔁 Show everything (including copies)`.
+  - Remembers user session choice per search query with `⚙️ Change preference` link.
 - **Debug & Health Monitoring**:
   - `/debug-status` route to verify Supabase table connectivity (`candidate_status`, `search_history`, `search_cache`).
+  - `/debug-copied` route to verify `copied_history` table connection and recent records.
 
 ---
 
 ## 🗄️ Database Migrations (Supabase SQL)
 
-Before using persistent status tracking or search history, run the SQL migrations in your **Supabase SQL Editor**:
+Before using persistent status tracking, search history, or copied history, run the SQL migrations in your **Supabase SQL Editor**:
 
 1. `migrations/001_search_history.sql`: Creates `search_history` table & indexes.
 2. `migrations/002_seen_candidates.sql`: Creates `seen_candidates` table for cumulative batch search.
 3. `migrations/003_candidate_status.sql`: Creates `candidate_status` table for tracking candidate statuses.
+4. `migrations/004_copied_history.sql`: Creates `copied_history` table for tracking copied candidates.

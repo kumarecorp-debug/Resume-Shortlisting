@@ -730,6 +730,128 @@ def bulk_mark_candidate_status():
     count = db.bulk_update_candidate_status(mailbox_account, candidates, status)
     return jsonify({'success': True, 'count': count, 'status': status})
 
+# ============================================================
+# COPIED HISTORY ENDPOINTS
+# ============================================================
+import db_copied_history
+
+@app.route('/api/copied-history', methods=['POST'])
+@login_required
+def api_save_copied_history():
+    data = request.get_json(silent=True) or request.form.to_dict() or {}
+    user_email = session.get('user', {}).get('email') if isinstance(session.get('user'), dict) else None
+    mailbox = data.get('mailbox_account') or data.get('mailbox') or session.get('selected_account', 'recruiter@ecorptrainings.com')
+    candidate_email = data.get('candidate_email') or data.get('email')
+    candidate_name = data.get('candidate_name') or data.get('name') or ''
+    candidate_phone = data.get('candidate_phone') or data.get('phone') or ''
+    job_description = data.get('job_description') or data.get('jd') or ''
+    notes = data.get('notes')
+
+    if not candidate_email:
+        return jsonify({'success': False, 'error': 'Candidate email is required'}), 400
+
+    rec_id = db_copied_history.save_copied_entry(
+        user_email=user_email,
+        mailbox_account=mailbox,
+        candidate_email=candidate_email,
+        candidate_name=candidate_name,
+        candidate_phone=candidate_phone,
+        job_description=job_description,
+        notes=notes
+    )
+    return jsonify({'success': True, 'id': rec_id})
+
+@app.route('/api/copied-history', methods=['GET'])
+@login_required
+def api_get_copied_history():
+    user_email = session.get('user', {}).get('email') if isinstance(session.get('user'), dict) else None
+    mailbox = request.args.get('mailbox') or request.args.get('mailbox_account')
+    from_date = request.args.get('from')
+    to_date = request.args.get('to')
+    try:
+        days = int(request.args.get('days', 30))
+    except (ValueError, TypeError):
+        days = 30
+
+    entries = db_copied_history.fetch_copied_history(
+        mailbox_account=mailbox,
+        user_email=user_email,
+        from_date=from_date,
+        to_date=to_date,
+        days=days
+    )
+    return jsonify({'success': True, 'count': len(entries), 'history': entries})
+
+@app.route('/api/copied-history/summary', methods=['GET'])
+@login_required
+def api_copied_history_summary():
+    mailbox = request.args.get('mailbox') or request.args.get('mailbox_account')
+    summary = db_copied_history.get_summary(mailbox_account=mailbox)
+    return jsonify(summary)
+
+@app.route('/api/copied-history/check', methods=['GET'])
+@login_required
+def api_copied_history_check():
+    mailbox = request.args.get('mailbox') or request.args.get('mailbox_account') or session.get('selected_account', 'recruiter@ecorptrainings.com')
+    jd = request.args.get('jd') or request.args.get('job_description') or ''
+    res = db_copied_history.check_copies_for_search(mailbox_account=mailbox, job_description=jd)
+    return jsonify(res)
+
+@app.route('/api/copied-history/export', methods=['GET'])
+@login_required
+def api_copied_history_export():
+    mailbox = request.args.get('mailbox') or request.args.get('mailbox_account')
+    entries = db_copied_history.fetch_copied_history(mailbox_account=mailbox, days=365)
+    
+    headers = ["ID", "User Email", "Mailbox Account", "Candidate Name", "Candidate Email", "Candidate Phone", "Job Description", "Copied At"]
+    csv_lines = [",".join(headers)]
+    
+    for item in entries:
+        row = [
+            f'"{str(item.get("id", "")).replace('"', '""')}"',
+            f'"{str(item.get("user_email", "")).replace('"', '""')}"',
+            f'"{str(item.get("mailbox_account", "")).replace('"', '""')}"',
+            f'"{str(item.get("candidate_name", "")).replace('"', '""')}"',
+            f'"{str(item.get("candidate_email", "")).replace('"', '""')}"',
+            f'"{str(item.get("candidate_phone", "")).replace('"', '""')}"',
+            f'"{str(item.get("job_description", "")).replace('"', '""')}"',
+            f'"{str(item.get("copied_at", "")).replace('"', '""')}"'
+        ]
+        csv_lines.append(",".join(row))
+        
+    csv_body = "\n".join(csv_lines)
+    return csv_body, 200, {
+        'Content-Type': 'text/csv; charset=utf-8',
+        'Content-Disposition': f'attachment; filename=Copied_History_{datetime.now().strftime("%Y%m%d")}.csv'
+    }
+
+@app.route('/debug-copied', methods=['GET'])
+def debug_copied():
+    client = db.get_supabase()
+    connected = (client is not None)
+    row_count = 0
+    recent_5 = []
+    table_exists = False
+    
+    if connected:
+        try:
+            res = client.table("copied_history").select("*").order("copied_at", desc=True).limit(5).execute()
+            recent_5 = res.data or []
+            table_exists = True
+            
+            cnt_res = client.table("copied_history").select("id", count="exact").execute()
+            row_count = cnt_res.count if hasattr(cnt_res, 'count') and cnt_res.count is not None else len(recent_5)
+        except Exception as e:
+            logging.error(f"Error in /debug-copied: {e}")
+            table_exists = False
+            
+    return jsonify({
+        "table_exists": table_exists,
+        "row_count": row_count,
+        "recent_5": recent_5,
+        "supabase_connected": connected
+    })
+
 @app.route('/api/search', methods=['GET'])
 @login_required
 def api_search():
