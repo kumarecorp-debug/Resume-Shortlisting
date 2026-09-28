@@ -1,19 +1,34 @@
-/**
- * Copy Controller & "Skip Already-Copied?" Prompt Interceptor
- */
+// Global search context
+window.__currentMailbox = document.getElementById('account_email')?.value || '';
+window.__currentJD = document.getElementById('job_query')?.value || '';
 
 document.addEventListener('DOMContentLoaded', function () {
     const searchForm = document.getElementById('search-form');
+    const accountSelect = document.getElementById('account_email');
+    const jobQueryTextarea = document.getElementById('job_query');
+
+    // Update global search context
+    function updateGlobals() {
+        window.__currentMailbox = accountSelect?.value || '';
+        window.__currentJD = jobQueryTextarea?.value || '';
+    }
+    updateGlobals();
+
+    if (accountSelect) accountSelect.addEventListener('change', updateGlobals);
+    if (jobQueryTextarea) jobQueryTextarea.addEventListener('input', updateGlobals);
+
     if (!searchForm) return;
 
     searchForm.addEventListener('submit', function (e) {
+        updateGlobals();
+
         if (window._skipCopiedHandled) {
             window._skipCopiedHandled = false;
             return; // Allow form submission
         }
 
-        const mailbox = document.getElementById('account_email')?.value || '';
-        const jd = document.getElementById('job_query')?.value || '';
+        const mailbox = window.__currentMailbox;
+        const jd = window.__currentJD;
         const sessionKey = `copy_pref_${mailbox.toLowerCase().strip ? mailbox.toLowerCase().strip() : mailbox.toLowerCase()}_${jd.toLowerCase().trim()}`;
         const savedPref = sessionStorage.getItem(sessionKey);
 
@@ -42,8 +57,8 @@ document.addEventListener('DOMContentLoaded', function () {
     });
 
     // Check if session preference exists for current search to show Change Preference link
-    const currentMail = document.getElementById('account_email')?.value || '';
-    const currentJd = document.getElementById('job_query')?.value || '';
+    const currentMail = window.__currentMailbox;
+    const currentJd = window.__currentJD;
     if (currentMail && currentJd) {
         const sessionKey = `copy_pref_${currentMail.toLowerCase()}_${currentJd.toLowerCase().trim()}`;
         if (sessionStorage.getItem(sessionKey)) {
@@ -53,6 +68,69 @@ document.addEventListener('DOMContentLoaded', function () {
         }
     }
 });
+
+// Helper POST functions for copying
+async function saveCandidateToCopiedHistory(candidate) {
+    const mailbox = window.__currentMailbox || document.getElementById('account_email')?.value || '';
+    const jd = window.__currentJD || document.getElementById('job_query')?.value || '';
+
+    try {
+        const res = await fetch('/api/copied-history', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                mailbox_account: mailbox,
+                candidate_email: candidate.email || candidate.candidate_email || '',
+                candidate_name: candidate.name || candidate.candidate_name || '',
+                candidate_phone: candidate.phone || candidate.candidate_phone || '',
+                job_description: jd
+            })
+        });
+        const data = await res.json();
+        console.log('[copied-history POST]', data);
+        if (data.success) {
+            if (typeof refreshCopiedHistoryPanel === 'function') refreshCopiedHistoryPanel();
+            if (typeof updateCopiedHistoryCount === 'function') updateCopiedHistoryCount();
+            if (typeof updateCopiedHistoryBadge === 'function') updateCopiedHistoryBadge();
+        }
+        return data;
+    } catch (err) {
+        console.error('[copied-history POST] failed:', err);
+        return { success: false, error: err };
+    }
+}
+
+async function saveBulkCandidatesToCopiedHistory(candidates) {
+    const mailbox = window.__currentMailbox || document.getElementById('account_email')?.value || '';
+    const jd = window.__currentJD || document.getElementById('job_query')?.value || '';
+
+    try {
+        const res = await fetch('/api/copied-history/bulk', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                mailbox_account: mailbox,
+                job_description: jd,
+                candidates: (candidates || []).map(c => ({
+                    email: c.email || c.candidate_email || '',
+                    name: c.name || c.candidate_name || '',
+                    phone: c.phone || c.candidate_phone || ''
+                }))
+            })
+        });
+        const data = await res.json();
+        console.log('[copied-history BULK]', data);
+        if (data.success) {
+            if (typeof refreshCopiedHistoryPanel === 'function') refreshCopiedHistoryPanel();
+            if (typeof updateCopiedHistoryCount === 'function') updateCopiedHistoryCount();
+            if (typeof updateCopiedHistoryBadge === 'function') updateCopiedHistoryBadge();
+        }
+        return data;
+    } catch (err) {
+        console.error('[copied-history BULK] failed:', err);
+        return { success: false, error: err };
+    }
+}
 
 function showSkipCopiedModal(mailbox, jd, data, sessionKey, form) {
     const overlay = document.getElementById('skip-copied-modal-overlay');

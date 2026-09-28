@@ -355,8 +355,8 @@ function changeCandidateStatus(menuItem, email, name, newStatus) {
 // ============================================================
 // Helper to get current search context
 function getCurrentSearchContext() {
-    const mailbox = (state.mailbox || document.getElementById('account_email')?.value || window.__currentSearch?.mailbox || 'recruiter@ecorptrainings.com').trim();
-    const jobDesc = (state.jobQuery || document.getElementById('job_query')?.value || window.__currentSearch?.jd || '').trim();
+    const mailbox = (window.__currentMailbox || state.mailbox || document.getElementById('account_email')?.value || window.__currentSearch?.mailbox || 'recruiter@ecorptrainings.com').trim();
+    const jobDesc = (window.__currentJD || state.jobQuery || document.getElementById('job_query')?.value || window.__currentSearch?.jd || '').trim();
     return { mailbox, jobDesc };
 }
 
