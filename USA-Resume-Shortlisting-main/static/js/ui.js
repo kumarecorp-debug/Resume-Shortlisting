@@ -59,16 +59,17 @@ function fetchRecentHistoryPanel() {
     if (!content) return;
     content.innerHTML = '<div style="text-align:center; padding: 20px; color: var(--text-muted);">⏳ Loading recent history...</div>';
 
-    fetch('/api/search-history?days=30')
+    fetch('/api/history?days=30')
         .then(res => res.json())
         .then(data => {
             if (data && data.history && data.history.length > 0) {
                 let html = '<div style="display:flex; flex-direction:column; gap: 14px;">';
                 data.history.forEach(item => {
+                    const dateStr = item.searched_at || item.created_at;
                     html += `
                         <div style="background: var(--bg-primary); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 14px;">
                             <div style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 4px;">
-                                📅 ${new Date(item.created_at).toLocaleString()}
+                                📅 ${dateStr ? new Date(dateStr).toLocaleString() : 'Recent'}
                             </div>
                             <div style="font-size: 0.85rem; font-weight: 600; color: var(--text-secondary); margin-bottom: 6px;">
                                 📬 ${escapeHtmlUI(item.mailbox_account || '')}
