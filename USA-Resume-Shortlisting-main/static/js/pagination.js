@@ -701,7 +701,7 @@ function applyTableFilters() {
         if (hideUsed && status === 'used') {
             showByStatus = false;
             hiddenUsedCount++;
-        } else if (statusFilter === 'new' && status !== 'new') {
+        } else if ((statusFilter === 'never' || statusFilter === 'new') && status !== 'new' && status !== '') {
             showByStatus = false;
         } else if (statusFilter === 'used' && status !== 'used') {
             showByStatus = false;

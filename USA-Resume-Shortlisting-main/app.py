@@ -794,12 +794,36 @@ def api_bulk_save_copied_history():
 def api_get_copied_history():
     user_email = session.get('user', {}).get('email') if isinstance(session.get('user'), dict) else None
     mailbox = request.args.get('mailbox') or request.args.get('mailbox_account')
+    filter_type = (request.args.get('filter') or 'all').strip().lower()
     from_date = request.args.get('from')
     to_date = request.args.get('to')
     try:
         days = int(request.args.get('days', 30))
     except (ValueError, TypeError):
         days = 30
+
+    if filter_type == 'today':
+        days = 1
+    elif filter_type == '7d':
+        days = 7
+    elif filter_type == '30d':
+        days = 30
+
+    if filter_type == 'never_used':
+        entries = db_copied_history.get_never_used_candidates(mailbox_account=mailbox, days=days)
+        logging.info(f"[copied-history filter] filter={filter_type} mailbox={mailbox} results={len(entries)}")
+        return jsonify({
+            'success': True,
+            'count': len(entries),
+            'total': len(entries),
+            'total_unique': len(entries),
+            'raw_total': len(entries),
+            'history': entries,
+            'entries': entries,
+            'raw_history': entries,
+            'filter': filter_type,
+            'filter_label': f'Seen but Never Copied (last {days} days)'
+        })
 
     raw_entries = db_copied_history.fetch_copied_history(
         mailbox_account=mailbox,
@@ -828,14 +852,45 @@ def api_get_copied_history():
 
     deduped_entries.sort(key=lambda x: x.get('copied_at') or '', reverse=True)
 
+    logging.info(f"[copied-history filter] filter={filter_type} mailbox={mailbox} results={len(deduped_entries)}")
+
+    filter_labels = {
+        'all': f'All Copied (last {days} days)',
+        'used': f'Already Used (last {days} days)',
+        'today': 'Copied Today (last 24 hours)',
+        '7d': 'Copied Past 7 Days',
+        '30d': 'Copied Past 30 Days'
+    }
+
     return jsonify({
         'success': True,
         'count': len(deduped_entries),
+        'total': len(deduped_entries),
         'total_unique': len(deduped_entries),
         'raw_total': len(raw_entries),
         'history': deduped_entries,
-        'raw_history': raw_entries
+        'entries': deduped_entries,
+        'raw_history': raw_entries,
+        'filter': filter_type,
+        'filter_label': filter_labels.get(filter_type, 'Copied History')
     })
+
+@app.route('/api/candidates/never-used', methods=['GET'])
+@login_required
+def api_get_never_used_candidates():
+    mailbox = request.args.get('mailbox') or request.args.get('mailbox_account')
+    try:
+        days = int(request.args.get('days', 30))
+    except (ValueError, TypeError):
+        days = 30
+
+    entries = db_copied_history.get_never_used_candidates(mailbox_account=mailbox, days=days)
+    return jsonify({
+        'success': True,
+        'entries': entries,
+        'total': len(entries)
+    })
+
 
 @app.route('/api/copied-history/summary', methods=['GET'])
 @login_required

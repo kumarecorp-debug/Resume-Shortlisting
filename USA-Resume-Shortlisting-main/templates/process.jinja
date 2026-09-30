@@ -549,8 +549,23 @@
                             <input type="range" id="score-slider" min="0" max="100" value="0" step="5" oninput="document.getElementById('score-slider-val').textContent = this.value + '%'; applyTableFilters();" style="cursor: pointer;">
                         </div>
 
-                        <div style="display: flex; align-items: center; gap: 10px;">
-                            <input type="text" id="filter-box" class="filter-input" placeholder="Search by Name, Skill..." oninput="applyTableFilters()" style="width: 220px;">
+                        <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+                            <div style="display: flex; align-items: center; gap: 8px; background: #ffffff; border: 1.5px solid #cbd5e1; padding: 6px 12px; border-radius: 8px;">
+                                <label for="status-filter-select" style="font-weight: 600; font-size: 0.88rem; color: #1e293b; white-space: nowrap;">Show:</label>
+                                <select id="status-filter-select" onchange="applyTableFilters()" style="padding: 4px 8px; border-radius: 6px; border: 1px solid #cbd5e1; font-size: 0.86rem; font-weight: 600;">
+                                    <option value="all">All</option>
+                                    <option value="used">Already Used</option>
+                                    <option value="never">Never Used (New)</option>
+                                    <option value="not_used">Not Used</option>
+                                </select>
+                                <div style="display: flex; align-items: center; gap: 6px; margin-left: 6px;">
+                                    <input type="checkbox" id="chk-hide-used" style="cursor: pointer; transform: scale(1.15);">
+                                    <label for="chk-hide-used" style="font-weight: 600; font-size: 0.88rem; color: #1e293b; cursor: pointer; white-space: nowrap;">☑ Hide Used</label>
+                                    <span id="hidden-used-spinner" style="display: none; font-size: 0.8rem; color: #64748b;">⏳</span>
+                                </div>
+                            </div>
+
+                            <input type="text" id="filter-box" class="filter-input" placeholder="Search by Name, Skill..." oninput="applyTableFilters()" style="width: 200px;">
 
                             <button type="button" class="btn-download" onclick="downloadCSV()" style="display: inline-flex; align-items: center; gap: 6px;">Download CSV 📥</button>
                         </div>
