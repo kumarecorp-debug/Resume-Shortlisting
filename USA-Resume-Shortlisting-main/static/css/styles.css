@@ -694,7 +694,61 @@ html, body {
   100% { opacity: 0.5; }
 }
 
+
 .skeleton-pulse {
   animation: skeleton-pulse 1.2s infinite ease-in-out;
 }
+
+/* Refresh button */
+.btn-icon {
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 8px;
+  cursor: pointer;
+  font-size: 14px;
+  transition: all 0.2s;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.btn-icon:hover {
+  background: var(--bg-primary);
+  transform: scale(1.05);
+}
+.btn-icon:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none !important;
+}
+.btn-icon.spinning {
+  animation: spin 1s linear infinite;
+}
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* Pill pulse on update */
+@keyframes pulse-green {
+  0%   { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); }
+  70%  { box-shadow: 0 0 0 8px rgba(16, 185, 129, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+}
+.pill.pill-updated, .time-pill-btn.pill-updated {
+  animation: pulse-green 2s ease-out;
+}
+.pill.pill-loading, .time-pill-btn.pill-loading {
+  opacity: 0.6;
+}
+
+/* Count text inside pill */
+.pill .pill-count, .time-pill-btn .pill-count {
+  font-weight: 500;
+  color: var(--text-muted);
+  margin-left: 3px;
+}
+.pill.active .pill-count, .time-pill-btn.active .pill-count {
+  color: rgba(255, 255, 255, 0.85);
+}
+
 

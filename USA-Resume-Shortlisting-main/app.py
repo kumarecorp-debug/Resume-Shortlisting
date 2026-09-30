@@ -1373,7 +1373,79 @@ def api_search():
         "has_more": (offset + limit) < total
     })
 
+_count_cache = {}  # {cache_key: (count, timestamp)}
+
+def build_gmail_query_for_window(time_window):
+    """Return the date clause for the Gmail query."""
+    if time_window == 'today':
+        return "newer_than:1d"
+    elif time_window == 'yesterday':
+        return "newer_than:2d older_than:1d"
+    elif time_window == '7d':
+        return "newer_than:7d"
+    elif time_window == '14d':
+        return "newer_than:14d"
+    elif time_window == '30d':
+        return "newer_than:30d"
+    return ""
+
+@app.route('/api/gmail/count', methods=['GET'])
+def gmail_count():
+    mailbox = request.args.get('mailbox', '').strip()
+    jd = request.args.get('jd', '').strip() or request.args.get('job_query', '').strip()
+    time_window = request.args.get('time_window', '').strip() or request.args.get('date_preset', '').strip()
+
+    if not mailbox or not jd or not time_window:
+        return jsonify({"error": "missing params"}), 400
+
+    if time_window in ('any', 'custom'):
+        return jsonify({"count": 0, "time_window": time_window, "cached": True})
+
+    cache_key = f"{mailbox}|{jd}|{time_window}"
+    now = time.time()
+    if cache_key in _count_cache:
+        cached_count, cached_ts = _count_cache[cache_key]
+        if now - cached_ts < 60:
+            from datetime import datetime
+            return jsonify({
+                "count": cached_count,
+                "time_window": time_window,
+                "cached": True,
+                "computed_at": datetime.utcnow().isoformat() + 'Z'
+            })
+
+    try:
+        query = gmail_search.build_gmail_search_query(jd, date_preset=time_window)
+        if not query:
+            date_clause = build_gmail_query_for_window(time_window)
+            query = f"has:attachment {date_clause} {jd}".strip()
+        elif "has:attachment" not in query:
+            query = f"has:attachment {query}".strip()
+
+        service = RS_Project.auto_authenticate_google(mailbox)
+        results = service.users().messages().list(
+            userId='me', q=query, maxResults=1
+        ).execute()
+        count = results.get('resultSizeEstimate', 0)
+    except Exception as e:
+        err_str = str(e)
+        logging.error(f"[count] gmail fetch failed: {e}")
+        status_code = 429 if "429" in err_str or "userRateLimitExceeded" in err_str else 500
+        return jsonify({"error": "gmail_error", "detail": err_str}), status_code
+
+    _count_cache[cache_key] = (count, now)
+    from datetime import datetime
+    logging.info(f"[count] mailbox={mailbox} jd={jd} tw={time_window} count={count} cached=False")
+
+    return jsonify({
+        "count": count,
+        "time_window": time_window,
+        "cached": False,
+        "computed_at": datetime.utcnow().isoformat() + 'Z'
+    })
+
 @app.route('/debug-parse-exp', methods=['GET'])
+
 def debug_parse_exp():
     text = request.args.get('text', '')
     parsed = parse_experience_years(text)

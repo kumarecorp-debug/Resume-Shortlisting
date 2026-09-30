@@ -578,7 +578,10 @@
                     <!-- Time Window & Show Filter Section -->
                     <div class="time-window-section" style="margin-top: 14px; margin-bottom: 16px; background: #ffffff; padding: 14px 16px; border-radius: 10px; border: 1.5px solid #cbd5e1; box-shadow: 0 1px 3px rgba(0,0,0,0.03);">
                         <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin-bottom: 10px;">
-                            <span style="font-weight: 700; color: #0f172a; font-size: 0.95rem; display: flex; align-items: center; gap: 6px;">📅 Time Window:</span>
+                            <div style="display: flex; align-items: center; gap: 8px;">
+                                <span style="font-weight: 700; color: #0f172a; font-size: 0.95rem; display: flex; align-items: center; gap: 6px;">📅 Time Window:</span>
+                                <button type="button" id="btn-refresh-counts" class="btn-icon" title="Refresh email counts" aria-label="Refresh email counts" onclick="refreshAllCounts()">🔄</button>
+                            </div>
                             <button type="button" onclick="setTimeWindow('any')" style="font-size: 0.8rem; color: #2563eb; background: none; border: none; font-weight: 600; cursor: pointer; text-decoration: underline;">Reset to Any</button>
                         </div>
 
@@ -589,14 +592,15 @@
                         <input type="hidden" name="show_mode" id="show_mode" value="{{ show_mode or 'all' }}">
 
                         <div style="display: flex; gap: 8px; flex-wrap: wrap; align-items: center;" id="time-window-pill-container">
-                            <button type="button" class="time-pill-btn {% if not time_window or time_window == 'any' %}active{% endif %}" data-window="any" onclick="setTimeWindow('any')">Any</button>
-                            <button type="button" class="time-pill-btn {% if time_window == 'today' %}active{% endif %}" data-window="today" onclick="setTimeWindow('today')">Today</button>
-                            <button type="button" class="time-pill-btn {% if time_window == 'yesterday' %}active{% endif %}" data-window="yesterday" onclick="setTimeWindow('yesterday')">Yesterday</button>
-                            <button type="button" class="time-pill-btn {% if time_window == '7d' %}active{% endif %}" data-window="7d" onclick="setTimeWindow('7d')">7d <span id="count-pill-7d"></span></button>
-                            <button type="button" class="time-pill-btn {% if time_window == '14d' %}active{% endif %}" data-window="14d" onclick="setTimeWindow('14d')">14d <span id="count-pill-14d"></span></button>
-                            <button type="button" class="time-pill-btn {% if time_window == '30d' %}active{% endif %}" data-window="30d" onclick="setTimeWindow('30d')">30d <span id="count-pill-30d"></span></button>
-                            <button type="button" class="time-pill-btn {% if time_window == 'custom' %}active{% endif %}" data-window="custom" onclick="setTimeWindow('custom')">Custom 📅</button>
+                            <button type="button" class="time-pill-btn pill {% if not time_window or time_window == 'any' %}active{% endif %}" data-window="any" data-time-window="any" onclick="setTimeWindow('any')">Any</button>
+                            <button type="button" class="time-pill-btn pill {% if time_window == 'today' %}active{% endif %}" data-window="today" data-time-window="today" onclick="setTimeWindow('today')">Today<span class="pill-count" id="count-pill-today"></span></button>
+                            <button type="button" class="time-pill-btn pill {% if time_window == 'yesterday' %}active{% endif %}" data-window="yesterday" data-time-window="yesterday" onclick="setTimeWindow('yesterday')">Yesterday<span class="pill-count" id="count-pill-yesterday"></span></button>
+                            <button type="button" class="time-pill-btn pill {% if time_window == '7d' %}active{% endif %}" data-window="7d" data-time-window="7d" onclick="setTimeWindow('7d')">7d<span class="pill-count" id="count-pill-7d"></span></button>
+                            <button type="button" class="time-pill-btn pill {% if time_window == '14d' %}active{% endif %}" data-window="14d" data-time-window="14d" onclick="setTimeWindow('14d')">14d<span class="pill-count" id="count-pill-14d"></span></button>
+                            <button type="button" class="time-pill-btn pill {% if time_window == '30d' %}active{% endif %}" data-window="30d" data-time-window="30d" onclick="setTimeWindow('30d')">30d<span class="pill-count" id="count-pill-30d"></span></button>
+                            <button type="button" class="time-pill-btn pill {% if time_window == 'custom' %}active{% endif %}" data-window="custom" data-time-window="custom" onclick="setTimeWindow('custom')">Custom 📅</button>
                         </div>
+
 
                         <!-- Custom Date Range Panel -->
                         <div id="custom-date-panel" style="display: {% if time_window == 'custom' %}block{% else %}none{% endif %}; margin-top: 12px; background: #f8fafc; padding: 14px 16px; border-radius: 8px; border: 1.5px solid #cbd5e1;">
@@ -975,10 +979,23 @@
         });
 
         function setQuery(text) {
-            const input = document.getE        // ============================================================
+            const input = document.getElementById('job_query');
+            if (input) {
+                input.value = text;
+                input.focus();
+                triggerDebouncedGmailCount();
+            }
+        }
+
+        // ============================================================
         // TIME WINDOW & SHOW MODE CONTROL LOGIC
         // ============================================================
         let countDebounceTimer = null;
+        let autoRefreshTimer = null;
+        let refreshInProgress = false;
+        let currentTimeWindow = 'any';
+        let consecutiveFailures = 0;
+        let backoffDelayMs = 0;
 
         function formatDateIso(d) {
             const year = d.getFullYear();
@@ -1007,7 +1024,7 @@
 
             const pills = document.querySelectorAll('#time-window-pill-container .time-pill-btn');
             pills.forEach(b => {
-                if (b.getAttribute('data-window') === win) {
+                if (b.getAttribute('data-window') === win || b.getAttribute('data-time-window') === win) {
                     b.classList.add('active');
                 } else {
                     b.classList.remove('active');
@@ -1025,7 +1042,7 @@
             } else {
                 if (customPanel) customPanel.style.display = 'none';
             }
-            triggerDebouncedGmailCount();
+            onTimeWindowSelected(win);
         }
 
         function closeCustomPanel() {
@@ -1129,26 +1146,111 @@
         function triggerDebouncedGmailCount() {
             if (countDebounceTimer) clearTimeout(countDebounceTimer);
             countDebounceTimer = setTimeout(() => {
-                fetchGmailPillCounts();
+                refreshAllCounts();
             }, 500);
         }
 
-        function fetchGmailPillCounts() {
+        async function refreshTimeWindowCount(window_key) {
+            if (!window_key || window_key === 'any' || window_key === 'custom') return;
+            
             const mailbox = document.getElementById('account_email')?.value || '';
-            const jd = document.getElementById('job_query')?.value || '';
-            if (!jd || !jd.trim()) return;
+            const jd = document.getElementById('job_query')?.value?.trim() || '';
+            if (!mailbox || !jd) return;
 
-            ['7d', '14d', '30d'].forEach(preset => {
-                fetch(`/api/gmail/count?mailbox=${encodeURIComponent(mailbox)}&jd=${encodeURIComponent(jd)}&date_preset=${preset}`)
-                    .then(res => res.json())
-                    .then(data => {
-                        const badge = document.getElementById(`count-pill-${preset}`);
-                        if (badge && data.count !== undefined) {
-                            badge.textContent = `(${data.count})`;
-                        }
-                    })
-                    .catch(() => {});
-            });
+            const pill = document.querySelector(`[data-time-window="${window_key}"]`) || document.querySelector(`[data-window="${window_key}"]`);
+            if (!pill) return;
+
+            const oldCount = parseInt(pill.dataset.count || '-1', 10);
+            pill.classList.add('pill-loading');
+
+            try {
+                const url = `/api/gmail/count?mailbox=${encodeURIComponent(mailbox)}&jd=${encodeURIComponent(jd)}&time_window=${encodeURIComponent(window_key)}`;
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 5000);
+
+                const res = await fetch(url, { signal: controller.signal });
+                clearTimeout(timeoutId);
+
+                if (res.status === 429) {
+                    consecutiveFailures++;
+                    if (consecutiveFailures === 1) backoffDelayMs = 60000;
+                    else if (consecutiveFailures === 2) backoffDelayMs = 120000;
+                    else backoffDelayMs = 300000;
+                    console.warn(`[count] Rate limited (429). Backing off for ${backoffDelayMs / 1000}s`);
+                    startAutoRefresh();
+                    return;
+                }
+
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                const data = await res.json();
+                const newCount = data.count;
+
+                consecutiveFailures = 0;
+                backoffDelayMs = 0;
+
+                updatePillCount(pill, window_key, newCount);
+
+                if (oldCount >= 0 && newCount !== oldCount) {
+                    pill.classList.add('pill-updated');
+                    setTimeout(() => pill.classList.remove('pill-updated'), 2000);
+                    console.log(`[count] ${window_key}: ${oldCount} → ${newCount}`);
+                }
+            } catch (err) {
+                console.error(`[count] refresh failed for ${window_key}:`, err);
+            } finally {
+                pill.classList.remove('pill-loading');
+            }
+        }
+
+        function updatePillCount(pill, window_key, count) {
+            if (!pill) return;
+            pill.dataset.count = count;
+            const countSpan = pill.querySelector('.pill-count') || document.getElementById(`count-pill-${window_key}`);
+            if (countSpan) {
+                countSpan.textContent = (count !== undefined && count !== null && count >= 0) ? ` (${count.toLocaleString()})` : '';
+            }
+        }
+
+        async function refreshAllCounts() {
+            const btn = document.getElementById('btn-refresh-counts');
+            if (btn) {
+                if (btn.disabled) return;
+                btn.disabled = true;
+                btn.classList.add('spinning');
+            }
+            try {
+                const windows = ['today', 'yesterday', '7d', '14d', '30d'];
+                await Promise.all(windows.map(w => refreshTimeWindowCount(w)));
+            } finally {
+                if (btn) {
+                    setTimeout(() => {
+                        btn.disabled = false;
+                        btn.classList.remove('spinning');
+                    }, 500);
+                }
+            }
+        }
+
+        function startAutoRefresh() {
+            stopAutoRefresh();
+            const interval = backoffDelayMs > 0 ? backoffDelayMs : (5 * 60 * 1000);
+            autoRefreshTimer = setInterval(() => {
+                if (document.hidden) return;
+                if (currentTimeWindow === 'any' || currentTimeWindow === 'custom') return;
+                refreshTimeWindowCount(currentTimeWindow);
+            }, interval);
+        }
+
+        function stopAutoRefresh() {
+            if (autoRefreshTimer) clearInterval(autoRefreshTimer);
+            autoRefreshTimer = null;
+        }
+
+        function onTimeWindowSelected(window_key) {
+            currentTimeWindow = window_key;
+            if (window_key !== 'any' && window_key !== 'custom') {
+                refreshTimeWindowCount(window_key);
+            }
         }
 
         document.addEventListener('DOMContentLoaded', function () {
@@ -1189,6 +1291,7 @@
 
             setTimeWindow(savedWin);
             setShowMode(savedMode);
+            startAutoRefresh();
 
             const jdInput = document.getElementById('job_query');
             if (jdInput) {
@@ -1196,7 +1299,24 @@
                     triggerDebouncedGmailCount();
                 });
             }
+
+            const refreshBtn = document.getElementById('btn-refresh-counts');
+            if (refreshBtn) {
+                refreshBtn.addEventListener('click', refreshAllCounts);
+            }
         });
+
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden) {
+                stopAutoRefresh();
+            } else {
+                if (currentTimeWindow !== 'any' && currentTimeWindow !== 'custom') {
+                    refreshTimeWindowCount(currentTimeWindow);
+                }
+                startAutoRefresh();
+            }
+        });
+
     </script>
 </body>
 </html>
