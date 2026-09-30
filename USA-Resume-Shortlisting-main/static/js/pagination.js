@@ -360,157 +360,171 @@ function getCurrentSearchContext() {
     return { mailbox, jobDesc };
 }
 
+let _isSingleCopying = false;
 async function copySingleCandidate(btn) {
-    const row = btn.closest('tr');
-    if (!row) return;
-
-    const cb = row.querySelector('.trainer-checkbox');
-    const name = cb ? cb.getAttribute('data-name') : row.cells[2].textContent.trim();
-    const email = cb ? cb.getAttribute('data-email') : row.cells[3].textContent.trim();
-    const phone = cb ? cb.getAttribute('data-phone') : row.cells[4].textContent.trim();
-
-    const formattedText = `${name} | ${email} | ${phone}`;
-    const oldStatus = row.getAttribute('data-status') || 'new';
-    const { mailbox, jobDesc } = getCurrentSearchContext();
-
-    // 1. Copy to clipboard
+    if (_isSingleCopying) return;
+    _isSingleCopying = true;
     try {
-        await navigator.clipboard.writeText(formattedText);
-    } catch (err) {
-        console.error('Clipboard copy failed:', err);
-        showToast('❌ Clipboard copy failed.', true);
-        return;
-    }
+        const row = btn.closest('tr');
+        if (!row) return;
 
-    // 2. Optimistic UI update to 'used'
-    row.setAttribute('data-status', 'used');
-    const cell = row.querySelector('.status-cell');
-    if (cell) cell.innerHTML = renderStatusBadge('used', email, name);
-    applyTableFilters();
+        const cb = row.querySelector('.trainer-checkbox');
+        const name = cb ? cb.getAttribute('data-name') : row.cells[2].textContent.trim();
+        const email = cb ? cb.getAttribute('data-email') : row.cells[3].textContent.trim();
+        const phone = cb ? cb.getAttribute('data-phone') : row.cells[4].textContent.trim();
 
-    // 3. Mark candidate as used
-    fetch('/api/candidate/status', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ mailbox, email, name, status: 'used' })
-    }).catch(err => console.error('[status] error:', err));
+        const formattedText = `${name} | ${email} | ${phone}`;
+        const oldStatus = row.getAttribute('data-status') || 'new';
+        const { mailbox, jobDesc } = getCurrentSearchContext();
 
-    // 4. Save to copied_history table
-    try {
-        const res = await fetch('/api/copied-history', {
+        // 1. Copy to clipboard
+        try {
+            await navigator.clipboard.writeText(formattedText);
+        } catch (err) {
+            console.error('Clipboard copy failed:', err);
+            showToast('❌ Clipboard copy failed.', true);
+            return;
+        }
+
+        // 2. Optimistic UI update to 'used'
+        row.setAttribute('data-status', 'used');
+        const cell = row.querySelector('.status-cell');
+        if (cell) cell.innerHTML = renderStatusBadge('used', email, name);
+        applyTableFilters();
+
+        // 3. Mark candidate as used
+        fetch('/api/candidate/status', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                mailbox_account: mailbox,
-                candidate_email: email,
-                candidate_name: name,
-                candidate_phone: phone,
-                job_description: jobDesc
-            })
-        });
-        const data = await res.json();
-        console.log('[copied-history] saved:', data);
+            body: JSON.stringify({ mailbox, email, name, status: 'used' })
+        }).catch(err => console.error('[status] error:', err));
 
-        if (data.success) {
-            if (typeof refreshCopiedHistoryPanel === 'function') {
-                refreshCopiedHistoryPanel();
+        // 4. Save to copied_history table
+        try {
+            const res = await fetch('/api/copied-history', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    mailbox_account: mailbox,
+                    candidate_email: email,
+                    candidate_name: name,
+                    candidate_phone: phone,
+                    job_description: jobDesc
+                })
+            });
+            const data = await res.json();
+            console.log('[copied-history] saved:', data);
+
+            if (data.success) {
+                if (typeof refreshCopiedHistoryPanel === 'function') {
+                    refreshCopiedHistoryPanel();
+                }
+                if (typeof updateCopiedHistoryCount === 'function') {
+                    updateCopiedHistoryCount();
+                }
+                if (typeof updateCopiedHistoryBadge === 'function') {
+                    updateCopiedHistoryBadge();
+                }
             }
-            if (typeof updateCopiedHistoryCount === 'function') {
-                updateCopiedHistoryCount();
-            }
-            if (typeof updateCopiedHistoryBadge === 'function') {
-                updateCopiedHistoryBadge();
-            }
+        } catch (err) {
+            console.error('[copied-history] POST failed:', err);
         }
-    } catch (err) {
-        console.error('[copied-history] POST failed:', err);
-    }
 
-    // 5. Show 5-second Undo Toast
-    showUndoToast(1, [{ email, name, oldStatus }]);
+        // 5. Show 5-second Undo Toast
+        showUndoToast(1, [{ email, name, oldStatus }]);
+    } finally {
+        setTimeout(() => { _isSingleCopying = false; }, 1000);
+    }
 }
 
+let _isBulkCopying = false;
 async function copySelectedCandidates() {
-    const checked = Array.from(document.querySelectorAll('.trainer-checkbox:checked'));
-    if (checked.length === 0) {
-        showToast('⚠️ Please select at least one candidate first.', true);
-        return;
-    }
-
-    const { mailbox, jobDesc } = getCurrentSearchContext();
-    const lines = [];
-    const itemsToMark = [];
-    const restoreList = [];
-    const candidatesToPost = [];
-
-    checked.forEach(cb => {
-        const row = cb.closest('tr');
-        const name = cb.getAttribute('data-name') || '';
-        const email = cb.getAttribute('data-email') || '';
-        const phone = cb.getAttribute('data-phone') || '';
-        const oldStatus = row ? (row.getAttribute('data-status') || 'new') : 'new';
-
-        lines.push(`${name} | ${email} | ${phone}`);
-        itemsToMark.push({ email, name });
-        restoreList.push({ email, name, oldStatus });
-        candidatesToPost.push({ email, name, phone });
-
-        if (row) {
-            row.setAttribute('data-status', 'used');
-            const cell = row.querySelector('.status-cell');
-            if (cell) cell.innerHTML = renderStatusBadge('used', email, name);
+    if (_isBulkCopying) return;
+    _isBulkCopying = true;
+    try {
+        const checked = Array.from(document.querySelectorAll('.trainer-checkbox:checked'));
+        if (checked.length === 0) {
+            showToast('⚠️ Please select at least one candidate first.', true);
+            return;
         }
-    });
 
-    applyTableFilters();
+        const { mailbox, jobDesc } = getCurrentSearchContext();
+        const lines = [];
+        const itemsToMark = [];
+        const restoreList = [];
+        const candidatesToPost = [];
 
-    const formattedText = lines.join('\n');
+        checked.forEach(cb => {
+            const row = cb.closest('tr');
+            const name = cb.getAttribute('data-name') || '';
+            const email = cb.getAttribute('data-email') || '';
+            const phone = cb.getAttribute('data-phone') || '';
+            const oldStatus = row ? (row.getAttribute('data-status') || 'new') : 'new';
 
-    try {
-        await navigator.clipboard.writeText(formattedText);
-    } catch (err) {
-        console.error('Bulk copy failed:', err);
-        showToast('❌ Clipboard copy failed.', true);
-        return;
-    }
+            lines.push(`${name} | ${email} | ${phone}`);
+            itemsToMark.push({ email, name });
+            restoreList.push({ email, name, oldStatus });
+            candidatesToPost.push({ email, name, phone });
 
-    // Mark bulk status
-    fetch('/api/candidate/bulk_status', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ mailbox, items: itemsToMark, status: 'used' })
-    }).catch(err => console.error('[bulk_status] failed:', err));
+            if (row) {
+                row.setAttribute('data-status', 'used');
+                const cell = row.querySelector('.status-cell');
+                if (cell) cell.innerHTML = renderStatusBadge('used', email, name);
+            }
+        });
 
-    // Save bulk copied_history
-    try {
-        const res = await fetch('/api/copied-history/bulk', {
+        applyTableFilters();
+
+        const formattedText = lines.join('\n');
+
+        try {
+            await navigator.clipboard.writeText(formattedText);
+        } catch (err) {
+            console.error('Bulk copy failed:', err);
+            showToast('❌ Clipboard copy failed.', true);
+            return;
+        }
+
+        // Mark bulk status
+        fetch('/api/candidate/bulk_status', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                mailbox_account: mailbox,
-                job_description: jobDesc,
-                candidates: candidatesToPost
-            })
-        });
-        const data = await res.json();
-        console.log('[copied-history-bulk] inserted:', data.inserted);
+            body: JSON.stringify({ mailbox, items: itemsToMark, status: 'used' })
+        }).catch(err => console.error('[bulk_status] failed:', err));
 
-        if (data.success) {
-            if (typeof refreshCopiedHistoryPanel === 'function') {
-                refreshCopiedHistoryPanel();
+        // Save bulk copied_history
+        try {
+            const res = await fetch('/api/copied-history/bulk', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    mailbox_account: mailbox,
+                    job_description: jobDesc,
+                    candidates: candidatesToPost
+                })
+            });
+            const data = await res.json();
+            console.log('[copied-history-bulk] inserted:', data.inserted);
+
+            if (data.success) {
+                if (typeof refreshCopiedHistoryPanel === 'function') {
+                    refreshCopiedHistoryPanel();
+                }
+                if (typeof updateCopiedHistoryCount === 'function') {
+                    updateCopiedHistoryCount();
+                }
+                if (typeof updateCopiedHistoryBadge === 'function') {
+                    updateCopiedHistoryBadge();
+                }
             }
-            if (typeof updateCopiedHistoryCount === 'function') {
-                updateCopiedHistoryCount();
-            }
-            if (typeof updateCopiedHistoryBadge === 'function') {
-                updateCopiedHistoryBadge();
-            }
+        } catch (err) {
+            console.error('[copied-history-bulk] POST failed:', err);
         }
-    } catch (err) {
-        console.error('[copied-history-bulk] POST failed:', err);
-    }
 
-    showUndoToast(checked.length, restoreList);
+        showUndoToast(checked.length, restoreList);
+    } finally {
+        setTimeout(() => { _isBulkCopying = false; }, 1000);
+    }
 }
 
 // ============================================================

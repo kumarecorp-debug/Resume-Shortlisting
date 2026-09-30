@@ -304,10 +304,14 @@ window.copyCandidate = async function(candidate) {
 
 window.copySelected = async function(candidates) {
     console.log('[copy.js] copySelected called with', (candidates || []).length, 'candidates');
+    if (typeof copySelectedCandidates === 'function') {
+        // Delegate to primary implementation in pagination.js to avoid duplicate POST requests
+        return copySelectedCandidates();
+    }
     
     if (!candidates || !candidates.length) return;
     
-    // 1. Copy all to clipboard
+    // Fallback if pagination.js function is not available
     const text = candidates.map(c => {
         const cEmail = c.email || c.Email || '';
         const cName = c.name || c.Name || '';
@@ -321,7 +325,6 @@ window.copySelected = async function(candidates) {
         console.warn('[copy] clipboard failed:', e);
     }
     
-    // 2. Bulk save to copied_history (existing function)
     const formattedCandidates = candidates.map(c => ({
         email: c.email || c.Email || '',
         name: c.name || c.Name || '',
@@ -329,84 +332,12 @@ window.copySelected = async function(candidates) {
     }));
     await saveBulkCandidatesToCopiedHistory(formattedCandidates);
     
-    // 3. Toast
     if (typeof showToast === 'function') {
         showToast(`Copied ${candidates.length} candidates (marked Used)`, false);
     }
 };
 
-// Global delegation: attach ONE listener for all copy buttons
-document.addEventListener('click', function(e) {
-    // Single-row Copy button
-    const btn = e.target.closest('.copy-btn, [data-action="copy"], .btn-copy, button[onclick*="copyRow"], button[onclick*="copySingleCandidate"]');
-    if (btn && !btn.hasAttribute('data-column-copy')) {
-        const tr = btn.closest('tr');
-        if (tr) {
-            e.preventDefault();
-            const email = btn.dataset.email 
-                       || tr?.dataset.email 
-                       || tr?.querySelector('.trainer-checkbox')?.dataset.email 
-                       || tr?.cells[3]?.textContent.trim();
-            const name = btn.dataset.name
-                      || tr?.dataset.name
-                      || tr?.querySelector('.trainer-checkbox')?.dataset.name
-                      || tr?.cells[2]?.textContent.trim();
-            const phone = btn.dataset.phone
-                       || tr?.dataset.phone
-                       || tr?.querySelector('.trainer-checkbox')?.dataset.phone
-                       || tr?.cells[4]?.textContent.trim();
-            
-            let cand = (window.__candidates || []).find(c => 
-                ((c.email || c.Email || '').toLowerCase() === (email || '').toLowerCase())
-            );
-
-            if (!cand && email) {
-                cand = { email: email, name: name, phone: phone };
-            }
-            
-            if (cand) {
-                window.copyCandidate(cand);
-            } else {
-                console.warn('[copy] candidate not found for', email);
-            }
-            return;
-        }
-    }
-    
-    // Bulk "Copy Selected" button
-    const bulkBtn = e.target.closest('#btn-copy-selected, #copy-selected-btn, [data-action="copy-selected"], .btn-copy-selected');
-    if (bulkBtn) {
-        e.preventDefault();
-        const boxes = document.querySelectorAll('.trainer-checkbox:checked, .row-checkbox:checked');
-        const selected = Array.from(boxes).map(cb => {
-            const tr = cb.closest('tr');
-            const email = cb.dataset.email 
-                       || tr?.dataset.email 
-                       || tr?.cells[3]?.textContent.trim();
-            const name = cb.dataset.name
-                      || tr?.dataset.name
-                      || tr?.cells[2]?.textContent.trim();
-            const phone = cb.dataset.phone
-                       || tr?.dataset.phone
-                       || tr?.cells[4]?.textContent.trim();
-
-            let found = (window.__candidates || []).find(c => 
-                ((c.email || c.Email || '').toLowerCase() === (email || '').toLowerCase())
-            );
-            if (!found && email) {
-                found = { email, name, phone };
-            }
-            return found;
-        }).filter(Boolean);
-        
-        if (selected.length) {
-            window.copySelected(selected);
-        } else {
-            console.warn('[copy] nothing selected');
-        }
-    }
-});
-
 console.log('[copy.js] handlers registered:', 
             typeof window.copyCandidate, 
             typeof window.copySelected);
+

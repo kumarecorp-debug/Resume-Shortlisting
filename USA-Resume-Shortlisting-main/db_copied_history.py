@@ -13,10 +13,28 @@ def save_copied_entry(user_email: str, mailbox_account: str, candidate_email: st
     if not client:
         return None
         
+    clean_mailbox = mailbox_account.strip().lower()
+    clean_email = candidate_email.strip().lower()
+
+    # Guard against duplicate insert within last 5 seconds
+    cutoff_iso = (datetime.now(timezone.utc) - timedelta(seconds=5)).isoformat()
+    try:
+        recent = client.table("copied_history") \
+            .select("id") \
+            .eq("mailbox_account", clean_mailbox) \
+            .eq("candidate_email", clean_email) \
+            .gte("copied_at", cutoff_iso) \
+            .execute()
+        if recent.data and len(recent.data) > 0:
+            logging.info(f"[copy] Skipping duplicate insert for {clean_email} (inserted in last 5s)")
+            return recent.data[0]["id"]
+    except Exception as e:
+        logging.warning(f"Error checking recent single copied_entry: {e}")
+
     payload = {
         "user_email": (user_email or "").strip().lower(),
-        "mailbox_account": mailbox_account.strip().lower(),
-        "candidate_email": candidate_email.strip().lower(),
+        "mailbox_account": clean_mailbox,
+        "candidate_email": clean_email,
         "candidate_name": (candidate_name or "").strip(),
         "candidate_phone": (candidate_phone or "").strip(),
         "job_description": (job_description or "").strip(),
@@ -134,15 +152,43 @@ def save_bulk_copied_entries(user_email: str, mailbox_account: str, candidates: 
     if not client:
         return 0
         
-    now_iso = datetime.now(timezone.utc).isoformat()
+    now_dt = datetime.now(timezone.utc)
+    now_iso = now_dt.isoformat()
     clean_mailbox = mailbox_account.strip().lower()
     clean_user = (user_email or "").strip().lower()
     clean_jd = (job_description or "").strip()
 
-    rows = []
+    # 1. Deduplicate candidate emails within the input payload
+    unique_candidates = {}
     for c in candidates:
         cand_email = (c.get('email') or c.get('candidate_email') or "").strip().lower()
-        if not cand_email:
+        if cand_email and cand_email not in unique_candidates:
+            unique_candidates[cand_email] = c
+
+    if not unique_candidates:
+        return 0
+
+    # 2. Check recent inserts within last 5 seconds to prevent duplicate POST insertions
+    cutoff_iso = (now_dt - timedelta(seconds=5)).isoformat()
+    recent_emails = set()
+    try:
+        recent_res = client.table("copied_history") \
+            .select("candidate_email") \
+            .eq("mailbox_account", clean_mailbox) \
+            .gte("copied_at", cutoff_iso) \
+            .execute()
+        if recent_res.data:
+            for r in recent_res.data:
+                em = (r.get("candidate_email") or "").strip().lower()
+                if em:
+                    recent_emails.add(em)
+    except Exception as e:
+        logging.warning(f"Failed to fetch recent copied_history check: {e}")
+
+    rows = []
+    for cand_email, c in unique_candidates.items():
+        if cand_email in recent_emails:
+            logging.info(f"[copied-history-bulk] Skipping duplicate recent insert for {cand_email}")
             continue
         rows.append({
             "user_email": clean_user,
@@ -155,6 +201,7 @@ def save_bulk_copied_entries(user_email: str, mailbox_account: str, candidates: 
         })
 
     if not rows:
+        logging.info("[copied-history-bulk] All candidates skipped due to recent duplicate insert guard.")
         return 0
 
     try:
@@ -166,29 +213,35 @@ def save_bulk_copied_entries(user_email: str, mailbox_account: str, candidates: 
         logging.error(f"Error saving bulk copied_history: {e}")
         return 0
 
-def get_never_used_candidates(mailbox_account: str = None, days: int = 30) -> list:
+def get_never_used_candidates_range(mailbox_account: str = None, from_date: str = None, to_date: str = None, days: int = 30) -> list:
     """
-    Finds candidates seen in search_history over the last N days who have NEVER been copied.
+    Finds candidates seen in search_history over a date range (or last N days) who have NEVER been copied.
     """
     client = db.get_supabase()
     if not client:
         return []
         
     try:
-        days = int(days) if days else 30
-    except (ValueError, TypeError):
-        days = 30
-
-    try:
-        now = datetime.now(timezone.utc)
-        cutoff = (now - timedelta(days=days)).isoformat()
-
-        # 1. Query search_history records for last `days` days
         sh_query = client.table("search_history").select("job_description, candidates_seen, searched_at, mailbox_account")
         if mailbox_account:
             sh_query = sh_query.eq("mailbox_account", mailbox_account.strip().lower())
-            
-        sh_query = sh_query.gte("searched_at", cutoff).order("searched_at", desc=True).limit(300)
+
+        if from_date:
+            from_dt = f"{from_date}T00:00:00Z"
+            sh_query = sh_query.gte("searched_at", from_dt)
+        elif days:
+            try:
+                days_int = int(days)
+            except (ValueError, TypeError):
+                days_int = 30
+            cutoff = (datetime.now(timezone.utc) - timedelta(days=days_int)).isoformat()
+            sh_query = sh_query.gte("searched_at", cutoff)
+
+        if to_date:
+            to_dt = f"{to_date}T23:59:59Z"
+            sh_query = sh_query.lte("searched_at", to_dt)
+
+        sh_query = sh_query.order("searched_at", desc=True).limit(500)
         sh_res = sh_query.execute()
         search_records = sh_res.data or []
 
@@ -254,8 +307,14 @@ def get_never_used_candidates(mailbox_account: str = None, days: int = 30) -> li
         entries.sort(key=lambda x: x.get("last_seen_at") or "", reverse=True)
         return entries
     except Exception as e:
-        logging.error(f"Error in get_never_used_candidates: {e}")
+        logging.error(f"Error in get_never_used_candidates_range: {e}")
         return []
+
+def get_never_used_candidates(mailbox_account: str = None, days: int = 30) -> list:
+    """
+    Finds candidates seen in search_history over the last N days who have NEVER been copied.
+    """
+    return get_never_used_candidates_range(mailbox_account=mailbox_account, days=days)
 
 def get_summary(mailbox_account: str = None) -> dict:
     """
@@ -271,34 +330,37 @@ def get_summary(mailbox_account: str = None) -> dict:
         week_start = (now - timedelta(days=7)).isoformat()
         thirty_days_start = (now - timedelta(days=30)).isoformat()
         
-        query = client.table("copied_history").select("id, copied_at")
+        query = client.table("copied_history").select("id, candidate_email, copied_at")
         if mailbox_account:
             query = query.eq("mailbox_account", mailbox_account.strip().lower())
             
         res = query.execute()
         records = res.data or []
         
-        total = 0
-        today_cnt = 0
-        week_cnt = 0
-        
+        seen_today = set()
+        seen_week = set()
+        seen_total = set()
+
         for r in records:
             cat = r.get("copied_at")
+            em = (r.get("candidate_email") or "").strip().lower()
+            if not em:
+                em = str(r.get("id") or "")
             if cat:
                 if cat >= thirty_days_start:
-                    total += 1
+                    seen_total.add(em)
                 if cat >= today_start:
-                    today_cnt += 1
+                    seen_today.add(em)
                 if cat >= week_start:
-                    week_cnt += 1
+                    seen_week.add(em)
 
         never_used_list = get_never_used_candidates(mailbox_account=mailbox_account, days=30)
         never_used_cnt = len(never_used_list)
                     
         return {
-            "this_week": week_cnt,
-            "today": today_cnt,
-            "total": total,
+            "this_week": len(seen_week),
+            "today": len(seen_today),
+            "total": len(seen_total),
             "never_used": never_used_cnt
         }
     except Exception as e:
