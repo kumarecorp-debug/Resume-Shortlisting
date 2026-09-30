@@ -192,7 +192,7 @@ def get_never_used_candidates(mailbox_account: str = None, days: int = 30) -> li
         sh_res = sh_query.execute()
         search_records = sh_res.data or []
 
-        # 2. Query copied_history to get all copied emails
+        # 2. Query copied_history & candidate_status to get all used/copied emails
         ch_query = client.table("copied_history").select("candidate_email")
         if mailbox_account:
             ch_query = ch_query.eq("mailbox_account", mailbox_account.strip().lower())
@@ -203,6 +203,18 @@ def get_never_used_candidates(mailbox_account: str = None, days: int = 30) -> li
             em = (r.get("candidate_email") or "").strip().lower()
             if em:
                 copied_emails.add(em)
+
+        try:
+            cs_query = client.table("candidate_status").select("candidate_email").eq("status", "used")
+            if mailbox_account:
+                cs_query = cs_query.eq("mailbox_account", mailbox_account.strip().lower())
+            cs_res = cs_query.execute()
+            for r in (cs_res.data or []):
+                em = (r.get("candidate_email") or "").strip().lower()
+                if em:
+                    copied_emails.add(em)
+        except Exception as e_cs:
+            logging.warning(f"Could not query candidate_status for never_used exclusion: {e_cs}")
 
         # 3. Deduplicate seen candidates not in copied_emails
         seen_dict = {}
