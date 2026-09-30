@@ -215,6 +215,7 @@ function appendRowsToTable(candidates, startOffset) {
         tr.setAttribute('id', `row-${rankNum}`);
         tr.setAttribute('data-status', status);
         tr.setAttribute('data-email', row.Email || '');
+        tr.setAttribute('data-gender', row.Gender || 'N/A');
         tr.setAttribute('data-exp-years', row.experience_years !== null && row.experience_years !== undefined ? row.experience_years : '');
 
         let expDisplay = escapeHtml(row.Experience || 'N/A');
@@ -224,20 +225,6 @@ function appendRowsToTable(candidates, startOffset) {
             expDisplay = `<span style="color: #d97706;" title="Experience unknown / unparseable">⚠️ ? yrs</span>`;
         }
 
-        const src = String(row.source || row.Source || 'pdf').toLowerCase();
-        const srcFile = String(row.source_file || '');
-        const srcSheet = String(row.source_sheet || '');
-        const srcRow = String(row.source_row || '');
-        let sourceBadge = '';
-        if (src.includes('excel') || src.includes('xlsx') || src.includes('xls')) {
-            let tooltip = `From file: ${srcFile}` + (srcSheet ? ` · Sheet: ${srcSheet}` : '') + (srcRow ? ` · Row ${srcRow}` : '');
-            sourceBadge = `<span class="badge-source badge-source-excel" title="${escapeHtml(tooltip)}">📊 Excel</span>`;
-        } else if (src.includes('docx')) {
-            sourceBadge = `<span class="badge-source badge-source-docx" title="From file: ${escapeHtml(srcFile)}">📄 DOCX</span>`;
-        } else {
-            sourceBadge = `<span class="badge-source badge-source-pdf" title="From file: ${escapeHtml(srcFile)}">📄 PDF</span>`;
-        }
-
         tr.innerHTML = `
             <td style="text-align: center;">
                 <input type="checkbox" class="trainer-checkbox" data-email="${escapeHtml(row.Email || '')}" data-name="${escapeHtml(row.Name || '')}" data-phone="${escapeHtml(row.Phone || '')}" onchange="onTrainerSelectChange()" style="cursor: pointer; transform: scale(1.15);">
@@ -245,10 +232,8 @@ function appendRowsToTable(candidates, startOffset) {
             <td style="text-align: center;">
                 <span class="tag-rank">#${rankNum}</span>
             </td>
-            <td style="text-align: center;">${sourceBadge}</td>
-            <td style="text-align: center; font-size: 0.84rem; color: #64748b; white-space: nowrap;">Recent</td>
             <td class="cand-name" style="font-weight: 600; color: #0f172a; word-break: break-word;">${escapeHtml(row.Name || 'N/A')}</td>
-            <td style="font-size: 0.88rem; color: #334155;">${escapeHtml(row.Gender || 'N/A')}</td>
+            <td class="cand-gender" style="font-size: 0.88rem; color: #334155;">${escapeHtml(row.Gender || 'N/A')}</td>
             <td class="cand-email" style="word-break: break-word; color: #334155; font-size: 0.88rem;">${escapeHtml(row.Email || 'N/A')}</td>
             <td class="cand-phone" style="padding-right: 12px; color: #334155; font-size: 0.88rem; word-break: break-word;">${escapeHtml(row.Phone || 'N/A')}</td>
             <td style="text-align: center; white-space: nowrap; font-weight: 600;">${expDisplay}</td>
@@ -688,6 +673,7 @@ function onTrainerSelectChange() {
 
 function applyTableFilters() {
     const statusFilter = document.getElementById('status-filter-select')?.value || 'all';
+    const genderFilter = (document.getElementById('gender-filter-select')?.value || 'all').toLowerCase();
     const hideUsed = document.getElementById('chk-hide-used')?.checked ?? true;
     const strongOnly = document.getElementById('chk-strong-matches')?.checked ?? false;
     const textFilter = document.getElementById('filter-box')?.value.toLowerCase().trim() || '';
@@ -700,6 +686,7 @@ function applyTableFilters() {
 
     rows.forEach(row => {
         const status = row.getAttribute('data-status') || 'new';
+        const genderVal = (row.getAttribute('data-gender') || row.querySelector('.cand-gender')?.textContent || '').toLowerCase().trim();
         const rowText = row.textContent.toLowerCase();
         const cb = row.querySelector('.trainer-checkbox');
         const isChecked = cb && cb.checked;
@@ -739,9 +726,17 @@ function applyTableFilters() {
             showByStatus = false;
         }
 
+        // Gender filter
+        let showByGender = true;
+        if (genderFilter === 'male') {
+            showByGender = genderVal === 'male' || genderVal === 'm' || (genderVal.startsWith('m') && !genderVal.startsWith('f'));
+        } else if (genderFilter === 'female') {
+            showByGender = genderVal === 'female' || genderVal === 'f' || genderVal.startsWith('f');
+        }
+
         let showByText = !textFilter || rowText.includes(textFilter);
 
-        if (showByTab && showByStrong && showByScore && showByStatus && showByText) {
+        if (showByTab && showByStrong && showByScore && showByStatus && showByGender && showByText) {
             row.style.display = '';
             visibleCount++;
         } else {
@@ -791,6 +786,7 @@ function downloadCSV() {
         const rowData = [
             `"${(row.cells[1]?.textContent.trim() || '').replace(/"/g, '""')}"`,
             `"${(row.getAttribute('data-status') || '').replace(/"/g, '""')}"`,
+            `"${(row.cells[2]?.textContent.trim() || '').replace(/"/g, '""')}"`,
             `"${(row.cells[3]?.textContent.trim() || '').replace(/"/g, '""')}"`,
             `"${(row.cells[4]?.textContent.trim() || '').replace(/"/g, '""')}"`,
             `"${(row.cells[5]?.textContent.trim() || '').replace(/"/g, '""')}"`,
@@ -798,8 +794,7 @@ function downloadCSV() {
             `"${(row.cells[7]?.textContent.trim() || '').replace(/"/g, '""')}"`,
             `"${(row.cells[8]?.textContent.trim() || '').replace(/"/g, '""')}"`,
             `"${(row.cells[9]?.textContent.trim() || '').replace(/"/g, '""')}"`,
-            `"${(row.cells[10]?.textContent.trim() || '').replace(/"/g, '""')}"`,
-            `"${(row.cells[11]?.textContent.trim() || '').replace(/"/g, '""')}"`
+            `"${(row.cells[10]?.textContent.trim() || '').replace(/"/g, '""')}"`
         ];
         csvLines.push(rowData.join(","));
     });
