@@ -210,7 +210,51 @@ def filter_candidates(candidates, term):
 
     return candidates, mode, len(candidates), 0
 
-def execute_full_candidate_search(job_query, selected_account, max_candidates=200):
+@app.template_filter('format_received_date')
+def format_received_date_filter(val):
+    if not val:
+        return "Recent"
+    try:
+        from datetime import datetime
+        s_val = str(val).split('T')[0]
+        d = datetime.fromisoformat(s_val)
+        now = datetime.now()
+        if d.year == now.year:
+            return d.strftime('%b %d')
+        return d.strftime('%b %d, %Y')
+    except Exception:
+        return "Recent"
+
+def compute_date_display(preset, df_str, dt_str):
+    if not preset or preset == 'any':
+        return None
+    try:
+        from datetime import datetime, timedelta
+        now = datetime.now()
+        if preset == '7d':
+            from_d = (now - timedelta(days=7)).strftime('%b %d')
+            to_d = now.strftime('%b %d, %Y')
+            return f"{from_d} – {to_d}"
+        elif preset == '14d':
+            from_d = (now - timedelta(days=14)).strftime('%b %d')
+            to_d = now.strftime('%b %d, %Y')
+            return f"{from_d} – {to_d}"
+        elif preset == '30d':
+            from_d = (now - timedelta(days=30)).strftime('%b %d')
+            to_d = now.strftime('%b %d, %Y')
+            return f"{from_d} – {to_d}"
+        elif df_str and str(df_str).strip():
+            d_from = datetime.fromisoformat(str(df_str).strip().split('T')[0]).strftime('%b %d')
+            if dt_str and str(dt_str).strip():
+                d_to = datetime.fromisoformat(str(dt_str).strip().split('T')[0]).strftime('%b %d, %Y')
+                return f"{d_from} – {d_to}"
+            else:
+                return f"Since {d_from}"
+    except Exception:
+        pass
+    return None
+
+def execute_full_candidate_search(job_query, selected_account, max_candidates=200, date_preset=None, date_from=None, date_to=None):
     resume_folder = RS_Project.RESUME_FOLDER
     try:
         if not os.path.exists(resume_folder):
@@ -230,7 +274,7 @@ def execute_full_candidate_search(job_query, selected_account, max_candidates=20
     stderr_buffer = StringIO()
     with redirect_stdout(stdout_buffer), redirect_stderr(stderr_buffer):
         try:
-            RS_Project.main(job_query, account_email=selected_account, max_candidates=max_candidates)
+            RS_Project.main(job_query, account_email=selected_account, max_candidates=max_candidates, date_preset=date_preset, date_from=date_from, date_to=date_to)
         except Exception as e:
             logging.error(f"Error in RS_Project.main: {e}")
 
@@ -336,11 +380,18 @@ def process():
     available_accounts = list(RS_Project.SUPPORTED_ACCOUNTS.values())
     default_account = available_accounts[0] if available_accounts else "recruiter@ecorptrainings.com"
     
-    if request.method == 'POST':
+    # Support URL parameters for GET searches (e.g. /process?jd=sql&date_preset=7d&exp=5)
+    is_get_search = request.method == 'GET' and (request.args.get('jd') or request.args.get('job_query'))
+
+    if request.method == 'POST' or is_get_search:
         import uuid
-        job_query = request.form.get('job_query', '').strip()
-        selected_account = request.form.get('account_email', default_account)
+        job_query = (request.form.get('job_query') or request.args.get('jd') or request.args.get('job_query') or '').strip()
+        selected_account = request.form.get('account_email') or request.args.get('account_email') or session.get('selected_account', default_account)
         session['selected_account'] = selected_account
+
+        date_preset = request.form.get('date_preset') or request.args.get('date_preset') or 'any'
+        date_from = request.form.get('date_from') or request.args.get('date_from') or ''
+        date_to = request.form.get('date_to') or request.args.get('date_to') or ''
 
         if not job_query:
             flash('Please enter a job description, role, or keywords.', 'error')
@@ -354,18 +405,30 @@ def process():
                 columns=[],
                 search_id=None,
                 total_matches=0,
-                page_size=25
+                page_size=25,
+                date_preset=date_preset,
+                date_from=date_from,
+                date_to=date_to
             )
 
-        min_exp_raw = request.form.get('min_exp') or request.args.get('min_exp')
+        min_exp_raw = request.form.get('min_exp') or request.args.get('min_exp') or request.args.get('exp')
         try:
             min_exp = float(min_exp_raw) if min_exp_raw is not None and str(min_exp_raw).strip() != '' else None
         except (ValueError, TypeError):
             min_exp = None
 
-        max_candidates = int(request.form.get('max_candidates', 50))
-        df = execute_full_candidate_search(job_query, selected_account, max_candidates=max_candidates)
+        max_candidates = int(request.form.get('max_candidates') or request.args.get('max_candidates') or 50)
+        df = execute_full_candidate_search(
+            job_query, 
+            selected_account, 
+            max_candidates=max_candidates,
+            date_preset=date_preset,
+            date_from=date_from,
+            date_to=date_to
+        )
         
+        date_display = compute_date_display(date_preset, date_from, date_to)
+
         if df.empty:
             flash(f'No candidate resumes found for "{job_query}" in mailbox {selected_account}. Try broader search terms.', 'error')
             return render_template(
@@ -379,7 +442,11 @@ def process():
                 search_id=None,
                 total_matches=0,
                 max_candidates=max_candidates,
-                min_exp=min_exp
+                min_exp=min_exp,
+                date_preset=date_preset,
+                date_from=date_from,
+                date_to=date_to,
+                date_display=date_display
             )
 
         # Attach persistent candidate status from Supabase
@@ -391,7 +458,7 @@ def process():
             df['Status'] = 'new'
 
         columns_order = [
-            "Rank", "Status", "Name", "Gender", "Email", "Phone", "Experience", "Skill Set", "Matched Skills", "Match Score", "Match Reason"
+            "Rank", "Status", "Name", "Gender", "Email", "Phone", "Experience", "Skill Set", "Matched Skills", "Match Score", "Match Reason", "ReceivedAt"
         ]
         columns_order = [col for col in columns_order if col in df.columns]
         all_records = df[columns_order].fillna("N/A").to_dict(orient='records')
@@ -441,7 +508,7 @@ def process():
             reverse=True
         )
 
-        logging.info(f"[search] jd={job_query} min_exp={min_exp} total={total_matches} hidden_exp={hidden_by_exp} returned={len(mode_records)}")
+        logging.info(f"[search] jd={job_query} date_preset={date_preset} date_from={date_from} date_to={date_to} min_exp={min_exp} total={total_matches} hidden_exp={hidden_by_exp} returned={len(mode_records)}")
 
         return render_template(
             'process.jinja',
@@ -458,7 +525,11 @@ def process():
             exact_matches=exact_cnt,
             approx_matches=approx_cnt,
             min_exp=min_exp,
-            hidden_by_experience=hidden_by_exp
+            hidden_by_experience=hidden_by_exp,
+            date_preset=date_preset,
+            date_from=date_from,
+            date_to=date_to,
+            date_display=date_display
         )
 
     selected_account = request.args.get('account_email') or session.get('selected_account', default_account)
@@ -472,7 +543,11 @@ def process():
         columns=[],
         search_id=None,
         total_matches=0,
-        page_size=25
+        page_size=25,
+        date_preset='any',
+        date_from='',
+        date_to='',
+        date_display=None
     )
 
 @app.route('/debug-status')
@@ -890,6 +965,46 @@ def api_get_never_used_candidates():
         'entries': entries,
         'total': len(entries)
     })
+
+@app.route('/api/search-history/latest', methods=['GET'])
+@login_required
+def api_get_latest_search_history():
+    mailbox = request.args.get('mailbox') or request.args.get('mailbox_account') or ''
+    jd = request.args.get('jd') or request.args.get('job_description') or ''
+    rec = db.get_latest_search_history(mailbox, jd)
+    if rec:
+        return jsonify({
+            'success': True,
+            'found': True,
+            'searched_at': rec.get('searched_at'),
+            'id': rec.get('id'),
+            'results_count': rec.get('results_count', 0)
+        })
+    return jsonify({'success': True, 'found': False})
+
+@app.route('/api/gmail/count', methods=['GET'])
+@login_required
+def api_gmail_count():
+    mailbox = request.args.get('mailbox') or session.get('selected_account', 'recruiter@ecorptrainings.com')
+    jd = request.args.get('jd') or ''
+    preset = request.args.get('date_preset') or 'any'
+    df = request.args.get('date_from') or ''
+    dt = request.args.get('date_to') or ''
+
+    if not jd.strip():
+        return jsonify({'count': 0})
+
+    try:
+        from gmail_search import build_gmail_search_query
+        query = build_gmail_search_query(jd, date_preset=preset, date_from=df, date_to=dt)
+        service = RS_Project.auto_authenticate_google(mailbox.lower().strip())
+        res = service.users().messages().list(userId='me', q=query, maxResults=100).execute()
+        count = len(res.get('messages', []))
+        return jsonify({'count': count})
+    except Exception as e:
+        logging.warning(f"Error getting gmail count: {e}")
+        return jsonify({'count': 0})
+
 
 
 @app.route('/api/copied-history/summary', methods=['GET'])

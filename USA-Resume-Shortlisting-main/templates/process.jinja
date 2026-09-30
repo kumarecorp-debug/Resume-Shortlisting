@@ -296,6 +296,27 @@
         .copy-btn:hover {
             opacity: 1;
         }
+        .date-pill-btn {
+            padding: 5px 14px;
+            border-radius: 9999px;
+            font-size: 0.82rem;
+            font-weight: 600;
+            cursor: pointer;
+            border: 1px solid var(--border, #cbd5e1);
+            background: var(--bg-card, #ffffff);
+            color: var(--text-primary, #0f172a);
+            transition: all 0.2s ease;
+        }
+        .date-pill-btn:hover {
+            background: #f1f5f9;
+            border-color: #94a3b8;
+        }
+        .date-pill-btn.active {
+            background: #4F46E5 !important;
+            color: #ffffff !important;
+            border-color: #4F46E5 !important;
+            box-shadow: 0 2px 6px rgba(79, 70, 229, 0.3);
+        }
         .badge-status {
             padding: 4px 8px;
             border-radius: 12px;
@@ -466,6 +487,41 @@
                         <span style="color: #64748b; font-size: 0.84rem;">(Optional — leave blank to show all candidates)</span>
                     </div>
 
+                    <!-- Date Filter Section -->
+                    <div class="date-filter-section" style="margin-top: 14px; margin-bottom: 16px; background: var(--bg-card); padding: 12px 14px; border-radius: 8px; border: 1px solid var(--border);">
+                        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; flex-wrap: wrap; gap: 6px;">
+                            <span style="font-weight: 700; color: #0f172a; font-size: 0.92rem;">📅 Date Filter:</span>
+                            <a href="#" onclick="setDatePreset('any'); return false;" style="font-size: 0.8rem; color: var(--accent); font-weight: 600; text-decoration: none;">Clear (Reset to Any)</a>
+                        </div>
+
+                        <input type="hidden" name="date_preset" id="date_preset" value="{{ date_preset or 'any' }}">
+                        <input type="hidden" name="date_from" id="date_from_hidden" value="{{ date_from or '' }}">
+                        <input type="hidden" name="date_to" id="date_to_hidden" value="{{ date_to or '' }}">
+
+                        <div style="display: flex; gap: 8px; flex-wrap: wrap; align-items: center;" id="date-pill-container">
+                            <button type="button" class="date-pill-btn" data-preset="any" onclick="setDatePreset('any')">Any</button>
+                            <button type="button" class="date-pill-btn" data-preset="7d" onclick="setDatePreset('7d')">Last 7 days <span id="count-pill-7d"></span></button>
+                            <button type="button" class="date-pill-btn" data-preset="14d" onclick="setDatePreset('14d')">Last 14 days <span id="count-pill-14d"></span></button>
+                            <button type="button" class="date-pill-btn" data-preset="30d" onclick="setDatePreset('30d')">Last 30 days <span id="count-pill-30d"></span></button>
+                            <button type="button" class="date-pill-btn" data-preset="since_last" onclick="setDatePreset('since_last')">Since last search</button>
+                            <button type="button" class="date-pill-btn" data-preset="custom" onclick="setDatePreset('custom')">Custom...</button>
+                        </div>
+
+                        <div id="custom-date-container" style="display: none; margin-top: 10px; align-items: center; gap: 12px; flex-wrap: wrap; background: var(--bg-primary); padding: 10px 14px; border-radius: 6px; border: 1px solid var(--border);">
+                            <div style="display: flex; align-items: center; gap: 6px;">
+                                <label for="custom_date_from" style="font-weight: 600; font-size: 0.86rem; color: var(--text-secondary);">📅 From:</label>
+                                <input type="date" id="custom_date_from" class="form-input" style="padding: 4px 8px; font-size: 0.85rem;" value="{{ date_from or '' }}" onchange="onCustomDateChange()">
+                            </div>
+                            <div style="display: flex; align-items: center; gap: 6px;">
+                                <label for="custom_date_to" style="font-weight: 600; font-size: 0.86rem; color: var(--text-secondary);">📅 To:</label>
+                                <input type="date" id="custom_date_to" class="form-input" style="padding: 4px 8px; font-size: 0.85rem;" value="{{ date_to or '' }}" onchange="onCustomDateChange()">
+                            </div>
+                            <span id="custom-date-error" style="color: var(--danger); font-size: 0.8rem; display: none; font-weight: 600;">⚠️ "From" date must be before or equal to "To" date</span>
+                        </div>
+
+                        <div id="date-filter-hint" style="font-size: 0.82rem; color: var(--text-muted); margin-top: 6px; display: none;"></div>
+                    </div>
+
                     <div class="query-hints">
                         <span class="hint-label">⚡ Quick Boolean Filters:</span>
                         <button type="button" class="chip-btn" onclick="setQuery('Python AND SQL')">Python AND SQL</button>
@@ -495,10 +551,10 @@
                         <h2 style="margin: 0; font-size: 1.3rem; color: #0f172a; display: flex; align-items: center; gap: 10px; flex-wrap: wrap;" id="candidates-count-title">
                             <span>
                                 {% if search_mode in ['email', 'phone', 'name'] %}
-                                    Search: "{{ job_query }}"{% if min_exp is not none %} &nbsp;·&nbsp; Min Exp: {{ min_exp }}+ years{% endif %} &nbsp;·&nbsp; Mode: {{ search_mode|capitalize }} search &nbsp;·&nbsp;
+                                    Search: "{{ job_query }}"{% if min_exp is not none %} &nbsp;·&nbsp; Min Exp: {{ min_exp }}+ years{% endif %}{% if date_display %} &nbsp;·&nbsp; 📅 {{ date_display }}{% endif %} &nbsp;·&nbsp; Mode: {{ search_mode|capitalize }} search &nbsp;·&nbsp;
                                     {{ exact_matches if exact_matches is defined else table_data|length }} exact match{% if (exact_matches if exact_matches is defined else table_data|length) != 1 %}es{% endif %} &nbsp;·&nbsp; {{ approx_matches if approx_matches is defined else 0 }} approximate
                                 {% else %}
-                                    Search: '{{ job_query }}'{% if min_exp is not none %} &nbsp;·&nbsp; Min Exp: {{ min_exp }}+ years{% endif %} &nbsp;·&nbsp; <span id="visible-count">{{ table_data|length }}</span> matches<span id="hidden-used-text"></span>
+                                    Search: '{{ job_query }}'{% if min_exp is not none %} &nbsp;·&nbsp; Min Exp: {{ min_exp }}+ years{% endif %}{% if date_display %} &nbsp;·&nbsp; 📅 {{ date_display }}{% endif %} &nbsp;·&nbsp; <span id="visible-count">{{ table_data|length }}</span> matches<span id="hidden-used-text"></span>
                                 {% endif %}
                             </span>
                             
@@ -589,17 +645,18 @@
                             <tr>
                                 <th style="text-align: center; width: 35px;">☐</th>
                                 <th style="text-align: center; width: 45px;">Rank</th>
-                                <th style="width: 130px;">Name <button type="button" class="copy-btn" data-column-copy="true" onclick="copyColumnData('Name', 3)" title="Copy all visible Names">📋</button></th>
-                                <th style="width: 75px;">Gender <button type="button" class="copy-btn" data-column-copy="true" onclick="copyColumnData('Gender', 4)" title="Copy all visible Genders">📋</button></th>
-                                <th style="width: 170px;">Email <button type="button" class="copy-btn" data-column-copy="true" onclick="copyColumnData('Email', 5)" title="Copy all visible Emails">📋</button></th>
-                                <th style="width: 150px;">Phone <button type="button" class="copy-btn" data-column-copy="true" onclick="copyColumnData('Phone', 6)" title="Copy all visible Phone Numbers">📋</button></th>
+                                <th style="width: 95px; text-align: center;">📅 Received</th>
+                                <th style="width: 130px;">Name <button type="button" class="copy-btn" data-column-copy="true" onclick="copyColumnData('Name', 4)" title="Copy all visible Names">📋</button></th>
+                                <th style="width: 75px;">Gender <button type="button" class="copy-btn" data-column-copy="true" onclick="copyColumnData('Gender', 5)" title="Copy all visible Genders">📋</button></th>
+                                <th style="width: 170px;">Email <button type="button" class="copy-btn" data-column-copy="true" onclick="copyColumnData('Email', 6)" title="Copy all visible Emails">📋</button></th>
+                                <th style="width: 150px;">Phone <button type="button" class="copy-btn" data-column-copy="true" onclick="copyColumnData('Phone', 7)" title="Copy all visible Phone Numbers">📋</button></th>
                                 <th style="text-align: center; width: 95px; cursor: pointer;" onclick="sortTableByExperience()" id="th-exp">
-                                    Exp <span id="sort-exp-icon">⇅</span> <button type="button" class="copy-btn" data-column-copy="true" onclick="event.stopPropagation(); copyColumnData('Experience', 7)" title="Copy all visible Experience">📋</button>
+                                    Exp <span id="sort-exp-icon">⇅</span> <button type="button" class="copy-btn" data-column-copy="true" onclick="event.stopPropagation(); copyColumnData('Experience', 8)" title="Copy all visible Experience">📋</button>
                                 </th>
-                                <th style="width: 160px;">Skill Set <button type="button" class="copy-btn" data-column-copy="true" onclick="copyColumnData('Skill Set', 8)" title="Copy all visible Skill Sets">📋</button></th>
-                                <th style="width: 130px;">Matched Skills <button type="button" class="copy-btn" data-column-copy="true" onclick="copyColumnData('Matched Skills', 9)" title="Copy all visible Matched Skills">📋</button></th>
-                                <th style="text-align: center; width: 70px;">Score <button type="button" class="copy-btn" data-column-copy="true" onclick="copyColumnData('Match Score', 10)" title="Copy all visible Match Scores">📋</button></th>
-                                <th style="width: 150px;">Reason <button type="button" class="copy-btn" data-column-copy="true" onclick="copyColumnData('Match Reason', 11)" title="Copy all visible Match Reasons">📋</button></th>
+                                <th style="width: 160px;">Skill Set <button type="button" class="copy-btn" data-column-copy="true" onclick="copyColumnData('Skill Set', 9)" title="Copy all visible Skill Sets">📋</button></th>
+                                <th style="width: 130px;">Matched Skills <button type="button" class="copy-btn" data-column-copy="true" onclick="copyColumnData('Matched Skills', 10)" title="Copy all visible Matched Skills">📋</button></th>
+                                <th style="text-align: center; width: 70px;">Score <button type="button" class="copy-btn" data-column-copy="true" onclick="copyColumnData('Match Score', 11)" title="Copy all visible Match Scores">📋</button></th>
+                                <th style="width: 150px;">Reason <button type="button" class="copy-btn" data-column-copy="true" onclick="copyColumnData('Match Reason', 12)" title="Copy all visible Match Reasons">📋</button></th>
                             </tr>
                         </thead>
                         <tbody id="table-body">
@@ -610,6 +667,9 @@
                                     </td>
                                     <td style="text-align: center;">
                                         <span class="tag-rank">#{{ row['Rank'] if 'Rank' in row else loop.index }}</span>
+                                    </td>
+                                    <td style="text-align: center; font-size: 0.84rem; color: #64748b; white-space: nowrap;">
+                                        {{ (row['received_at'] or row['ReceivedAt']) | format_received_date }}
                                     </td>
                                     <td class="cand-name" style="font-weight: 600; color: #0f172a; word-break: break-word;">
                                         {{ row['Name'] }}
@@ -782,8 +842,213 @@
             if (input) {
                 input.value = text;
                 input.focus();
+                triggerDebouncedGmailCount();
             }
         }
+
+        // ============================================================
+        // DATE FILTER CONTROL LOGIC
+        // ============================================================
+        let countDebounceTimer = null;
+
+        function setDatePreset(preset) {
+            const inputPreset = document.getElementById('date_preset');
+            const customContainer = document.getElementById('custom-date-container');
+            const hintElem = document.getElementById('date-filter-hint');
+            const fromHidden = document.getElementById('date_from_hidden');
+            const toHidden = document.getElementById('date_to_hidden');
+            const pills = document.querySelectorAll('.date-pill-btn');
+
+            if (inputPreset) inputPreset.value = preset;
+
+            pills.forEach(btn => {
+                if (btn.getAttribute('data-preset') === preset) {
+                    btn.classList.add('active');
+                } else {
+                    btn.classList.remove('active');
+                }
+            });
+
+            if (customContainer) {
+                customContainer.style.display = (preset === 'custom') ? 'flex' : 'none';
+            }
+
+            if (hintElem) {
+                hintElem.style.display = 'none';
+                hintElem.textContent = '';
+            }
+
+            if (preset === 'any') {
+                if (fromHidden) fromHidden.value = '';
+                if (toHidden) toHidden.value = '';
+            } else if (preset === 'custom') {
+                onCustomDateChange();
+            } else if (preset === 'since_last') {
+                fetchSinceLastSearchDate();
+            } else {
+                if (fromHidden) fromHidden.value = '';
+                if (toHidden) toHidden.value = '';
+                if (hintElem) {
+                    hintElem.style.display = 'block';
+                    hintElem.textContent = `Will filter emails newer than ${preset}.`;
+                }
+            }
+
+            try {
+                localStorage.setItem('search_date_preset', preset);
+                if (fromHidden) localStorage.setItem('search_date_from', fromHidden.value);
+                if (toHidden) localStorage.setItem('search_date_to', toHidden.value);
+            } catch(e) {}
+
+            triggerDebouncedGmailCount();
+        }
+
+        function onCustomDateChange() {
+            const fromInput = document.getElementById('custom_date_from');
+            const toInput = document.getElementById('custom_date_to');
+            const fromHidden = document.getElementById('date_from_hidden');
+            const toHidden = document.getElementById('date_to_hidden');
+            const errorElem = document.getElementById('custom-date-error');
+
+            const fromVal = fromInput ? fromInput.value : '';
+            const toVal = toInput ? toInput.value : '';
+
+            if (fromVal && toVal && fromVal > toVal) {
+                if (errorElem) errorElem.style.display = 'inline';
+            } else {
+                if (errorElem) errorElem.style.display = 'none';
+            }
+
+            if (fromHidden) fromHidden.value = fromVal;
+            if (toHidden) toHidden.value = toVal;
+
+            try {
+                localStorage.setItem('search_date_from', fromVal);
+                localStorage.setItem('search_date_to', toVal);
+            } catch(e) {}
+
+            triggerDebouncedGmailCount();
+        }
+
+        function fetchSinceLastSearchDate() {
+            const mailbox = document.getElementById('account_email')?.value || '';
+            const jd = document.getElementById('job_query')?.value || '';
+            const hintElem = document.getElementById('date-filter-hint');
+            const fromHidden = document.getElementById('date_from_hidden');
+            const toHidden = document.getElementById('date_to_hidden');
+
+            if (!jd.trim()) {
+                if (hintElem) {
+                    hintElem.style.display = 'block';
+                    hintElem.textContent = 'Please enter search keywords or JD to check last search date.';
+                }
+                return;
+            }
+
+            if (hintElem) {
+                hintElem.style.display = 'block';
+                hintElem.textContent = '⏳ Checking previous search date...';
+            }
+
+            fetch(`/api/search-history/latest?mailbox=${encodeURIComponent(mailbox)}&jd=${encodeURIComponent(jd)}`)
+                .then(res => res.json())
+                .then(data => {
+                    if (data.found && data.searched_at) {
+                        const dateObj = new Date(data.searched_at);
+                        const isoDate = dateObj.toISOString().split('T')[0];
+                        const dateFormatted = dateObj.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+
+                        if (fromHidden) fromHidden.value = isoDate;
+                        if (toHidden) toHidden.value = '';
+
+                        if (hintElem) {
+                            hintElem.style.display = 'block';
+                            hintElem.textContent = `Will search resumes received since ${dateFormatted}`;
+                        }
+                    } else {
+                        if (fromHidden) fromHidden.value = '';
+                        if (toHidden) toHidden.value = '';
+                        if (hintElem) {
+                            hintElem.style.display = 'block';
+                            hintElem.textContent = 'No prior search found for this query; searching all dates.';
+                        }
+                    }
+                })
+                .catch(() => {
+                    if (hintElem) {
+                        hintElem.style.display = 'block';
+                        hintElem.textContent = 'Could not retrieve last search date.';
+                    }
+                });
+        }
+
+        function triggerDebouncedGmailCount() {
+            if (countDebounceTimer) clearTimeout(countDebounceTimer);
+            countDebounceTimer = setTimeout(() => {
+                fetchGmailPillCounts();
+            }, 500);
+        }
+
+        function fetchGmailPillCounts() {
+            const mailbox = document.getElementById('account_email')?.value || '';
+            const jd = document.getElementById('job_query')?.value || '';
+            if (!jd || !jd.trim()) return;
+
+            ['7d', '14d', '30d'].forEach(preset => {
+                fetch(`/api/gmail/count?mailbox=${encodeURIComponent(mailbox)}&jd=${encodeURIComponent(jd)}&date_preset=${preset}`)
+                    .then(res => res.json())
+                    .then(data => {
+                        const badge = document.getElementById(`count-pill-${preset}`);
+                        if (badge && data.count !== undefined) {
+                            badge.textContent = `(${data.count})`;
+                        }
+                    })
+                    .catch(() => {});
+            });
+        }
+
+        document.addEventListener('DOMContentLoaded', function () {
+            const params = new URLSearchParams(window.location.search);
+            const urlJd = params.get('jd') || params.get('job_query');
+            const urlPreset = params.get('date_preset');
+            const urlFrom = params.get('date_from');
+            const urlTo = params.get('date_to');
+            const urlExp = params.get('exp') || params.get('min_exp');
+
+            if (urlJd) {
+                const jdInput = document.getElementById('job_query');
+                if (jdInput) jdInput.value = urlJd;
+            }
+            if (urlExp) {
+                const expInput = document.getElementById('min_exp');
+                if (expInput) expInput.value = urlExp;
+            }
+
+            let initialPreset = urlPreset || localStorage.getItem('search_date_preset') || '{{ date_preset or "any" }}';
+            
+            if (urlFrom) {
+                const fromHidden = document.getElementById('date_from_hidden');
+                if (fromHidden) fromHidden.value = urlFrom;
+                const customFrom = document.getElementById('custom_date_from');
+                if (customFrom) customFrom.value = urlFrom;
+            }
+            if (urlTo) {
+                const toHidden = document.getElementById('date_to_hidden');
+                if (toHidden) toHidden.value = urlTo;
+                const customTo = document.getElementById('custom_date_to');
+                if (customTo) customTo.value = urlTo;
+            }
+
+            setDatePreset(initialPreset);
+
+            const jdInput = document.getElementById('job_query');
+            if (jdInput) {
+                jdInput.addEventListener('input', function() {
+                    triggerDebouncedGmailCount();
+                });
+            }
+        });
+
     </script>
 </body>
 </html>

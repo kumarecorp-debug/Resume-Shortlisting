@@ -84,7 +84,7 @@ def detect_search_mode(term):
 
     return 'keyword'
 
-def build_gmail_search_query(job_description, days_back=None):
+def build_gmail_search_query(job_description, days_back=None, date_preset=None, date_from=None, date_to=None):
     """
     Constructs an optimized Gmail search query matching Gmail UI search semantics.
     Handles:
@@ -92,98 +92,115 @@ def build_gmail_search_query(job_description, days_back=None):
       2. Explicit boolean short queries (e.g. 'Python AND SQL', 'React OR Node')
       3. Short keyword queries (e.g. 'infoarchive', 'SFDC agentic core workflows')
       4. Full long Job Descriptions -> Automatically extracts core tech stack
+      5. Date Range Filters (newer_than:7d, 14d, 30d, after:YYYY/MM/DD, before:YYYY/MM/DD)
     """
     if not job_description:
-        return "has:attachment"
-
-    cleaned_jd = job_description.strip()
-    # Replace internal newlines and multiple spaces with a single space for clean tokenization
-    lines = [l.strip() for l in cleaned_jd.splitlines() if l.strip()]
-    normalized_jd = " ".join(lines)
-    if not normalized_jd:
-        return "has:attachment"
-
-    mode = detect_search_mode(normalized_jd)
-    if mode in ['email', 'phone', 'name']:
-        # Exact quote search for identifiers to avoid splitting (e.g., "vallir63@gmail.com")
-        kw_query = f'"{normalized_jd}"'
+        kw_query = ""
     else:
-        words = re.findall(r'\b[A-Za-z0-9+#.]+\b', normalized_jd)
-        # Determine if it is a multi-line long Job Description (only if > 12 words, > 120 chars, or >= 4 lines)
-        is_long_jd = len(words) > 12 or len(normalized_jd) > 120 or len(lines) >= 4
-
-        if is_long_jd:
-            # Long Job Description: Extract core technical skills
-            extracted_skills = extract_tech_keywords_from_jd(normalized_jd)
-            if extracted_skills:
-                top_skills = extracted_skills[:10]
-                kw_query = "(" + " OR ".join(top_skills) + ")"
-            else:
-                distinct_tokens = [w for w in words if w.lower() not in STOP_WORDS and len(w) >= 2][:8]
-                if distinct_tokens:
-                    kw_query = "(" + " OR ".join(distinct_tokens) + ")"
-                else:
-                    kw_query = f'"{normalized_jd}"'
+        cleaned_jd = job_description.strip()
+        lines = [l.strip() for l in cleaned_jd.splitlines() if l.strip()]
+        normalized_jd = " ".join(lines)
+        if not normalized_jd:
+            kw_query = ""
         else:
-            # Short Query
-            has_explicit_or = bool(re.search(r'\bOR\b', normalized_jd, flags=re.IGNORECASE))
-            has_explicit_and = bool(re.search(r'\bAND\b', normalized_jd, flags=re.IGNORECASE))
-
-            if has_explicit_or:
-                branches = [b.strip() for b in re.split(r'\bOR\b', normalized_jd, flags=re.IGNORECASE) if b.strip()]
-                valid_branches = []
-                for branch in branches:
-                    branch_tokens = [t for t in re.findall(r'[a-zA-Z0-9+#.]+', branch) if t.lower() not in STOP_WORDS and t.lower() != "and"]
-                    if branch_tokens:
-                        valid_branches.append(" ".join(branch_tokens))
-                if len(valid_branches) > 1:
-                    kw_query = "(" + " OR ".join(valid_branches) + ")"
-                elif valid_branches:
-                    kw_query = valid_branches[0]
-                else:
-                    kw_query = normalized_jd
-
-            elif has_explicit_and:
-                branches = [b.strip() for b in re.split(r'\bAND\b', normalized_jd, flags=re.IGNORECASE) if b.strip()]
-                valid_tokens = []
-                for branch in branches:
-                    branch_tokens = [t for t in re.findall(r'[a-zA-Z0-9+#.]+', branch) if t.lower() not in STOP_WORDS]
-                    if branch_tokens:
-                        valid_tokens.append(" ".join(branch_tokens))
-                if len(valid_tokens) > 1:
-                    kw_query = " ".join(valid_tokens)
-                elif valid_tokens:
-                    kw_query = valid_tokens[0]
-                else:
-                    kw_query = normalized_jd
-
+            mode = detect_search_mode(normalized_jd)
+            if mode in ['email', 'phone', 'name']:
+                kw_query = f'"{normalized_jd}"'
             else:
-                # Multi-word or single-word searches without explicit AND/OR
-                tokens = [t for t in re.findall(r'[a-zA-Z0-9+#.]+', normalized_jd) if t.lower() not in STOP_WORDS]
-                if not tokens:
-                    tokens = [w for w in words if w.lower() not in STOP_WORDS]
-                if not tokens:
-                    tokens = words
+                words = re.findall(r'\b[A-Za-z0-9+#.]+\b', normalized_jd)
+                is_long_jd = len(words) > 12 or len(normalized_jd) > 120 or len(lines) >= 4
 
-                expanded_tokens = []
-                for t in tokens:
-                    expanded_tokens.append(t)
-                    if t.upper() == "SFDC" and "Salesforce" not in expanded_tokens:
-                        expanded_tokens.append("Salesforce")
-
-                if len(expanded_tokens) > 1:
-                    kw_query = "(" + " OR ".join(expanded_tokens) + ")"
-                elif len(expanded_tokens) == 1:
-                    kw_query = expanded_tokens[0]
+                if is_long_jd:
+                    extracted_skills = extract_tech_keywords_from_jd(normalized_jd)
+                    if extracted_skills:
+                        top_skills = extracted_skills[:10]
+                        kw_query = "(" + " OR ".join(top_skills) + ")"
+                    else:
+                        distinct_tokens = [w for w in words if w.lower() not in STOP_WORDS and len(w) >= 2][:8]
+                        if distinct_tokens:
+                            kw_query = "(" + " OR ".join(distinct_tokens) + ")"
+                        else:
+                            kw_query = f'"{normalized_jd}"'
                 else:
-                    kw_query = normalized_jd
+                    has_explicit_or = bool(re.search(r'\bOR\b', normalized_jd, flags=re.IGNORECASE))
+                    has_explicit_and = bool(re.search(r'\bAND\b', normalized_jd, flags=re.IGNORECASE))
 
-    full_query = f"{kw_query}" if kw_query else "has:attachment"
+                    if has_explicit_or:
+                        branches = [b.strip() for b in re.split(r'\bOR\b', normalized_jd, flags=re.IGNORECASE) if b.strip()]
+                        valid_branches = []
+                        for branch in branches:
+                            branch_tokens = [t for t in re.findall(r'[a-zA-Z0-9+#.]+', branch) if t.lower() not in STOP_WORDS and t.lower() != "and"]
+                            if branch_tokens:
+                                valid_branches.append(" ".join(branch_tokens))
+                        if len(valid_branches) > 1:
+                            kw_query = "(" + " OR ".join(valid_branches) + ")"
+                        elif valid_branches:
+                            kw_query = valid_branches[0]
+                        else:
+                            kw_query = normalized_jd
 
-    if days_back:
+                    elif has_explicit_and:
+                        branches = [b.strip() for b in re.split(r'\bAND\b', normalized_jd, flags=re.IGNORECASE) if b.strip()]
+                        valid_tokens = []
+                        for branch in branches:
+                            branch_tokens = [t for t in re.findall(r'[a-zA-Z0-9+#.]+', branch) if t.lower() not in STOP_WORDS]
+                            if branch_tokens:
+                                valid_tokens.append(" ".join(branch_tokens))
+                        if len(valid_tokens) > 1:
+                            kw_query = " ".join(valid_tokens)
+                        elif valid_tokens:
+                            kw_query = valid_tokens[0]
+                        else:
+                            kw_query = normalized_jd
+
+                    else:
+                        tokens = [t for t in re.findall(r'[a-zA-Z0-9+#.]+', normalized_jd) if t.lower() not in STOP_WORDS]
+                        if not tokens:
+                            tokens = [w for w in words if w.lower() not in STOP_WORDS]
+                        if not tokens:
+                            tokens = words
+
+                        expanded_tokens = []
+                        for t in tokens:
+                            expanded_tokens.append(t)
+                            if t.upper() == "SFDC" and "Salesforce" not in expanded_tokens:
+                                expanded_tokens.append("Salesforce")
+
+                        if len(expanded_tokens) > 1:
+                            kw_query = "(" + " OR ".join(expanded_tokens) + ")"
+                        elif len(expanded_tokens) == 1:
+                            kw_query = expanded_tokens[0]
+                        else:
+                            kw_query = normalized_jd
+
+    date_clause = ""
+    preset = str(date_preset).strip().lower() if date_preset else ""
+
+    if preset == "7d":
+        date_clause = "newer_than:7d"
+    elif preset == "14d":
+        date_clause = "newer_than:14d"
+    elif preset == "30d":
+        date_clause = "newer_than:30d"
+
+    if date_from and str(date_from).strip():
+        df_clean = str(date_from).strip().split('T')[0].replace('-', '/')
+        date_clause += f" after:{df_clean}"
+    if date_to and str(date_to).strip():
+        dt_clean = str(date_to).strip().split('T')[0].replace('-', '/')
+        date_clause += f" before:{dt_clean}"
+
+    if not date_clause and days_back:
         from datetime import datetime, timedelta
         start_date = (datetime.now() - timedelta(days=days_back)).strftime('%Y/%m/%d')
-        full_query += f" after:{start_date}"
+        date_clause = f"after:{start_date}"
+
+    date_clause = date_clause.strip()
+    if date_clause:
+        full_query = f"has:attachment {date_clause} {kw_query}".strip() if kw_query else f"has:attachment {date_clause}"
+    else:
+        full_query = f"{kw_query}" if kw_query else "has:attachment"
 
     logging.info(f"Generated Gmail search query: {full_query}")
     return full_query
+

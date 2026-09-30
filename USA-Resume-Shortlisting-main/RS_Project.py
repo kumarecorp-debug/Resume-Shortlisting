@@ -1469,7 +1469,7 @@ Content:
 # ==========================================
 # 6. Main Orchestrator
 # ==========================================
-def main(job_query, account_email="recruiter@ecorptrainings.com", max_candidates=25):
+def main(job_query, account_email="recruiter@ecorptrainings.com", max_candidates=25, date_preset=None, date_from=None, date_to=None):
     """
     Main entrypoint called from app.py or CLI.
     Downloads matching resumes from Gmail up to max_candidates limit, extracts details,
@@ -1483,12 +1483,12 @@ def main(job_query, account_email="recruiter@ecorptrainings.com", max_candidates
 
     email_key = account_email.lower().strip() if account_email else "recruiter@ecorptrainings.com"
     service = auto_authenticate_google(email_key)
-    search_query = build_gmail_search_query(job_query)
+    search_query = build_gmail_search_query(job_query, date_preset=date_preset, date_from=date_from, date_to=date_to)
     # Fetch generous email buffer so non-resume emails filtered out do not prevent reaching max_candidates target
     fetch_buffer = max(max_candidates * 3, 60)
     messages = get_matching_emails(service, search_query, max_results=fetch_buffer)
     
-    default_cols = ["Rank", "Name", "Gender", "Email", "Phone", "Experience", "Skill Set", "Matched Skills", "Match Score", "Match Reason"]
+    default_cols = ["Rank", "Name", "Gender", "Email", "Phone", "Experience", "Skill Set", "Matched Skills", "Match Score", "Match Reason", "ReceivedAt"]
 
     if not messages:
         print(f"No emails found related to job description: '{job_query}' in mailbox '{email_key}'.")
@@ -1514,6 +1514,26 @@ def main(job_query, account_email="recruiter@ecorptrainings.com", max_candidates
             subject = next((h["value"] for h in headers if h["name"].lower() == "subject"), "")
             sender_header = next((h["value"] for h in headers if h["name"].lower() == "from"), "")
             reply_to_header = next((h["value"] for h in headers if h["name"].lower() == "reply-to"), "")
+            date_header = next((h["value"] for h in headers if h["name"].lower() == "date"), "")
+            internal_date_ms = msg.get("internalDate")
+            received_iso = None
+
+            if internal_date_ms:
+                try:
+                    from datetime import datetime, timezone
+                    ts_sec = float(internal_date_ms) / 1000.0
+                    received_iso = datetime.fromtimestamp(ts_sec, tz=timezone.utc).isoformat()
+                except Exception:
+                    pass
+
+            if not received_iso and date_header:
+                try:
+                    from email.utils import parsedate_to_datetime
+                    dt = parsedate_to_datetime(date_header)
+                    received_iso = dt.isoformat()
+                except Exception:
+                    pass
+
             email_body = extract_email_body(payload)
 
             valid_files = [(f, a_id) for f, a_id in attachments if is_valid_resume_filename(f)]
@@ -1552,6 +1572,9 @@ def main(job_query, account_email="recruiter@ecorptrainings.com", max_candidates
                 reply_to=reply_to_header,
                 subject=subject
             )
+
+            candidate["ReceivedAt"] = received_iso or datetime.now(timezone.utc).isoformat()
+            candidate["received_at"] = candidate["ReceivedAt"]
 
             # Reject mailbox owners or company email addresses as candidate emails
             cand_email = str(candidate.get("Email", "")).lower().strip()
