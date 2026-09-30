@@ -224,6 +224,20 @@ function appendRowsToTable(candidates, startOffset) {
             expDisplay = `<span style="color: #d97706;" title="Experience unknown / unparseable">⚠️ ? yrs</span>`;
         }
 
+        const src = String(row.source || row.Source || 'pdf').toLowerCase();
+        const srcFile = String(row.source_file || '');
+        const srcSheet = String(row.source_sheet || '');
+        const srcRow = String(row.source_row || '');
+        let sourceBadge = '';
+        if (src.includes('excel') || src.includes('xlsx') || src.includes('xls')) {
+            let tooltip = `From file: ${srcFile}` + (srcSheet ? ` · Sheet: ${srcSheet}` : '') + (srcRow ? ` · Row ${srcRow}` : '');
+            sourceBadge = `<span class="badge-source badge-source-excel" title="${escapeHtml(tooltip)}">📊 Excel</span>`;
+        } else if (src.includes('docx')) {
+            sourceBadge = `<span class="badge-source badge-source-docx" title="From file: ${escapeHtml(srcFile)}">📄 DOCX</span>`;
+        } else {
+            sourceBadge = `<span class="badge-source badge-source-pdf" title="From file: ${escapeHtml(srcFile)}">📄 PDF</span>`;
+        }
+
         tr.innerHTML = `
             <td style="text-align: center;">
                 <input type="checkbox" class="trainer-checkbox" data-email="${escapeHtml(row.Email || '')}" data-name="${escapeHtml(row.Name || '')}" data-phone="${escapeHtml(row.Phone || '')}" onchange="onTrainerSelectChange()" style="cursor: pointer; transform: scale(1.15);">
@@ -231,15 +245,17 @@ function appendRowsToTable(candidates, startOffset) {
             <td style="text-align: center;">
                 <span class="tag-rank">#${rankNum}</span>
             </td>
-            <td style="font-weight: 600;">${escapeHtml(row.Name || 'N/A')}</td>
+            <td style="text-align: center;">${sourceBadge}</td>
+            <td style="text-align: center; font-size: 0.84rem; color: #64748b; white-space: nowrap;">Recent</td>
+            <td class="cand-name" style="font-weight: 600; color: #0f172a; word-break: break-word;">${escapeHtml(row.Name || 'N/A')}</td>
             <td style="font-size: 0.88rem; color: #334155;">${escapeHtml(row.Gender || 'N/A')}</td>
-            <td style="font-size: 0.88rem; color: #334155;">${escapeHtml(row.Email || 'N/A')}</td>
-            <td style="font-size: 0.88rem; color: #334155;">${escapeHtml(row.Phone || 'N/A')}</td>
+            <td class="cand-email" style="word-break: break-word; color: #334155; font-size: 0.88rem;">${escapeHtml(row.Email || 'N/A')}</td>
+            <td class="cand-phone" style="padding-right: 12px; color: #334155; font-size: 0.88rem; word-break: break-word;">${escapeHtml(row.Phone || 'N/A')}</td>
             <td style="text-align: center; white-space: nowrap; font-weight: 600;">${expDisplay}</td>
-            <td style="font-size: 0.85rem; line-height: 1.3; color: #475569; word-break: break-word;">${escapeHtml(row['Skill Set'] || 'N/A')}</td>
-            <td style="font-size: 0.85rem; line-height: 1.3; color: #166534; word-break: break-word;">${escapeHtml(row['Matched Skills'] || 'N/A')}</td>
+            <td style="font-size: 0.85rem; line-height: 1.35; color: #334155; word-break: break-word;">${escapeHtml(row['Skill Set'] || 'N/A')}</td>
+            <td style="font-size: 0.85rem; line-height: 1.35; color: #166534; word-break: break-word;">${escapeHtml(row['Matched Skills'] || 'N/A')}</td>
             <td style="text-align: center;">
-                <span class="tag-score">${escapeHtml(row['Match Score'] || '85')}%</span>
+                <span class="tag-score tag-score-val">${escapeHtml(row['Match Score'] || '85')}%</span>
             </td>
             <td style="font-size: 0.82rem; line-height: 1.3; color: #475569; word-break: break-word;">${escapeHtml(row['Match Reason'] || 'N/A')}</td>
         `;

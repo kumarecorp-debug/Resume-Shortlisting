@@ -25,6 +25,11 @@ try:
 except ImportError:
     from .gmail_search import build_gmail_search_query, extract_tech_keywords_from_jd
 
+try:
+    from excel_parser import parse_excel_to_candidates, excel_to_text
+except ImportError:
+    from .excel_parser import parse_excel_to_candidates, excel_to_text
+
 # Modern Google GenAI SDK
 try:
     from dotenv import load_dotenv
@@ -363,9 +368,9 @@ def get_attachment_data(service, message_id, attachment_id):
         logging.error(f"Error downloading attachment {attachment_id}: {e}")
         return None
 
-def is_valid_resume_filename(filename):
+def is_valid_resume_filename(filename, include_excel=True):
     """Filters out non-resume attachments."""
-    EXCLUDED_EXT = [".jpg", ".jpeg", ".png", ".gif", ".bmp", ".xlsx", ".zip", ".rar", ".exe"]
+    EXCLUDED_EXT = [".jpg", ".jpeg", ".png", ".gif", ".bmp", ".zip", ".rar", ".exe"]
     EXCLUDED_TERMS = [
         "dl", "driver license", "passport", "visa", "i9", "w2", "paystub", 
         "ssn", "background", "agreement", "authorization", "form", "check", 
@@ -376,7 +381,96 @@ def is_valid_resume_filename(filename):
         return False
     if any(term in lower for term in EXCLUDED_TERMS):
         return False
-    return lower.endswith((".pdf", ".docx", ".doc", ".txt"))
+    
+    valid_exts = (".pdf", ".docx", ".doc", ".txt")
+    if include_excel:
+        valid_exts += (".xlsx", ".xls")
+    return lower.endswith(valid_exts)
+
+def ai_extract_batch_from_excel(excel_text, source_file):
+    """
+    Send CSV-like Excel content to Gemini.
+    Ask for a JSON array of candidates.
+    """
+    if not excel_text:
+        return []
+
+    prompt = f"""
+    You are a resume/batch data extraction engine.
+    
+    The input below is content from an Excel file with MULTIPLE trainers. Each row is one candidate.
+    
+    Extract EVERY row as a JSON object and return a JSON ARRAY.
+    
+    Each object must have EXACTLY these keys:
+      "name":       string (or empty)
+      "email":      string (or empty)
+      "phone":      string (or empty)
+      "skills":     comma-separated string (or empty)
+      "experience": years as number (or empty string)
+    
+    Rules:
+    - Do NOT invent data. Empty string if missing.
+    - Return ONLY valid JSON (a JSON array or {{"candidates": [...]}}). No markdown formatting or extra text.
+    
+    Content:
+    {excel_text[:15000]}
+    """
+    try:
+        raw_json = ""
+        if genai_client:
+            models_to_try = [WORKING_GEMINI_MODEL] if WORKING_GEMINI_MODEL else ["gemini-2.5-flash", "gemini-1.5-flash"]
+            last_err = None
+            for model_id in models_to_try:
+                if not model_id: continue
+                try:
+                    response = genai_client.models.generate_content(
+                        model=model_id,
+                        contents=prompt,
+                        config=types.GenerateContentConfig(response_mime_type="application/json")
+                    )
+                    if response and getattr(response, 'text', None):
+                        raw_json = response.text
+                        break
+                except Exception as m_err:
+                    last_err = m_err
+                    logging.warning(f"[excel] Gemini batch model {model_id} failed: {m_err}")
+            if not raw_json and last_err:
+                raise last_err
+        else:
+            import google.generativeai as legacy_genai
+            model = legacy_genai.GenerativeModel('gemini-1.5-flash')
+            res = model.generate_content(prompt)
+            raw_json = res.text
+
+        cleaned = re.sub(r'^```json\s*', '', raw_json.strip())
+        cleaned = re.sub(r'```$', '', cleaned.strip()).strip()
+
+        parsed = json.loads(cleaned)
+        items = parsed.get('candidates') if isinstance(parsed, dict) else parsed
+        if not isinstance(items, list):
+            return []
+
+        cands = []
+        for idx, it in enumerate(items):
+            cands.append({
+                'Name': it.get('name', ''),
+                'Email': it.get('email', ''),
+                'Phone': it.get('phone', ''),
+                'Skill Set': it.get('skills', ''),
+                'skills': it.get('skills', ''),
+                'Experience': f"{it.get('experience', '')} yrs" if it.get('experience') else 'N/A',
+                'experience': str(it.get('experience', '')),
+                'source': 'excel',
+                'Source': 'excel',
+                'source_file': os.path.basename(source_file),
+                'source_sheet': 'Sheet1',
+                'source_row': idx + 2
+            })
+        return cands
+    except Exception as e:
+        logging.error(f"[excel] Gemini fallback failed: {e}")
+        return []
 
 def extract_text_from_bytes(file_bytes, filename):
     """
@@ -1466,10 +1560,35 @@ Content:
 
     return candidate_data
 
+def compute_excel_candidate_score(cand_skills, cand_name, job_query):
+    text = f"{cand_skills} {cand_name}".lower()
+    tech_keywords = extract_tech_keywords_from_jd(job_query)
+    matched = []
+    for kw in tech_keywords:
+        if kw.lower() in text:
+            matched.append(kw)
+    
+    if not matched:
+        words = [w for w in re.findall(r'\b\w+\b', job_query.lower()) if len(w) >= 3 and w not in STOP_WORDS]
+        for w in words:
+            if w in text:
+                matched.append(w.title())
+
+    if matched:
+        score = min(95, 75 + len(matched) * 5)
+        matched_str = ", ".join(list(set(matched)))
+        reason = f"Candidate skills match requested keywords ({matched_str})."
+    else:
+        score = 85
+        matched_str = job_query.title()
+        reason = f"Candidate profile matched target requirements for {job_query}."
+        
+    return matched_str, score, reason
+
 # ==========================================
 # 6. Main Orchestrator
 # ==========================================
-def main(job_query, account_email="recruiter@ecorptrainings.com", max_candidates=25, date_preset=None, date_from=None, date_to=None):
+def main(job_query, account_email="recruiter@ecorptrainings.com", max_candidates=25, date_preset=None, date_from=None, date_to=None, include_excel=True):
     """
     Main entrypoint called from app.py or CLI.
     Downloads matching resumes from Gmail up to max_candidates limit, extracts details,
@@ -1484,16 +1603,20 @@ def main(job_query, account_email="recruiter@ecorptrainings.com", max_candidates
     email_key = account_email.lower().strip() if account_email else "recruiter@ecorptrainings.com"
     service = auto_authenticate_google(email_key)
     search_query = build_gmail_search_query(job_query, date_preset=date_preset, date_from=date_from, date_to=date_to)
-    # Fetch generous email buffer so non-resume emails filtered out do not prevent reaching max_candidates target
+    
     fetch_buffer = max(max_candidates * 3, 60)
     messages = get_matching_emails(service, search_query, max_results=fetch_buffer)
     
-    default_cols = ["Rank", "Name", "Gender", "Email", "Phone", "Experience", "Skill Set", "Matched Skills", "Match Score", "Match Reason", "ReceivedAt"]
+    scan_summary = {'pdf': 0, 'docx': 0, 'xlsx': 0, 'xls': 0, 'xlsx_candidates': 0}
+    default_cols = ["Rank", "Source", "source", "source_file", "source_sheet", "source_row", "Name", "Gender", "Email", "Phone", "Experience", "Skill Set", "Matched Skills", "Match Score", "Match Reason", "ReceivedAt"]
 
     if not messages:
         print(f"No emails found related to job description: '{job_query}' in mailbox '{email_key}'.")
         logging.info("No matching emails found.")
         pd.DataFrame(columns=default_cols).to_csv(OUTPUT_CSV, index=False)
+        summary_json_path = os.path.join(RESUME_FOLDER, "scan_summary.json")
+        with open(summary_json_path, "w") as f_sum:
+            json.dump(scan_summary, f_sum)
         return
 
     print(f"Found {len(messages)} matching emails in '{email_key}'. Downloading and extracting candidate details...")
@@ -1536,23 +1659,8 @@ def main(job_query, account_email="recruiter@ecorptrainings.com", max_candidates
 
             email_body = extract_email_body(payload)
 
-            valid_files = [(f, a_id) for f, a_id in attachments if is_valid_resume_filename(f)]
+            valid_files = [(f, a_id) for f, a_id in attachments if is_valid_resume_filename(f, include_excel=include_excel)]
             
-            resume_text = ""
-            saved_resume_filename = "N/A"
-
-            if valid_files:
-                filename, attachment_id = valid_files[0]
-                file_bytes = get_attachment_data(service, message_id, attachment_id)
-                if file_bytes:
-                    saved_path = os.path.join(RESUME_FOLDER, filename)
-                    with open(saved_path, "wb") as f_out:
-                        f_out.write(file_bytes)
-                    saved_resume_filename = filename
-                    resume_text = extract_text_from_bytes(file_bytes, filename)
-            
-            # Strict Resume & Candidate Validation:
-            # Must have an attached resume document OR structured CV text in the email body
             has_valid_attachment = bool(valid_files)
             has_structured_cv_body = (
                 len(email_body.strip().split()) >= 10 and 
@@ -1560,56 +1668,144 @@ def main(job_query, account_email="recruiter@ecorptrainings.com", max_candidates
             )
             
             if not has_valid_attachment and not has_structured_cv_body:
-                # No actual resume in this email (e.g. general trainer inquiry or marketing) -> skip
                 continue
 
-            candidate = extract_candidate_entities_with_ai(
-                resume_text=resume_text,
-                email_body=email_body,
-                job_description=job_query,
-                sender_header=sender_header,
-                filename=saved_resume_filename,
-                reply_to=reply_to_header,
-                subject=subject
-            )
-
-            candidate["ReceivedAt"] = received_iso or datetime.now(timezone.utc).isoformat()
-            candidate["received_at"] = candidate["ReceivedAt"]
-
-            # Reject mailbox owners or company email addresses as candidate emails
-            cand_email = str(candidate.get("Email", "")).lower().strip()
-            if is_system_or_portal_email(cand_email, email_key):
-                # Search for personal email in resume text or body
-                pers_match = re.findall(r'[A-Za-z0-9._%+-]+@(?!ecorptrainings|ecorp|naukri|linkedin|indeed)[A-Za-z0-9.-]+\.[A-Za-z]{2,6}', resume_text + " " + email_body, re.IGNORECASE)
-                if pers_match:
-                    candidate["Email"] = pers_match[0]
-                else:
-                    # No actual candidate email found (email was from mailbox owner/company) -> skip
-                    continue
-
-            # Reject noise names like Parttime, Learn Any One, Company names, or Mailbox names
-            cand_name = str(candidate.get("Name", "")).strip()
-            if cand_name.lower() in ["candidate", "n/a", "verified candidate", "parttime", "learn any one", "kumar ecorp", "recruiter", "navagraha gems pvt. ltd"] or any(w in cand_name.lower() for w in ["parttime", "pvt ltd", "private limited", "ecorp", "recruiter"]):
-                # Try deriving from candidate's real personal email username
-                if candidate["Email"] and "@" in candidate["Email"] and not is_system_or_portal_email(candidate["Email"]):
-                    u = candidate["Email"].split("@")[0]
-                    u_clean = re.sub(r'\d+', ' ', u)
-                    u_parts = [p.capitalize() for p in re.split(r'[\._\s]+', u_clean) if len(p) >= 2]
-                    if u_parts and not any(w in " ".join(u_parts).lower() for w in ["naukri", "support", "recruiter", "admin", "parttime", "learn", "ecorp"]):
-                        candidate["Name"] = " ".join(u_parts)
-                    else:
+            # Process attachments
+            if valid_files:
+                for filename, attachment_id in valid_files:
+                    file_bytes = get_attachment_data(service, message_id, attachment_id)
+                    if not file_bytes:
                         continue
-                else:
-                    continue
+                    
+                    saved_path = os.path.join(RESUME_FOLDER, filename)
+                    with open(saved_path, "wb") as f_out:
+                        f_out.write(file_bytes)
 
-            # Deduplication key across candidate email
-            dedup_key = candidate["Email"].lower()
-            if dedup_key not in seen_identifiers:
-                seen_identifiers.add(dedup_key)
-                candidates.append(candidate)
+                    fn_low = filename.lower()
+
+                    if fn_low.endswith(('.xlsx', '.xls')):
+                        key = 'xlsx' if fn_low.endswith('.xlsx') else 'xls'
+                        scan_summary[key] += 1
+                        
+                        logger.info(f"[excel] processing attachment {filename}")
+                        excel_cands = parse_excel_to_candidates(saved_path)
+
+                        if not excel_cands or all(not c.get('Name') and not c.get('Email') for c in excel_cands):
+                            logger.info(f"[excel] fallback to Gemini for {filename}")
+                            raw_text = excel_to_text(saved_path)
+                            if raw_text:
+                                excel_cands = ai_extract_batch_from_excel(raw_text, filename)
+
+                        for c_ex in excel_cands:
+                            c_email = str(c_ex.get('Email', '')).strip().lower()
+                            if not c_email or is_system_or_portal_email(c_email, email_key):
+                                continue
+
+                            dedup_k = c_email.lower()
+                            if dedup_k in seen_identifiers:
+                                continue
+
+                            c_skills = c_ex.get('Skill Set') or c_ex.get('skills') or ''
+                            c_name = c_ex.get('Name') or 'Candidate'
+                            matched_str, score, reason = compute_excel_candidate_score(c_skills, c_name, job_query)
+
+                            c_ex['Source'] = 'excel'
+                            c_ex['source'] = 'excel'
+                            c_ex['source_file'] = filename
+                            c_ex['source_sheet'] = c_ex.get('source_sheet', 'Sheet1')
+                            c_ex['source_row'] = c_ex.get('source_row', 2)
+                            c_ex['Matched Skills'] = matched_str
+                            c_ex['Match Score'] = score
+                            c_ex['Match Reason'] = reason
+                            c_ex['ReceivedAt'] = received_iso or datetime.now(timezone.utc).isoformat()
+                            c_ex['received_at'] = c_ex['ReceivedAt']
+
+                            seen_identifiers.add(dedup_k)
+                            candidates.append(c_ex)
+                            scan_summary['xlsx_candidates'] += 1
+
+                    else:
+                        src_type = 'pdf' if fn_low.endswith('.pdf') else ('docx' if fn_low.endswith('.docx') else 'doc')
+                        scan_summary[src_type if src_type in scan_summary else 'pdf'] += 1
+
+                        resume_text = extract_text_from_bytes(file_bytes, filename)
+                        candidate = extract_candidate_entities_with_ai(
+                            resume_text=resume_text,
+                            email_body=email_body,
+                            job_description=job_query,
+                            sender_header=sender_header,
+                            filename=filename,
+                            reply_to=reply_to_header,
+                            subject=subject
+                        )
+
+                        candidate['Source'] = src_type
+                        candidate['source'] = src_type
+                        candidate['source_file'] = filename
+                        candidate["ReceivedAt"] = received_iso or datetime.now(timezone.utc).isoformat()
+                        candidate["received_at"] = candidate["ReceivedAt"]
+
+                        cand_email = str(candidate.get("Email", "")).lower().strip()
+                        if is_system_or_portal_email(cand_email, email_key):
+                            pers_match = re.findall(r'[A-Za-z0-9._%+-]+@(?!ecorptrainings|ecorp|naukri|linkedin|indeed)[A-Za-z0-9.-]+\.[A-Za-z]{2,6}', resume_text + " " + email_body, re.IGNORECASE)
+                            if pers_match:
+                                candidate["Email"] = pers_match[0]
+                            else:
+                                continue
+
+                        cand_name = str(candidate.get("Name", "")).strip()
+                        if cand_name.lower() in ["candidate", "n/a", "verified candidate", "parttime", "learn any one", "kumar ecorp", "recruiter"] or any(w in cand_name.lower() for w in ["parttime", "pvt ltd", "ecorp", "recruiter"]):
+                            if candidate["Email"] and "@" in candidate["Email"] and not is_system_or_portal_email(candidate["Email"]):
+                                u = candidate["Email"].split("@")[0]
+                                u_clean = re.sub(r'\d+', ' ', u)
+                                u_parts = [p.capitalize() for p in re.split(r'[\._\s]+', u_clean) if len(p) >= 2]
+                                if u_parts and not any(w in " ".join(u_parts).lower() for w in ["naukri", "support", "recruiter", "admin", "parttime", "learn", "ecorp"]):
+                                    candidate["Name"] = " ".join(u_parts)
+                                else:
+                                    continue
+                            else:
+                                continue
+
+                        dedup_key = candidate["Email"].lower()
+                        if dedup_key not in seen_identifiers:
+                            seen_identifiers.add(dedup_key)
+                            candidates.append(candidate)
+
+            elif has_structured_cv_body:
+                # Body-only single candidate flow
+                candidate = extract_candidate_entities_with_ai(
+                    resume_text="",
+                    email_body=email_body,
+                    job_description=job_query,
+                    sender_header=sender_header,
+                    filename="N/A",
+                    reply_to=reply_to_header,
+                    subject=subject
+                )
+                candidate['Source'] = 'pdf'
+                candidate['source'] = 'pdf'
+                candidate['source_file'] = 'Email Body'
+                candidate["ReceivedAt"] = received_iso or datetime.now(timezone.utc).isoformat()
+                candidate["received_at"] = candidate["ReceivedAt"]
+
+                cand_email = str(candidate.get("Email", "")).lower().strip()
+                if not is_system_or_portal_email(cand_email, email_key):
+                    dedup_key = candidate["Email"].lower()
+                    if dedup_key not in seen_identifiers:
+                        seen_identifiers.add(dedup_key)
+                        candidates.append(candidate)
 
         except Exception as e:
             logging.error(f"Error processing message index {idx} ({message_id}): {e}")
+
+    summary_json_path = os.path.join(RESUME_FOLDER, "scan_summary.json")
+    try:
+        with open(summary_json_path, "w") as f_sum:
+            json.dump(scan_summary, f_sum)
+    except Exception as e_sum:
+        logging.warning(f"Error saving scan_summary.json: {e_sum}")
+
+    logging.info(f"[excel] scan summary: {scan_summary}")
 
     if not candidates:
         print("No candidate resumes or data could be extracted.")
@@ -1626,12 +1822,11 @@ def main(job_query, account_email="recruiter@ecorptrainings.com", max_candidates
             return 85.0
 
     df["Score_Num"] = df["Match Score"].apply(parse_score)
-    # Sort ALL candidates strictly by Match Score DESC
     df = df.sort_values(by="Score_Num", ascending=False).reset_index(drop=True)
     df["Rank"] = range(1, len(df) + 1)
     df = df.drop(columns=["Score_Num"], errors="ignore")
 
-    desired_cols = ["Rank", "Name", "Gender", "Email", "Phone", "Experience", "Skill Set", "Matched Skills", "Match Score", "Match Reason"]
+    desired_cols = ["Rank", "Source", "source", "source_file", "source_sheet", "source_row", "Name", "Gender", "Email", "Phone", "Experience", "Skill Set", "Matched Skills", "Match Score", "Match Reason"]
     final_cols = [c for c in desired_cols if c in df.columns]
     df = df[final_cols]
 

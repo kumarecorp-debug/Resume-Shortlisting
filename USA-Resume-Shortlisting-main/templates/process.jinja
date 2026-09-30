@@ -393,6 +393,32 @@
             margin-bottom: 12px;
             flex-wrap: wrap;
         }
+        .badge-source {
+            padding: 3px 8px;
+            border-radius: 12px;
+            font-size: 0.78rem;
+            font-weight: 700;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            white-space: nowrap;
+            cursor: help;
+        }
+        .badge-source-pdf {
+            background: #fee2e2;
+            color: #991b1b;
+            border: 1px solid #fca5a5;
+        }
+        .badge-source-docx {
+            background: #dbeafe;
+            color: #1e40af;
+            border: 1px solid #93c5fd;
+        }
+        .badge-source-excel {
+            background: #dcfce7;
+            color: #15803d;
+            border: 1px solid #86efac;
+        }
     </style>
 </head>
 <body>
@@ -487,6 +513,13 @@
                         <span style="color: #64748b; font-size: 0.84rem;">(Optional — leave blank to show all candidates)</span>
                     </div>
 
+                    <div style="margin-top: 4px; margin-bottom: 10px; display: flex; align-items: center; gap: 8px;">
+                        <input type="checkbox" name="include_excel" id="include_excel" value="1" {% if include_excel is not defined or include_excel %}checked{% endif %} style="cursor: pointer; transform: scale(1.15);">
+                        <label for="include_excel" style="font-weight: 600; color: #0f172a; font-size: 0.92rem; cursor: pointer;">
+                            📊 Include Excel attachments (.xlsx / .xls)
+                        </label>
+                    </div>
+
                     <!-- Date Filter Section -->
                     <div class="date-filter-section" style="margin-top: 14px; margin-bottom: 16px; background: var(--bg-card); padding: 12px 14px; border-radius: 8px; border: 1px solid var(--border);">
                         <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; flex-wrap: wrap; gap: 6px;">
@@ -544,6 +577,12 @@
 
         {% if table_data is not none and table_data|length > 0 %}
             <div id="pagination-meta" data-search-id="{{ search_id or '' }}" data-job-query="{{ job_query or '' }}" data-mailbox="{{ selected_account or '' }}" data-total="{{ total_matches or table_data|length }}" data-offset="{{ table_data|length }}" data-limit="{{ page_size or 25 }}" data-min-exp="{{ min_exp if min_exp is not none else '' }}" data-hidden-exp="{{ hidden_by_experience or 0 }}"></div>
+
+            {% if scan_summary %}
+                <div style="background: #f0f9ff; border: 1px solid #bae6fd; color: #0369a1; padding: 10px 16px; border-radius: 8px; font-size: 0.9rem; font-weight: 600; margin-bottom: 14px;">
+                    📊 <strong>Scan Summary:</strong> Scanned {{ scan_summary.get('pdf', 0) }} PDFs, {{ scan_summary.get('docx', 0) }} DOCX, {{ scan_summary.get('xlsx', 0) + scan_summary.get('xls', 0) }} Excel files ({{ scan_summary.get('xlsx_candidates', 0) }} rows total) &nbsp;·&nbsp; Found {{ total_matches }} matching candidates
+                </div>
+            {% endif %}
 
             <div class="card">
                 <div class="table-controls" style="flex-wrap: wrap; gap: 14px;">
@@ -645,18 +684,19 @@
                             <tr>
                                 <th style="text-align: center; width: 35px;">☐</th>
                                 <th style="text-align: center; width: 45px;">Rank</th>
+                                <th style="width: 85px; text-align: center;">📄 Source</th>
                                 <th style="width: 95px; text-align: center;">📅 Received</th>
-                                <th style="width: 130px;">Name <button type="button" class="copy-btn" data-column-copy="true" onclick="copyColumnData('Name', 4)" title="Copy all visible Names">📋</button></th>
-                                <th style="width: 75px;">Gender <button type="button" class="copy-btn" data-column-copy="true" onclick="copyColumnData('Gender', 5)" title="Copy all visible Genders">📋</button></th>
-                                <th style="width: 170px;">Email <button type="button" class="copy-btn" data-column-copy="true" onclick="copyColumnData('Email', 6)" title="Copy all visible Emails">📋</button></th>
-                                <th style="width: 150px;">Phone <button type="button" class="copy-btn" data-column-copy="true" onclick="copyColumnData('Phone', 7)" title="Copy all visible Phone Numbers">📋</button></th>
+                                <th style="width: 130px;">Name <button type="button" class="copy-btn" data-column-copy="true" onclick="copyColumnData('Name', 5)" title="Copy all visible Names">📋</button></th>
+                                <th style="width: 75px;">Gender <button type="button" class="copy-btn" data-column-copy="true" onclick="copyColumnData('Gender', 6)" title="Copy all visible Genders">📋</button></th>
+                                <th style="width: 170px;">Email <button type="button" class="copy-btn" data-column-copy="true" onclick="copyColumnData('Email', 7)" title="Copy all visible Emails">📋</button></th>
+                                <th style="width: 150px;">Phone <button type="button" class="copy-btn" data-column-copy="true" onclick="copyColumnData('Phone', 8)" title="Copy all visible Phone Numbers">📋</button></th>
                                 <th style="text-align: center; width: 95px; cursor: pointer;" onclick="sortTableByExperience()" id="th-exp">
-                                    Exp <span id="sort-exp-icon">⇅</span> <button type="button" class="copy-btn" data-column-copy="true" onclick="event.stopPropagation(); copyColumnData('Experience', 8)" title="Copy all visible Experience">📋</button>
+                                    Exp <span id="sort-exp-icon">⇅</span> <button type="button" class="copy-btn" data-column-copy="true" onclick="event.stopPropagation(); copyColumnData('Experience', 9)" title="Copy all visible Experience">📋</button>
                                 </th>
-                                <th style="width: 160px;">Skill Set <button type="button" class="copy-btn" data-column-copy="true" onclick="copyColumnData('Skill Set', 9)" title="Copy all visible Skill Sets">📋</button></th>
-                                <th style="width: 130px;">Matched Skills <button type="button" class="copy-btn" data-column-copy="true" onclick="copyColumnData('Matched Skills', 10)" title="Copy all visible Matched Skills">📋</button></th>
-                                <th style="text-align: center; width: 70px;">Score <button type="button" class="copy-btn" data-column-copy="true" onclick="copyColumnData('Match Score', 11)" title="Copy all visible Match Scores">📋</button></th>
-                                <th style="width: 150px;">Reason <button type="button" class="copy-btn" data-column-copy="true" onclick="copyColumnData('Match Reason', 12)" title="Copy all visible Match Reasons">📋</button></th>
+                                <th style="width: 160px;">Skill Set <button type="button" class="copy-btn" data-column-copy="true" onclick="copyColumnData('Skill Set', 10)" title="Copy all visible Skill Sets">📋</button></th>
+                                <th style="width: 130px;">Matched Skills <button type="button" class="copy-btn" data-column-copy="true" onclick="copyColumnData('Matched Skills', 11)" title="Copy all visible Matched Skills">📋</button></th>
+                                <th style="text-align: center; width: 70px;">Score <button type="button" class="copy-btn" data-column-copy="true" onclick="copyColumnData('Match Score', 12)" title="Copy all visible Match Scores">📋</button></th>
+                                <th style="width: 150px;">Reason <button type="button" class="copy-btn" data-column-copy="true" onclick="copyColumnData('Match Reason', 13)" title="Copy all visible Match Reasons">📋</button></th>
                             </tr>
                         </thead>
                         <tbody id="table-body">
@@ -667,6 +707,19 @@
                                     </td>
                                     <td style="text-align: center;">
                                         <span class="tag-rank">#{{ row['Rank'] if 'Rank' in row else loop.index }}</span>
+                                    </td>
+                                    <td style="text-align: center;">
+                                        {% set src = (row['source'] or row['Source'] or 'pdf') | lower %}
+                                        {% set src_file = row['source_file'] or '' %}
+                                        {% set src_sheet = row['source_sheet'] or '' %}
+                                        {% set src_row = row['source_row'] or '' %}
+                                        {% if 'excel' in src or 'xlsx' in src or 'xls' in src %}
+                                            <span class="badge-source badge-source-excel" title="From file: {{ src_file }}{% if src_sheet %} · Sheet: {{ src_sheet }}{% endif %}{% if src_row %} · Row {{ src_row }}{% endif %}">📊 Excel</span>
+                                        {% elif 'docx' in src %}
+                                            <span class="badge-source badge-source-docx" title="From file: {{ src_file }}">📄 DOCX</span>
+                                        {% else %}
+                                            <span class="badge-source badge-source-pdf" title="From file: {{ src_file }}">📄 PDF</span>
+                                        {% endif %}
                                     </td>
                                     <td style="text-align: center; font-size: 0.84rem; color: #64748b; white-space: nowrap;">
                                         {{ (row['received_at'] or row['ReceivedAt']) | format_received_date }}

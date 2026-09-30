@@ -8,6 +8,12 @@ An intelligent automated recruitment dashboard that integrates with Gmail to sea
 - **Multi-Account Switching**: Seamlessly switch between configured Gmail mailboxes (`recruiter@ecorptrainings.com`, `jai.ecorp@gmail.com`, `kumar.ecorp@gmail.com`, `pushpa@ecorptrainings.com`, `mahi@ecorptrainings.com`, `contact@ecorptrainings.com`).
 - **AI-Powered Extraction**: Extracts candidate name, email, phone number, total experience, and technical skill set using Gemini AI.
 - **Match Scoring & Ranking**: Computes a 0–100 match score, identifies matched JD skills, provides a one-line justification, and ranks candidates in descending order.
+- **Excel Batch Candidate Extraction**:
+  - Automatically downloads Excel (`.xlsx`, `.xls`) attachments in addition to PDF and DOCX files.
+  - `excel_parser.py`: Automatically normalizes column names (`Name`, `Email`, `Phone`, `Skills`, `Experience`), merges multi-sheet workbooks, caps rows at 500 per file, and caches results in-memory for 10 minutes.
+  - Gemini AI Fallback: Uses Gemini structured JSON extraction if column headers are unrecognizable or non-standard.
+  - Results Table Integration: Candidate rows from Excel appear seamlessly alongside PDF/DOCX candidates, complete with `📊 Excel` source badge and hover tooltip showing file name, sheet, and row number.
+  - Form Checkbox: Option to toggle `📊 Include Excel attachments (.xlsx / .xls)` (ON by default).
 - **Candidate Status Tracking (Feature 3)**:
   - Persistent status per candidate (`🟢 New`, `🔵 Used`, `🟡 Not Used`).
   - Copy = Auto-Mark Used: Copying candidate info (individual or bulk) automatically updates status to `used` with optimistic UI update and a 5-second Undo Toast.

@@ -254,7 +254,7 @@ def compute_date_display(preset, df_str, dt_str):
         pass
     return None
 
-def execute_full_candidate_search(job_query, selected_account, max_candidates=200, date_preset=None, date_from=None, date_to=None):
+def execute_full_candidate_search(job_query, selected_account, max_candidates=200, date_preset=None, date_from=None, date_to=None, include_excel=True):
     resume_folder = RS_Project.RESUME_FOLDER
     try:
         if not os.path.exists(resume_folder):
@@ -270,25 +270,36 @@ def execute_full_candidate_search(job_query, selected_account, max_candidates=20
         RS_Project.RESUME_FOLDER = resume_folder
         RS_Project.OUTPUT_CSV = os.path.join(resume_folder, "resume_analysis.csv")
 
+    scan_summary = {'pdf': 0, 'docx': 0, 'xlsx': 0, 'xls': 0, 'xlsx_candidates': 0}
+
     stdout_buffer = StringIO()
     stderr_buffer = StringIO()
     with redirect_stdout(stdout_buffer), redirect_stderr(stderr_buffer):
         try:
-            RS_Project.main(job_query, account_email=selected_account, max_candidates=max_candidates, date_preset=date_preset, date_from=date_from, date_to=date_to)
+            RS_Project.main(job_query, account_email=selected_account, max_candidates=max_candidates, date_preset=date_preset, date_from=date_from, date_to=date_to, include_excel=include_excel)
         except Exception as e:
             logging.error(f"Error in RS_Project.main: {e}")
 
+    summary_file = os.path.join(RS_Project.RESUME_FOLDER, "scan_summary.json")
+    if os.path.exists(summary_file):
+        try:
+            import json
+            with open(summary_file, 'r', encoding='utf-8') as sf:
+                scan_summary = json.load(sf)
+        except Exception as e_sum:
+            logging.warning(f"Error reading scan_summary.json: {e_sum}")
+
     output_csv = RS_Project.OUTPUT_CSV
     if not os.path.exists(output_csv):
-        return pd.DataFrame()
+        return pd.DataFrame(), scan_summary
 
     try:
         df = pd.read_csv(output_csv)
         if df.empty:
-            return pd.DataFrame()
+            return pd.DataFrame(), scan_summary
     except Exception as e:
         logging.error(f"Error reading output CSV: {e}")
-        return pd.DataFrame()
+        return pd.DataFrame(), scan_summary
 
     if not df.empty:
         # Convert DataFrame to list of dicts to run precision filtering
@@ -346,7 +357,7 @@ def execute_full_candidate_search(job_query, selected_account, max_candidates=20
                 'karan', 'bhavin', 'gulab', 'sudhakar', 'nagarjuna', 'krishna', 'rama', 'aditya', 'surya',
                 'shiva', 'pavan', 'vijay', 'ajay', 'sanjay', 'jay', 'rahul', 'amit', 'sumit', 'vince',
                 'anil', 'sunil', 'rajesh', 'suresh', 'ramesh', 'dinesh', 'manish', 'mukesh', 'nilesh',
-                'harish', 'gopal', 'mohan', 'sohan', 'rohan', 'varun', 'tarun', 'arun', 'alok', 'ashok'
+                'harshita', 'gopal', 'mohan', 'sohan', 'rohan', 'varun', 'tarun', 'arun', 'alok', 'ashok'
             }
             if first_name_lower in female_names:
                 return 'Female'
@@ -371,7 +382,7 @@ def execute_full_candidate_search(job_query, selected_account, max_candidates=20
                     axis=1
                 )
 
-    return df
+    return df, scan_summary
 
 @app.route('/', methods=['GET', 'POST'])
 @app.route('/process', methods=['GET', 'POST'])
@@ -393,6 +404,9 @@ def process():
         date_from = request.form.get('date_from') or request.args.get('date_from') or ''
         date_to = request.form.get('date_to') or request.args.get('date_to') or ''
 
+        include_excel_val = request.form.get('include_excel') if request.method == 'POST' else request.args.get('include_excel')
+        include_excel = False if include_excel_val in ('0', 'false', 'False') else True
+
         if not job_query:
             flash('Please enter a job description, role, or keywords.', 'error')
             return render_template(
@@ -408,7 +422,9 @@ def process():
                 page_size=25,
                 date_preset=date_preset,
                 date_from=date_from,
-                date_to=date_to
+                date_to=date_to,
+                include_excel=include_excel,
+                scan_summary=None
             )
 
         min_exp_raw = request.form.get('min_exp') or request.args.get('min_exp') or request.args.get('exp')
@@ -418,13 +434,14 @@ def process():
             min_exp = None
 
         max_candidates = int(request.form.get('max_candidates') or request.args.get('max_candidates') or 50)
-        df = execute_full_candidate_search(
+        df, scan_summary = execute_full_candidate_search(
             job_query, 
             selected_account, 
             max_candidates=max_candidates,
             date_preset=date_preset,
             date_from=date_from,
-            date_to=date_to
+            date_to=date_to,
+            include_excel=include_excel
         )
         
         date_display = compute_date_display(date_preset, date_from, date_to)
@@ -446,7 +463,9 @@ def process():
                 date_preset=date_preset,
                 date_from=date_from,
                 date_to=date_to,
-                date_display=date_display
+                date_display=date_display,
+                include_excel=include_excel,
+                scan_summary=scan_summary
             )
 
         # Attach persistent candidate status from Supabase
@@ -458,10 +477,13 @@ def process():
             df['Status'] = 'new'
 
         columns_order = [
-            "Rank", "Status", "Name", "Gender", "Email", "Phone", "Experience", "Skill Set", "Matched Skills", "Match Score", "Match Reason", "ReceivedAt"
+            "Rank", "Source", "Status", "Name", "Gender", "Email", "Phone", "Experience", "Skill Set", "Matched Skills", "Match Score", "Match Reason", "ReceivedAt"
         ]
+        # Keep columns that exist in df
         columns_order = [col for col in columns_order if col in df.columns]
-        all_records = df[columns_order].fillna("N/A").to_dict(orient='records')
+        
+        # Convert all columns to dicts, preserving extra fields like source_file, source_sheet, source_row
+        all_records = df.fillna("N/A").to_dict(orient='records')
         total_matches = len(all_records)
         search_id = str(uuid.uuid4())
 
@@ -529,7 +551,9 @@ def process():
             date_preset=date_preset,
             date_from=date_from,
             date_to=date_to,
-            date_display=date_display
+            date_display=date_display,
+            include_excel=include_excel,
+            scan_summary=scan_summary
         )
 
     selected_account = request.args.get('account_email') or session.get('selected_account', default_account)
