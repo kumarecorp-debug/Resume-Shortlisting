@@ -419,6 +419,61 @@
             color: #15803d;
             border: 1px solid #86efac;
         }
+        .time-pill-btn, .show-pill-btn {
+            padding: 6px 14px;
+            border-radius: 20px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            cursor: pointer;
+            border: 1.5px solid #cbd5e1;
+            background: #ffffff;
+            color: #334155;
+            transition: all 0.2s ease;
+        }
+        .time-pill-btn:hover, .show-pill-btn:hover {
+            background: #f1f5f9;
+            border-color: #94a3b8;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        }
+        .time-pill-btn.active, .show-pill-btn.active {
+            background: #2563eb !important;
+            color: #ffffff !important;
+            border-color: #2563eb !important;
+            box-shadow: 0 2px 6px rgba(37, 99, 235, 0.3);
+        }
+        .preset-sub-btn {
+            background: #ffffff;
+            border: 1px solid #cbd5e1;
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            color: #475569;
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+        .preset-sub-btn:hover {
+            background: #e2e8f0;
+            color: #0f172a;
+        }
+        .date-input-field {
+            padding: 6px 10px;
+            border-radius: 6px;
+            border: 1.5px solid #cbd5e1;
+            font-size: 0.88rem;
+            font-weight: 600;
+            color: #0f172a;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+        .date-input-field:focus {
+            border-color: #2563eb;
+            box-shadow: 0 0 0 3px rgba(37,99,235,0.15);
+        }
+        .date-input-field.error {
+            border-color: #dc2626 !important;
+            box-shadow: 0 0 0 3px rgba(220,38,38,0.15) !important;
+        }
     </style>
 </head>
 <body>
@@ -520,39 +575,68 @@
                         </label>
                     </div>
 
-                    <!-- Date Filter Section -->
-                    <div class="date-filter-section" style="margin-top: 14px; margin-bottom: 16px; background: var(--bg-card); padding: 12px 14px; border-radius: 8px; border: 1px solid var(--border);">
-                        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; flex-wrap: wrap; gap: 6px;">
-                            <span style="font-weight: 700; color: #0f172a; font-size: 0.92rem;">📅 Date Filter:</span>
-                            <a href="#" onclick="setDatePreset('any'); return false;" style="font-size: 0.8rem; color: var(--accent); font-weight: 600; text-decoration: none;">Clear (Reset to Any)</a>
+                    <!-- Time Window & Show Filter Section -->
+                    <div class="time-window-section" style="margin-top: 14px; margin-bottom: 16px; background: #ffffff; padding: 14px 16px; border-radius: 10px; border: 1.5px solid #cbd5e1; box-shadow: 0 1px 3px rgba(0,0,0,0.03);">
+                        <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin-bottom: 10px;">
+                            <span style="font-weight: 700; color: #0f172a; font-size: 0.95rem; display: flex; align-items: center; gap: 6px;">📅 Time Window:</span>
+                            <button type="button" onclick="setTimeWindow('any')" style="font-size: 0.8rem; color: #2563eb; background: none; border: none; font-weight: 600; cursor: pointer; text-decoration: underline;">Reset to Any</button>
                         </div>
 
-                        <input type="hidden" name="date_preset" id="date_preset" value="{{ date_preset or 'any' }}">
+                        <input type="hidden" name="time_window" id="time_window" value="{{ time_window or date_preset or 'any' }}">
+                        <input type="hidden" name="date_preset" id="date_preset" value="{{ time_window or date_preset or 'any' }}">
                         <input type="hidden" name="date_from" id="date_from_hidden" value="{{ date_from or '' }}">
                         <input type="hidden" name="date_to" id="date_to_hidden" value="{{ date_to or '' }}">
+                        <input type="hidden" name="show_mode" id="show_mode" value="{{ show_mode or 'all' }}">
 
-                        <div style="display: flex; gap: 8px; flex-wrap: wrap; align-items: center;" id="date-pill-container">
-                            <button type="button" class="date-pill-btn" data-preset="any" onclick="setDatePreset('any')">Any</button>
-                            <button type="button" class="date-pill-btn" data-preset="7d" onclick="setDatePreset('7d')">Last 7 days <span id="count-pill-7d"></span></button>
-                            <button type="button" class="date-pill-btn" data-preset="14d" onclick="setDatePreset('14d')">Last 14 days <span id="count-pill-14d"></span></button>
-                            <button type="button" class="date-pill-btn" data-preset="30d" onclick="setDatePreset('30d')">Last 30 days <span id="count-pill-30d"></span></button>
-                            <button type="button" class="date-pill-btn" data-preset="since_last" onclick="setDatePreset('since_last')">Since last search</button>
-                            <button type="button" class="date-pill-btn" data-preset="custom" onclick="setDatePreset('custom')">Custom...</button>
+                        <div style="display: flex; gap: 8px; flex-wrap: wrap; align-items: center;" id="time-window-pill-container">
+                            <button type="button" class="time-pill-btn {% if not time_window or time_window == 'any' %}active{% endif %}" data-window="any" onclick="setTimeWindow('any')">Any</button>
+                            <button type="button" class="time-pill-btn {% if time_window == 'today' %}active{% endif %}" data-window="today" onclick="setTimeWindow('today')">Today</button>
+                            <button type="button" class="time-pill-btn {% if time_window == 'yesterday' %}active{% endif %}" data-window="yesterday" onclick="setTimeWindow('yesterday')">Yesterday</button>
+                            <button type="button" class="time-pill-btn {% if time_window == '7d' %}active{% endif %}" data-window="7d" onclick="setTimeWindow('7d')">7d <span id="count-pill-7d"></span></button>
+                            <button type="button" class="time-pill-btn {% if time_window == '14d' %}active{% endif %}" data-window="14d" onclick="setTimeWindow('14d')">14d <span id="count-pill-14d"></span></button>
+                            <button type="button" class="time-pill-btn {% if time_window == '30d' %}active{% endif %}" data-window="30d" onclick="setTimeWindow('30d')">30d <span id="count-pill-30d"></span></button>
+                            <button type="button" class="time-pill-btn {% if time_window == 'custom' %}active{% endif %}" data-window="custom" onclick="setTimeWindow('custom')">Custom 📅</button>
                         </div>
 
-                        <div id="custom-date-container" style="display: none; margin-top: 10px; align-items: center; gap: 12px; flex-wrap: wrap; background: var(--bg-primary); padding: 10px 14px; border-radius: 6px; border: 1px solid var(--border);">
-                            <div style="display: flex; align-items: center; gap: 6px;">
-                                <label for="custom_date_from" style="font-weight: 600; font-size: 0.86rem; color: var(--text-secondary);">📅 From:</label>
-                                <input type="date" id="custom_date_from" class="form-input" style="padding: 4px 8px; font-size: 0.85rem;" value="{{ date_from or '' }}" onchange="onCustomDateChange()">
+                        <!-- Custom Date Range Panel -->
+                        <div id="custom-date-panel" style="display: {% if time_window == 'custom' %}block{% else %}none{% endif %}; margin-top: 12px; background: #f8fafc; padding: 14px 16px; border-radius: 8px; border: 1.5px solid #cbd5e1;">
+                            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; flex-wrap: wrap; gap: 10px;">
+                                <span style="font-weight: 700; font-size: 0.9rem; color: #1e293b;">📅 Custom Date Range</span>
+                                <button type="button" onclick="closeCustomPanel()" style="background: none; border: none; color: #64748b; font-size: 0.82rem; font-weight: 700; cursor: pointer;">✕ Close</button>
                             </div>
-                            <div style="display: flex; align-items: center; gap: 6px;">
-                                <label for="custom_date_to" style="font-weight: 600; font-size: 0.86rem; color: var(--text-secondary);">📅 To:</label>
-                                <input type="date" id="custom_date_to" class="form-input" style="padding: 4px 8px; font-size: 0.85rem;" value="{{ date_to or '' }}" onchange="onCustomDateChange()">
+
+                            <div style="display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin-bottom: 10px;">
+                                <div style="display: flex; align-items: center; gap: 6px;">
+                                    <label for="custom_date_from" style="font-weight: 600; font-size: 0.88rem; color: #334155;">From:</label>
+                                    <input type="date" id="custom_date_from" class="date-input-field" value="{{ date_from or '' }}" onchange="onCustomDateChange()">
+                                </div>
+                                <div style="display: flex; align-items: center; gap: 6px;">
+                                    <label for="custom_date_to" style="font-weight: 600; font-size: 0.88rem; color: #334155;">To:</label>
+                                    <input type="date" id="custom_date_to" class="date-input-field" value="{{ date_to or '' }}" onchange="onCustomDateChange()">
+                                </div>
                             </div>
-                            <span id="custom-date-error" style="color: var(--danger); font-size: 0.8rem; display: none; font-weight: 600;">⚠️ "From" date must be before or equal to "To" date</span>
+
+                            <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 8px;">
+                                <span style="font-size: 0.82rem; font-weight: 700; color: #64748b;">Quick:</span>
+                                <button type="button" class="preset-sub-btn" onclick="applyCustomPreset('7d')">Last 7d</button>
+                                <button type="button" class="preset-sub-btn" onclick="applyCustomPreset('30d')">Last 30d</button>
+                                <button type="button" class="preset-sub-btn" onclick="applyCustomPreset('month')">This month</button>
+                                <button type="button" class="preset-sub-btn" onclick="applyCustomPreset('reset')">Reset</button>
+                            </div>
+
+                            <div id="custom-date-preview" style="font-size: 0.84rem; color: #2563eb; font-weight: 600;"></div>
+                            <div id="custom-date-error" style="color: #dc2626; font-size: 0.82rem; font-weight: 700; margin-top: 4px; display: none;">To date must be after From date</div>
                         </div>
 
-                        <div id="date-filter-hint" style="font-size: 0.82rem; color: var(--text-muted); margin-top: 6px; display: none;"></div>
+                        <!-- Show Filter Row -->
+                        <div style="margin-top: 14px; padding-top: 12px; border-top: 1px solid #e2e8f0; display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
+                            <span style="font-weight: 700; color: #0f172a; font-size: 0.92rem; display: flex; align-items: center; gap: 6px;">👥 Show:</span>
+                            <div style="display: flex; gap: 8px; flex-wrap: wrap; align-items: center;" id="show-mode-pill-container">
+                                <button type="button" class="show-pill-btn {% if not show_mode or show_mode == 'all' %}active{% endif %}" data-show="all" onclick="setShowMode('all')">● All</button>
+                                <button type="button" class="show-pill-btn {% if show_mode == 'copied' %}active{% endif %}" data-show="copied" onclick="setShowMode('copied')">○ Copied</button>
+                                <button type="button" class="show-pill-btn {% if show_mode == 'not_copied' %}active{% endif %}" data-show="not_copied" onclick="setShowMode('not_copied')">○ Not copied</button>
+                            </div>
+                        </div>
                     </div>
 
                     <div class="query-hints">
@@ -891,69 +975,100 @@
         });
 
         function setQuery(text) {
-            const input = document.getElementById('job_query');
-            if (input) {
-                input.value = text;
-                input.focus();
-                triggerDebouncedGmailCount();
-            }
-        }
-
-        // ============================================================
-        // DATE FILTER CONTROL LOGIC
+            const input = document.getE        // ============================================================
+        // TIME WINDOW & SHOW MODE CONTROL LOGIC
         // ============================================================
         let countDebounceTimer = null;
 
-        function setDatePreset(preset) {
-            const inputPreset = document.getElementById('date_preset');
-            const customContainer = document.getElementById('custom-date-container');
-            const hintElem = document.getElementById('date-filter-hint');
-            const fromHidden = document.getElementById('date_from_hidden');
-            const toHidden = document.getElementById('date_to_hidden');
-            const pills = document.querySelectorAll('.date-pill-btn');
+        function formatDateIso(d) {
+            const year = d.getFullYear();
+            const month = String(d.getMonth() + 1).padStart(2, '0');
+            const day = String(d.getDate()).padStart(2, '0');
+            return `${year}-${month}-${day}`;
+        }
 
-            if (inputPreset) inputPreset.value = preset;
+        function getTodayIso() {
+            return formatDateIso(new Date());
+        }
 
-            pills.forEach(btn => {
-                if (btn.getAttribute('data-preset') === preset) {
-                    btn.classList.add('active');
+        function getDaysAgoIso(days) {
+            const d = new Date();
+            d.setDate(d.getDate() - days);
+            return formatDateIso(d);
+        }
+
+        function setTimeWindow(win) {
+            const twInput = document.getElementById('time_window');
+            const dpInput = document.getElementById('date_preset');
+            if (twInput) twInput.value = win;
+            if (dpInput) dpInput.value = win;
+
+            try { localStorage.setItem('search_time_window', win); } catch (e) {}
+
+            const pills = document.querySelectorAll('#time-window-pill-container .time-pill-btn');
+            pills.forEach(b => {
+                if (b.getAttribute('data-window') === win) {
+                    b.classList.add('active');
                 } else {
-                    btn.classList.remove('active');
+                    b.classList.remove('active');
                 }
             });
 
-            if (customContainer) {
-                customContainer.style.display = (preset === 'custom') ? 'flex' : 'none';
-            }
-
-            if (hintElem) {
-                hintElem.style.display = 'none';
-                hintElem.textContent = '';
-            }
-
-            if (preset === 'any') {
-                if (fromHidden) fromHidden.value = '';
-                if (toHidden) toHidden.value = '';
-            } else if (preset === 'custom') {
+            const customPanel = document.getElementById('custom-date-panel');
+            if (win === 'custom') {
+                if (customPanel) customPanel.style.display = 'block';
+                const fromInput = document.getElementById('custom_date_from');
+                const toInput = document.getElementById('custom_date_to');
+                if (!fromInput.value) fromInput.value = getDaysAgoIso(6);
+                if (!toInput.value) toInput.value = getTodayIso();
                 onCustomDateChange();
-            } else if (preset === 'since_last') {
-                fetchSinceLastSearchDate();
             } else {
-                if (fromHidden) fromHidden.value = '';
-                if (toHidden) toHidden.value = '';
-                if (hintElem) {
-                    hintElem.style.display = 'block';
-                    hintElem.textContent = `Will filter emails newer than ${preset}.`;
-                }
+                if (customPanel) customPanel.style.display = 'none';
             }
-
-            try {
-                localStorage.setItem('search_date_preset', preset);
-                if (fromHidden) localStorage.setItem('search_date_from', fromHidden.value);
-                if (toHidden) localStorage.setItem('search_date_to', toHidden.value);
-            } catch(e) {}
-
             triggerDebouncedGmailCount();
+        }
+
+        function closeCustomPanel() {
+            setTimeWindow('any');
+        }
+
+        function setShowMode(mode) {
+            const modeInput = document.getElementById('show_mode');
+            if (modeInput) modeInput.value = mode;
+
+            try { localStorage.setItem('search_show_mode', mode); } catch (e) {}
+
+            const pills = document.querySelectorAll('#show-mode-pill-container .show-pill-btn');
+            pills.forEach(b => {
+                if (b.getAttribute('data-show') === mode) {
+                    b.classList.add('active');
+                } else {
+                    b.classList.remove('active');
+                }
+            });
+        }
+
+        function applyCustomPreset(preset) {
+            const fromInput = document.getElementById('custom_date_from');
+            const toInput = document.getElementById('custom_date_to');
+            const today = getTodayIso();
+
+            if (preset === '7d') {
+                fromInput.value = getDaysAgoIso(6);
+                toInput.value = today;
+            } else if (preset === '30d') {
+                fromInput.value = getDaysAgoIso(29);
+                toInput.value = today;
+            } else if (preset === 'month') {
+                const now = new Date();
+                const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
+                fromInput.value = formatDateIso(firstDay);
+                toInput.value = today;
+            } else if (preset === 'reset') {
+                fromInput.value = getDaysAgoIso(6);
+                toInput.value = today;
+            }
+            onCustomDateChange();
         }
 
         function onCustomDateChange() {
@@ -962,15 +1077,10 @@
             const fromHidden = document.getElementById('date_from_hidden');
             const toHidden = document.getElementById('date_to_hidden');
             const errorElem = document.getElementById('custom-date-error');
+            const previewElem = document.getElementById('custom-date-preview');
 
             const fromVal = fromInput ? fromInput.value : '';
             const toVal = toInput ? toInput.value : '';
-
-            if (fromVal && toVal && fromVal > toVal) {
-                if (errorElem) errorElem.style.display = 'inline';
-            } else {
-                if (errorElem) errorElem.style.display = 'none';
-            }
 
             if (fromHidden) fromHidden.value = fromVal;
             if (toHidden) toHidden.value = toVal;
@@ -980,59 +1090,40 @@
                 localStorage.setItem('search_date_to', toVal);
             } catch(e) {}
 
+            if (fromVal && toVal && fromVal > toVal) {
+                if (toInput) toInput.classList.add('error');
+                if (errorElem) errorElem.style.display = 'block';
+                if (previewElem) previewElem.textContent = '';
+                if (typeof showToast === 'function') {
+                    showToast('⚠️ From date must be before or equal to To date', true);
+                }
+                return false;
+            } else {
+                if (toInput) toInput.classList.remove('error');
+                if (errorElem) errorElem.style.display = 'none';
+            }
+
+            if (fromVal && toVal) {
+                try {
+                    const d1 = new Date(fromVal);
+                    const d2 = new Date(toVal);
+                    const opts = { month: 'short', day: 'numeric', year: 'numeric' };
+                    const str1 = d1.toLocaleDateString('en-US', opts);
+                    const str2 = d2.toLocaleDateString('en-US', opts);
+                    if (previewElem) previewElem.textContent = `Searching emails from ${str1} to ${str2}`;
+                } catch(e) {
+                    if (previewElem) previewElem.textContent = `Searching emails from ${fromVal} to ${toVal}`;
+                }
+            } else {
+                if (previewElem) previewElem.textContent = '';
+            }
+
             triggerDebouncedGmailCount();
+            return true;
         }
 
-        function fetchSinceLastSearchDate() {
-            const mailbox = document.getElementById('account_email')?.value || '';
-            const jd = document.getElementById('job_query')?.value || '';
-            const hintElem = document.getElementById('date-filter-hint');
-            const fromHidden = document.getElementById('date_from_hidden');
-            const toHidden = document.getElementById('date_to_hidden');
-
-            if (!jd.trim()) {
-                if (hintElem) {
-                    hintElem.style.display = 'block';
-                    hintElem.textContent = 'Please enter search keywords or JD to check last search date.';
-                }
-                return;
-            }
-
-            if (hintElem) {
-                hintElem.style.display = 'block';
-                hintElem.textContent = '⏳ Checking previous search date...';
-            }
-
-            fetch(`/api/search-history/latest?mailbox=${encodeURIComponent(mailbox)}&jd=${encodeURIComponent(jd)}`)
-                .then(res => res.json())
-                .then(data => {
-                    if (data.found && data.searched_at) {
-                        const dateObj = new Date(data.searched_at);
-                        const isoDate = dateObj.toISOString().split('T')[0];
-                        const dateFormatted = dateObj.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-
-                        if (fromHidden) fromHidden.value = isoDate;
-                        if (toHidden) toHidden.value = '';
-
-                        if (hintElem) {
-                            hintElem.style.display = 'block';
-                            hintElem.textContent = `Will search resumes received since ${dateFormatted}`;
-                        }
-                    } else {
-                        if (fromHidden) fromHidden.value = '';
-                        if (toHidden) toHidden.value = '';
-                        if (hintElem) {
-                            hintElem.style.display = 'block';
-                            hintElem.textContent = 'No prior search found for this query; searching all dates.';
-                        }
-                    }
-                })
-                .catch(() => {
-                    if (hintElem) {
-                        hintElem.style.display = 'block';
-                        hintElem.textContent = 'Could not retrieve last search date.';
-                    }
-                });
+        function setDatePreset(preset) {
+            setTimeWindow(preset);
         }
 
         function triggerDebouncedGmailCount() {
@@ -1063,9 +1154,10 @@
         document.addEventListener('DOMContentLoaded', function () {
             const params = new URLSearchParams(window.location.search);
             const urlJd = params.get('jd') || params.get('job_query');
-            const urlPreset = params.get('date_preset');
+            const urlWindow = params.get('time_window') || params.get('date_preset');
             const urlFrom = params.get('date_from');
             const urlTo = params.get('date_to');
+            const urlMode = params.get('show_mode');
             const urlExp = params.get('exp') || params.get('min_exp');
 
             if (urlJd) {
@@ -1077,22 +1169,26 @@
                 if (expInput) expInput.value = urlExp;
             }
 
-            let initialPreset = urlPreset || localStorage.getItem('search_date_preset') || '{{ date_preset or "any" }}';
-            
-            if (urlFrom) {
+            const savedWin = urlWindow || localStorage.getItem('search_time_window') || '{{ time_window or "any" }}';
+            const savedMode = urlMode || localStorage.getItem('search_show_mode') || '{{ show_mode or "all" }}';
+            const savedFrom = urlFrom || localStorage.getItem('search_date_from') || '{{ date_from or "" }}';
+            const savedTo = urlTo || localStorage.getItem('search_date_to') || '{{ date_to or "" }}';
+
+            if (savedFrom) {
                 const fromHidden = document.getElementById('date_from_hidden');
-                if (fromHidden) fromHidden.value = urlFrom;
+                if (fromHidden) fromHidden.value = savedFrom;
                 const customFrom = document.getElementById('custom_date_from');
-                if (customFrom) customFrom.value = urlFrom;
+                if (customFrom) customFrom.value = savedFrom;
             }
-            if (urlTo) {
+            if (savedTo) {
                 const toHidden = document.getElementById('date_to_hidden');
-                if (toHidden) toHidden.value = urlTo;
+                if (toHidden) toHidden.value = savedTo;
                 const customTo = document.getElementById('custom_date_to');
-                if (customTo) customTo.value = urlTo;
+                if (customTo) customTo.value = savedTo;
             }
 
-            setDatePreset(initialPreset);
+            setTimeWindow(savedWin);
+            setShowMode(savedMode);
 
             const jdInput = document.getElementById('job_query');
             if (jdInput) {
@@ -1101,7 +1197,6 @@
                 });
             }
         });
-
     </script>
 </body>
 </html>

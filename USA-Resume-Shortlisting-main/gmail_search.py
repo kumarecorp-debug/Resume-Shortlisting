@@ -176,19 +176,41 @@ def build_gmail_search_query(job_description, days_back=None, date_preset=None, 
     date_clause = ""
     preset = str(date_preset).strip().lower() if date_preset else ""
 
-    if preset == "7d":
+    if preset == "today":
+        date_clause = "newer_than:1d"
+    elif preset == "yesterday":
+        date_clause = "newer_than:2d older_than:1d"
+    elif preset == "7d":
         date_clause = "newer_than:7d"
     elif preset == "14d":
         date_clause = "newer_than:14d"
     elif preset == "30d":
         date_clause = "newer_than:30d"
+    elif preset == "custom":
+        if date_from and date_to:
+            try:
+                from datetime import datetime, timedelta
+                df_clean = str(date_from).strip().split('T')[0].replace('-', '/')
+                dt_str = str(date_to).strip().split('T')[0]
+                dt_obj = datetime.strptime(dt_str, '%Y-%m-%d') + timedelta(days=1)
+                dt_clean = dt_obj.strftime('%Y/%m/%d')
+                date_clause = f"after:{df_clean} before:{dt_clean}"
+            except Exception as e_date:
+                logging.warning(f"Error formatting custom dates ({date_from}, {date_to}): {e_date}")
+                if date_from:
+                    df_clean = str(date_from).strip().split('T')[0].replace('-', '/')
+                    date_clause += f" after:{df_clean}"
+                if date_to:
+                    dt_clean = str(date_to).strip().split('T')[0].replace('-', '/')
+                    date_clause += f" before:{dt_clean}"
 
-    if date_from and str(date_from).strip():
-        df_clean = str(date_from).strip().split('T')[0].replace('-', '/')
-        date_clause += f" after:{df_clean}"
-    if date_to and str(date_to).strip():
-        dt_clean = str(date_to).strip().split('T')[0].replace('-', '/')
-        date_clause += f" before:{dt_clean}"
+    if not date_clause and not preset:
+        if date_from and str(date_from).strip():
+            df_clean = str(date_from).strip().split('T')[0].replace('-', '/')
+            date_clause += f" after:{df_clean}"
+        if date_to and str(date_to).strip():
+            dt_clean = str(date_to).strip().split('T')[0].replace('-', '/')
+            date_clause += f" before:{dt_clean}"
 
     if not date_clause and days_back:
         from datetime import datetime, timedelta

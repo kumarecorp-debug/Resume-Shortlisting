@@ -225,26 +225,57 @@ def format_received_date_filter(val):
     except Exception:
         return "Recent"
 
+import time
+_copied_emails_cache = {}  # { mailbox: (timestamp, set) }
+
+def get_cached_copied_emails(mailbox):
+    clean_mb = (mailbox or '').strip().lower()
+    now = time.time()
+    if clean_mb in _copied_emails_cache:
+        ts, cached_set = _copied_emails_cache[clean_mb]
+        if now - ts < 60:
+            return cached_set
+    
+    copied_set = set()
+    try:
+        client = db.get_supabase()
+        if client:
+            res = client.table("copied_history").select("candidate_email").eq("mailbox_account", clean_mb).execute()
+            for r in (res.data or []):
+                em = (r.get("candidate_email") or "").strip().lower()
+                if em:
+                    copied_set.add(em)
+    except Exception as e_c:
+        logging.warning(f"Error fetching copied emails for {clean_mb}: {e_c}")
+    
+    _copied_emails_cache[clean_mb] = (now, copied_set)
+    return copied_set
+
 def compute_date_display(preset, df_str, dt_str):
     if not preset or preset == 'any':
         return None
     try:
         from datetime import datetime, timedelta
         now = datetime.now()
-        if preset == '7d':
-            from_d = (now - timedelta(days=7)).strftime('%b %d')
+        if preset == 'today':
+            return f"Today ({now.strftime('%b %d, %Y')})"
+        elif preset == 'yesterday':
+            yest = now - timedelta(days=1)
+            return f"Yesterday ({yest.strftime('%b %d, %Y')})"
+        elif preset == '7d':
+            from_d = (now - timedelta(days=6)).strftime('%b %d')
             to_d = now.strftime('%b %d, %Y')
-            return f"{from_d} – {to_d}"
+            return f"Last 7 days ({from_d} – {to_d})"
         elif preset == '14d':
-            from_d = (now - timedelta(days=14)).strftime('%b %d')
+            from_d = (now - timedelta(days=13)).strftime('%b %d')
             to_d = now.strftime('%b %d, %Y')
-            return f"{from_d} – {to_d}"
+            return f"Last 14 days ({from_d} – {to_d})"
         elif preset == '30d':
-            from_d = (now - timedelta(days=30)).strftime('%b %d')
+            from_d = (now - timedelta(days=29)).strftime('%b %d')
             to_d = now.strftime('%b %d, %Y')
-            return f"{from_d} – {to_d}"
+            return f"Last 30 days ({from_d} – {to_d})"
         elif df_str and str(df_str).strip():
-            d_from = datetime.fromisoformat(str(df_str).strip().split('T')[0]).strftime('%b %d')
+            d_from = datetime.fromisoformat(str(df_str).strip().split('T')[0]).strftime('%b %d, %Y')
             if dt_str and str(dt_str).strip():
                 d_to = datetime.fromisoformat(str(dt_str).strip().split('T')[0]).strftime('%b %d, %Y')
                 return f"{d_from} – {d_to}"
@@ -400,12 +431,18 @@ def process():
         selected_account = request.form.get('account_email') or request.args.get('account_email') or session.get('selected_account', default_account)
         session['selected_account'] = selected_account
 
-        date_preset = request.form.get('date_preset') or request.args.get('date_preset') or 'any'
+        time_window = request.form.get('time_window') or request.args.get('time_window') or request.form.get('date_preset') or request.args.get('date_preset') or 'any'
+        date_preset = time_window
         date_from = request.form.get('date_from') or request.args.get('date_from') or ''
         date_to = request.form.get('date_to') or request.args.get('date_to') or ''
+        show_mode = request.form.get('show_mode') or request.args.get('show_mode') or 'all'
 
         include_excel_val = request.form.get('include_excel') if request.method == 'POST' else request.args.get('include_excel')
         include_excel = False if include_excel_val in ('0', 'false', 'False') else True
+
+        if time_window == 'custom' and date_from and date_to:
+            if date_from > date_to:
+                flash('From date must be before or equal to To date.', 'error')
 
         if not job_query:
             flash('Please enter a job description, role, or keywords.', 'error')
@@ -420,9 +457,11 @@ def process():
                 search_id=None,
                 total_matches=0,
                 page_size=25,
+                time_window=time_window,
                 date_preset=date_preset,
                 date_from=date_from,
                 date_to=date_to,
+                show_mode=show_mode,
                 include_excel=include_excel,
                 scan_summary=None
             )
@@ -444,7 +483,8 @@ def process():
             include_excel=include_excel
         )
         
-        date_display = compute_date_display(date_preset, date_from, date_to)
+        date_display = compute_date_display(time_window, date_from, date_to)
+        resolved_gmail_query = gmail_search.build_gmail_search_query(job_query, date_preset=time_window, date_from=date_from, date_to=date_to)
 
         if df.empty:
             flash(f'No candidate resumes found for "{job_query}" in mailbox {selected_account}. Try broader search terms.', 'error')
@@ -460,10 +500,13 @@ def process():
                 total_matches=0,
                 max_candidates=max_candidates,
                 min_exp=min_exp,
+                time_window=time_window,
                 date_preset=date_preset,
                 date_from=date_from,
                 date_to=date_to,
+                show_mode=show_mode,
                 date_display=date_display,
+                resolved_gmail_query=resolved_gmail_query,
                 include_excel=include_excel,
                 scan_summary=scan_summary
             )
@@ -479,10 +522,8 @@ def process():
         columns_order = [
             "Rank", "Source", "Status", "Name", "Gender", "Email", "Phone", "Experience", "Skill Set", "Matched Skills", "Match Score", "Match Reason", "ReceivedAt"
         ]
-        # Keep columns that exist in df
         columns_order = [col for col in columns_order if col in df.columns]
         
-        # Convert all columns to dicts, preserving extra fields like source_file, source_sheet, source_row
         all_records = df.fillna("N/A").to_dict(orient='records')
         total_matches = len(all_records)
         search_id = str(uuid.uuid4())
@@ -524,13 +565,21 @@ def process():
             for c in mode_records:
                 c["experience_years"] = parse_experience_years(c.get("Experience") or c.get("experience"))
 
+        # Apply show_mode filter (all / copied / not_copied)
+        if show_mode and show_mode != 'all':
+            copied_emails = get_cached_copied_emails(selected_account)
+            if show_mode == 'not_copied':
+                mode_records = [c for c in mode_records if (c.get('Email') or c.get('email') or '').strip().lower() not in copied_emails]
+            elif show_mode == 'copied':
+                mode_records = [c for c in mode_records if (c.get('Email') or c.get('email') or '').strip().lower() in copied_emails]
+
         # Sort by experience_years DESC (nulls last) if specified or default match score
         mode_records.sort(
             key=lambda c: (c.get("experience_years") is not None, c.get("experience_years") or -1),
             reverse=True
         )
 
-        logging.info(f"[search] jd={job_query} date_preset={date_preset} date_from={date_from} date_to={date_to} min_exp={min_exp} total={total_matches} hidden_exp={hidden_by_exp} returned={len(mode_records)}")
+        logging.info(f"[search] mailbox={selected_account} jd={job_query} time_window={time_window} date_from={date_from} date_to={date_to} show_mode={show_mode} total={total_matches} shown={len(mode_records)}")
 
         return render_template(
             'process.jinja',
@@ -548,10 +597,13 @@ def process():
             approx_matches=approx_cnt,
             min_exp=min_exp,
             hidden_by_experience=hidden_by_exp,
+            time_window=time_window,
             date_preset=date_preset,
             date_from=date_from,
             date_to=date_to,
+            show_mode=show_mode,
             date_display=date_display,
+            resolved_gmail_query=resolved_gmail_query,
             include_excel=include_excel,
             scan_summary=scan_summary
         )
@@ -1115,29 +1167,45 @@ def debug_copy_test():
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
 
-@app.route('/api/search', methods=['GET'])
+@app.route('/api/search', methods=['GET', 'POST'])
 @login_required
 def api_search():
     import uuid
-    job_query = request.args.get('jd') or request.args.get('job_query') or request.args.get('q', '')
-    selected_account = request.args.get('mailbox') or request.args.get('account_email') or session.get('selected_account', 'recruiter@ecorptrainings.com')
-    search_id = request.args.get('search_id')
-    hide_used = request.args.get('hide_used', 'false').lower() in ['true', '1', 'yes']
-    
-    min_exp_raw = request.args.get('min_exp')
+    job_query = request.args.get('jd') or request.args.get('job_query') or request.args.get('q') or request.form.get('jd') or request.form.get('job_query') or ''
+    selected_account = request.args.get('mailbox') or request.args.get('account_email') or request.form.get('mailbox') or session.get('selected_account', 'recruiter@ecorptrainings.com')
+    search_id = request.args.get('search_id') or request.form.get('search_id')
+    hide_used = (request.args.get('hide_used') or request.form.get('hide_used') or 'false').lower() in ['true', '1', 'yes']
+
+    time_window = request.args.get('time_window') or request.args.get('date_preset') or request.form.get('time_window') or request.form.get('date_preset') or 'any'
+    date_from = request.args.get('date_from') or request.form.get('date_from') or ''
+    date_to = request.args.get('date_to') or request.form.get('date_to') or ''
+    show_mode = request.args.get('show_mode') or request.form.get('show_mode') or 'all'
+
+    if time_window == 'custom':
+        if not date_from or not date_to:
+            return jsonify({"error": "Custom range requires both dates"}), 400
+        for d in (date_from, date_to):
+            if not re.match(r'^\d{4}-\d{2}-\d{2}$', d):
+                return jsonify({"error": "Invalid date format. Use YYYY-MM-DD"}), 400
+        if date_from > date_to:
+            return jsonify({"error": "From date must be before To date"}), 400
+
+    min_exp_raw = request.args.get('min_exp') or request.form.get('min_exp')
     try:
         min_exp = float(min_exp_raw) if min_exp_raw is not None and str(min_exp_raw).strip() != '' else None
     except (ValueError, TypeError):
         min_exp = None
 
     try:
-        offset = int(request.args.get('offset', 0))
+        offset = int(request.args.get('offset') or request.form.get('offset') or 0)
     except (ValueError, TypeError):
         offset = 0
     try:
-        limit = int(request.args.get('limit', 25))
+        limit = int(request.args.get('limit') or request.form.get('limit') or 25)
     except (ValueError, TypeError):
         limit = 25
+
+    resolved_gmail_query = gmail_search.build_gmail_search_query(job_query, date_preset=time_window, date_from=date_from, date_to=date_to)
 
     if offset > 0 and search_id:
         cached = db.get_cached_results(search_id, offset, limit)
@@ -1165,6 +1233,13 @@ def api_search():
                 for c in candidates:
                     c["experience_years"] = parse_experience_years(c.get("Experience") or c.get("experience"))
 
+            if show_mode and show_mode != 'all':
+                copied_emails = get_cached_copied_emails(selected_account)
+                if show_mode == 'not_copied':
+                    candidates = [c for c in candidates if (c.get('Email') or c.get('email') or '').strip().lower() not in copied_emails]
+                elif show_mode == 'copied':
+                    candidates = [c for c in candidates if (c.get('Email') or c.get('email') or '').strip().lower() in copied_emails]
+
             candidates.sort(
                 key=lambda c: (c.get("experience_years") is not None, c.get("experience_years") or -1),
                 reverse=True
@@ -1185,30 +1260,51 @@ def api_search():
             return jsonify({
                 "search_id": search_id,
                 "candidates": candidates,
-                "total": total,
+                "total": len(candidates),
                 "offset": offset,
                 "limit": limit,
                 "hidden_used_count": hidden_used_count,
                 "hidden_by_experience": hidden_exp_count,
                 "min_exp_applied": min_exp,
+                "time_window": time_window,
+                "date_from": date_from,
+                "date_to": date_to,
+                "show_mode": show_mode,
+                "resolved_gmail_query": resolved_gmail_query,
                 "has_more": (offset + limit) < total
             })
         else:
             logging.info("Search cache expired or missing; rerunning")
 
     try:
-        max_candidates = int(request.args.get('max_candidates', 50))
+        max_candidates = int(request.args.get('max_candidates') or request.form.get('max_candidates') or 50)
     except (ValueError, TypeError):
         max_candidates = 50
 
-    df = execute_full_candidate_search(job_query, selected_account, max_candidates=max_candidates)
-    total = len(df)
+    df, scan_summary = execute_full_candidate_search(job_query, selected_account, max_candidates=max_candidates, date_preset=time_window, date_from=date_from, date_to=date_to)
+    
+    if df.empty:
+        return jsonify({
+            "search_id": str(uuid.uuid4()),
+            "candidates": [],
+            "total": 0,
+            "offset": offset,
+            "limit": limit,
+            "hidden_used_count": 0,
+            "hidden_by_experience": 0,
+            "time_window": time_window,
+            "date_from": date_from,
+            "date_to": date_to,
+            "show_mode": show_mode,
+            "resolved_gmail_query": resolved_gmail_query,
+            "has_more": False
+        })
 
     columns_order = [
-        "Rank", "Status", "Name", "Gender", "Email", "Phone", "Experience", "Skill Set", "Matched Skills", "Match Score", "Match Reason"
+        "Rank", "Source", "Status", "Name", "Gender", "Email", "Phone", "Experience", "Skill Set", "Matched Skills", "Match Score", "Match Reason"
     ]
     cols = [c for c in columns_order if c in df.columns]
-    all_records = df[cols].fillna("N/A").to_dict(orient='records')
+    all_records = df.fillna("N/A").to_dict(orient='records')
 
     hidden_exp_count = 0
     if min_exp is not None:
@@ -1228,13 +1324,23 @@ def api_search():
         for c in all_records:
             c["experience_years"] = parse_experience_years(c.get("Experience") or c.get("experience"))
 
+    if show_mode and show_mode != 'all':
+        copied_emails = get_cached_copied_emails(selected_account)
+        if show_mode == 'not_copied':
+            all_records = [c for c in all_records if (c.get('Email') or c.get('email') or '').strip().lower() not in copied_emails]
+        elif show_mode == 'copied':
+            all_records = [c for c in all_records if (c.get('Email') or c.get('email') or '').strip().lower() in copied_emails]
+
+    total = len(all_records)
+
     all_records.sort(
         key=lambda c: (c.get("experience_years") is not None, c.get("experience_years") or -1),
         reverse=True
     )
 
-    logging.info(f"[search] jd={job_query} min_exp={min_exp} total={total} hidden_exp={hidden_exp_count} returned={len(all_records)}")
+    logging.info(f"[search] mailbox={selected_account} jd={job_query} time_window={time_window} date_from={date_from} date_to={date_to} show_mode={show_mode} total={total} hidden_exp={hidden_exp_count} returned={len(all_records)}")
 
+    search_id = search_id or str(uuid.uuid4())
     db.cache_search_results(search_id, all_records)
 
     sliced_records = all_records[offset:offset+limit]
@@ -1259,6 +1365,11 @@ def api_search():
         "hidden_used_count": hidden_used_count,
         "hidden_by_experience": hidden_exp_count,
         "min_exp_applied": min_exp,
+        "time_window": time_window,
+        "date_from": date_from,
+        "date_to": date_to,
+        "show_mode": show_mode,
+        "resolved_gmail_query": resolved_gmail_query,
         "has_more": (offset + limit) < total
     })
 
