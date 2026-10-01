@@ -225,3 +225,4 @@ def build_gmail_search_query(job_description, days_back=None, date_preset=None, 
 
     logging.info(f"Generated Gmail search query: {full_query}")
     return full_query
+

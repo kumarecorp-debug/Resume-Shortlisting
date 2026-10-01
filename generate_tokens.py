@@ -9,9 +9,7 @@ except ImportError:
     sys.exit(1)
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-INNER_DIR = os.path.join(SCRIPT_DIR, "USA-Resume-Shortlisting-main")
-if os.path.exists(INNER_DIR) and INNER_DIR not in sys.path:
-    sys.path.insert(0, INNER_DIR)
+PARENT_DIR = os.path.dirname(SCRIPT_DIR)
 
 ACCOUNTS = {
     "1": {
@@ -72,8 +70,8 @@ def authorize_account(acct_info):
 
     # Locate client secrets file
     client_path = os.path.join(SCRIPT_DIR, client_fname)
-    if not os.path.exists(client_path) and os.path.exists(INNER_DIR):
-        client_path = os.path.join(INNER_DIR, client_fname)
+    if not os.path.exists(client_path) and os.path.exists(PARENT_DIR):
+        client_path = os.path.join(PARENT_DIR, client_fname)
 
     if not os.path.exists(client_path):
         print(f"❌ Error: {client_fname} not found at {client_path}")
@@ -91,7 +89,7 @@ def authorize_account(acct_info):
         # Save to local files
         save_paths = [
             os.path.join(SCRIPT_DIR, token_fname),
-            os.path.join(INNER_DIR, token_fname) if os.path.exists(INNER_DIR) else None
+            os.path.join(PARENT_DIR, token_fname) if os.path.exists(PARENT_DIR) else None
         ]
         for p in save_paths:
             if p:
