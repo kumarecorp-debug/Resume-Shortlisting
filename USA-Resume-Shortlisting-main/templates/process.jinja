@@ -752,6 +752,17 @@
                                 <button type="button" class="show-pill-btn {% if show_mode == 'not_copied' %}active{% endif %}" data-show="not_copied" onclick="setShowMode('not_copied')">○ Not copied</button>
                             </div>
                         </div>
+
+                        <!-- Live Filter Hint Label (PART 4) -->
+                        <div id="show-filter-hint-label" style="margin-top: 10px; font-size: 0.84rem; font-weight: 600; color: {% if show_mode == 'copied' %}#92400e{% elif show_mode == 'not_copied' %}#15803d{% else %}#0369a1{% endif %}; background: {% if show_mode == 'copied' %}#fef3c7{% elif show_mode == 'not_copied' %}#f0fdf4{% else %}#f0f9ff{% endif %}; padding: 6px 12px; border-radius: 6px; border: 1px solid {% if show_mode == 'copied' %}#fcd34d{% elif show_mode == 'not_copied' %}#86efac{% else %}#bae6fd{% endif %};">
+                            {% if show_mode == 'copied' %}
+                                💡 Candidates <strong>YOU COPIED</strong> {% if time_window and time_window != 'any' %}{{ time_window }}{% else %}at any time{% endif %}
+                            {% elif show_mode == 'not_copied' %}
+                                💡 Fresh resumes {% if time_window and time_window != 'any' %}{{ time_window }}{% else %}from any time{% endif %} you haven't contacted
+                            {% else %}
+                                💡 All matching resumes received {% if time_window and time_window != 'any' %}{{ time_window }}{% else %}at any time{% endif %}
+                            {% endif %}
+                        </div>
                     </div>
 
                     <div class="query-hints">
@@ -1188,10 +1199,47 @@
             }
 
             onTimeWindowSelected(win);
+            updateShowFilterHint();
         }
 
         function closeCustomPanel() {
             setTimeWindow('any');
+        }
+
+        function updateShowFilterHint() {
+            const hintElem = document.getElementById('show-filter-hint-label');
+            if (!hintElem) return;
+
+            const sm = document.getElementById('show_mode')?.value || 'all';
+            const tw = document.getElementById('time_window')?.value || 'any';
+            const dateFrom = document.getElementById('custom_date_from')?.value || '';
+            const dateTo = document.getElementById('custom_date_to')?.value || '';
+
+            let twText = 'at any time';
+            if (tw === 'today') twText = 'today';
+            else if (tw === 'yesterday') twText = 'yesterday';
+            else if (tw === '7d') twText = 'in the last 7 days';
+            else if (tw === '14d') twText = 'in the last 14 days';
+            else if (tw === '30d') twText = 'in the last 30 days';
+            else if (tw === 'custom' && dateFrom && dateTo) twText = `between ${dateFrom} and ${dateTo}`;
+            else if (tw === 'custom') twText = 'in custom date range';
+
+            if (sm === 'copied') {
+                hintElem.innerHTML = `💡 Candidates <strong>YOU COPIED</strong> ${twText}`;
+                hintElem.style.background = '#fef3c7';
+                hintElem.style.color = '#92400e';
+                hintElem.style.borderColor = '#fcd34d';
+            } else if (sm === 'not_copied') {
+                hintElem.innerHTML = `💡 Fresh resumes ${twText} you haven't contacted`;
+                hintElem.style.background = '#f0fdf4';
+                hintElem.style.color = '#15803d';
+                hintElem.style.borderColor = '#86efac';
+            } else {
+                hintElem.innerHTML = `💡 All matching resumes received ${twText}`;
+                hintElem.style.background = '#f0f9ff';
+                hintElem.style.color = '#0369a1';
+                hintElem.style.borderColor = '#bae6fd';
+            }
         }
 
         function setShowMode(mode) {
@@ -1208,6 +1256,7 @@
                     b.classList.remove('active');
                 }
             });
+            updateShowFilterHint();
         }
 
         function applyCustomPreset(preset) {

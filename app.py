@@ -11,6 +11,7 @@ import RS_Project
 import gmail_search
 import os
 import db
+import db_copied_history
 from supabase import create_client, Client
 
 project_root = os.path.dirname(os.path.abspath(__file__))
@@ -485,6 +486,51 @@ def process():
         max_candidates = int(request.form.get('max_candidates') or request.args.get('max_candidates') or 50)
         user_search_mode = request.form.get('search_mode') or request.args.get('search_mode') or ('history' if time_window != 'any' else 'live')
 
+        # SHOW = COPIED MODE: Filter by copied_history.copied_at timestamp (No Gmail / Gemini API calls)
+        if show_mode == 'copied':
+            copied_res = db_copied_history.get_copied_candidates_by_time_window(
+                mailbox_account=selected_account,
+                job_query=job_query,
+                time_window=time_window,
+                date_from=date_from,
+                date_to=date_to,
+                min_exp=min_exp
+            )
+            all_records = copied_res.get('candidates', [])
+            total_matches = len(all_records)
+            search_id = str(uuid.uuid4())
+            db.cache_search_results(search_id, all_records)
+            date_display = compute_date_display(time_window, date_from, date_to)
+
+            logging.info(f"[search] mode={user_search_mode} show={show_mode} date_field=copied_at range={date_from}..{date_to} mailbox={selected_account} jd={job_query} total={total_matches}")
+
+            return render_template(
+                'process.jinja',
+                job_query=job_query,
+                job_role=job_query,
+                selected_account=selected_account,
+                available_accounts=available_accounts,
+                table_data=all_records,
+                columns=["Rank", "Name", "Gender", "Email", "Phone", "Experience", "Skill Set", "Matched Skills", "Match Score", "Match Reason"],
+                search_id=search_id,
+                total_matches=total_matches,
+                max_candidates=max_candidates,
+                min_exp=min_exp,
+                time_window=time_window,
+                date_preset=date_preset,
+                date_from=date_from,
+                date_to=date_to,
+                show_mode=show_mode,
+                search_mode=user_search_mode,
+                search_source='copied_history',
+                date_field='copied_at',
+                explanation='Candidates you copied in this window',
+                date_display=date_display,
+                resolved_gmail_query=f"DB copied_history: copied_at in window {time_window}",
+                include_excel=include_excel,
+                scan_summary={"pdf": 0, "docx": 0, "xlsx": 0, "xls": 0, "xlsx_candidates": 0, "source": "copied"}
+            )
+
         # HISTORY SEARCH MODE: If user chose history OR if a Time Window filter is active (!= 'any')
         if user_search_mode == 'history' or (user_search_mode != 'live' and time_window and time_window != 'any'):
             hist_res = db.search_candidates_from_history(
@@ -504,6 +550,7 @@ def process():
             search_source = "search_history"
             scan_summary = {"pdf": 0, "docx": 0, "xlsx": 0, "xls": 0, "xlsx_candidates": 0, "source": "history"}
             resolved_gmail_query = f"DB search_history: searched_at >= {time_window}"
+            logging.info(f"[search] mode={user_search_mode} show={show_mode} date_field=received_at range={date_from}..{date_to} mailbox={selected_account} jd={job_query} total={total_matches}")
 
             if not all_records:
                 flash(f'No candidate records found in search history matching "{job_query}" for window [{time_window}].', 'info')
@@ -1262,6 +1309,19 @@ def api_search_from_history():
         except (ValueError, TypeError):
             pass
 
+    if show_mode == 'copied':
+        res = db_copied_history.get_copied_candidates_by_time_window(
+            mailbox_account=mailbox,
+            job_query=jd,
+            time_window=time_window,
+            date_from=date_from,
+            date_to=date_to,
+            min_exp=min_exp,
+            gender_filter=gender_filter
+        )
+        logging.info(f"[search] mode=from_history show={show_mode} date_field=copied_at range={date_from}..{date_to} mailbox={mailbox} jd={jd} total={res.get('total', 0)}")
+        return jsonify(res)
+
     res = db.search_candidates_from_history(
         mailbox_account=mailbox,
         job_query=jd,
@@ -1272,6 +1332,7 @@ def api_search_from_history():
         min_exp=min_exp,
         gender_filter=gender_filter
     )
+    logging.info(f"[search] mode=from_history show={show_mode} date_field=received_at range={date_from}..{date_to} mailbox={mailbox} jd={jd} total={res.get('total', 0)}")
     return jsonify(res)
 
 @app.route('/api/search', methods=['GET', 'POST'])
@@ -1287,6 +1348,18 @@ def api_search():
     date_from = request.args.get('date_from') or request.form.get('date_from') or ''
     date_to = request.args.get('date_to') or request.form.get('date_to') or ''
     show_mode = request.args.get('show_mode') or request.form.get('show_mode') or 'all'
+
+    if show_mode == 'copied':
+        res = db_copied_history.get_copied_candidates_by_time_window(
+            mailbox_account=selected_account,
+            job_query=job_query,
+            time_window=time_window,
+            date_from=date_from,
+            date_to=date_to,
+            min_exp=None
+        )
+        logging.info(f"[search] mode=api_search show={show_mode} date_field=copied_at range={date_from}..{date_to} mailbox={selected_account} jd={job_query} total={res.get('total', 0)}")
+        return jsonify(res)
 
     if time_window == 'custom':
         if not date_from or not date_to:
