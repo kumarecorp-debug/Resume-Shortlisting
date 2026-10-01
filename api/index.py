@@ -3,7 +3,9 @@ import sys
 import importlib.util
 
 current_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-inner_dir = os.path.join(current_dir, "USA-Resume-Shortlisting-main")
+inner_dir = os.path.join(current_dir, "Resume-Shortlisting-main", "USA-Resume-Shortlisting-main")
+if not os.path.exists(inner_dir):
+    inner_dir = os.path.join(current_dir, "USA-Resume-Shortlisting-main")
 
 for d in [current_dir, inner_dir]:
     if d not in sys.path:
