@@ -667,6 +667,24 @@
                         </label>
                     </div>
 
+                    <!-- Search Mode Selector -->
+                    <div style="margin-top: 10px; margin-bottom: 12px; background: #f8fafc; padding: 10px 14px; border-radius: 8px; border: 1.5px solid #cbd5e1; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px;">
+                        <div style="display: flex; align-items: center; gap: 14px; flex-wrap: wrap;">
+                            <span style="font-weight: 700; color: #0f172a; font-size: 0.92rem; display: flex; align-items: center; gap: 6px;">🔍 Search Mode:</span>
+                            <label style="display: inline-flex; align-items: center; gap: 6px; font-weight: 600; font-size: 0.88rem; color: #1e293b; cursor: pointer;">
+                                <input type="radio" name="search_mode" value="live" id="mode_live" {% if not search_mode or search_mode == 'live' %}checked{% endif %} onchange="onSearchModeToggle('live')">
+                                ⚡ Live Gmail Search (Fetch new emails)
+                            </label>
+                            <label style="display: inline-flex; align-items: center; gap: 6px; font-weight: 600; font-size: 0.88rem; color: #1e293b; cursor: pointer;">
+                                <input type="radio" name="search_mode" value="history" id="mode_history" {% if search_mode == 'history' %}checked{% endif %} onchange="onSearchModeToggle('history')">
+                                📅 From Search History (Fast DB Query)
+                            </label>
+                        </div>
+                        <span id="search-mode-badge-info" style="font-size: 0.8rem; font-weight: 700; padding: 3px 10px; border-radius: 12px; background: {% if search_mode == 'history' %}#eff6ff{% else %}#f0fdf4{% endif %}; color: {% if search_mode == 'history' %}#1d4ed8{% else %}#15803d{% endif %}; border: 1px solid {% if search_mode == 'history' %}#93c5fd{% else %}#86efac{% endif %};">
+                            {% if search_mode == 'history' %}📅 Queries search_history table{% else %}⚡ Queries Gmail API live{% endif %}
+                        </span>
+                    </div>
+
                     <!-- Time Window & Show Filter Section -->
                     <div class="time-window-section" style="margin-top: 14px; margin-bottom: 16px; background: #ffffff; padding: 14px 16px; border-radius: 10px; border: 1.5px solid #cbd5e1; box-shadow: 0 1px 3px rgba(0,0,0,0.03);">
                         <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin-bottom: 10px;">
@@ -677,6 +695,7 @@
                             <button type="button" onclick="setTimeWindow('any')" style="font-size: 0.8rem; color: #2563eb; background: none; border: none; font-weight: 600; cursor: pointer; text-decoration: underline;">Reset to Any</button>
                         </div>
 
+                        <input type="hidden" name="search_mode" id="search_mode_hidden" value="{{ search_mode or 'live' }}">
                         <input type="hidden" name="time_window" id="time_window" value="{{ time_window or date_preset or 'any' }}">
                         <input type="hidden" name="date_preset" id="date_preset" value="{{ time_window or date_preset or 'any' }}">
                         <input type="hidden" name="date_from" id="date_from_hidden" value="{{ date_from or '' }}">
@@ -758,7 +777,14 @@
         {% if table_data is not none and table_data|length > 0 %}
             <div id="pagination-meta" data-search-id="{{ search_id or '' }}" data-job-query="{{ job_query or '' }}" data-mailbox="{{ selected_account or '' }}" data-total="{{ total_matches or table_data|length }}" data-offset="{{ table_data|length }}" data-limit="{{ page_size or 25 }}" data-min-exp="{{ min_exp if min_exp is not none else '' }}" data-hidden-exp="{{ hidden_by_experience or 0 }}"></div>
 
-            {% if scan_summary %}
+            {% if search_mode == 'history' or search_source == 'search_history' %}
+                <div style="background: #eff6ff; border: 1.5px solid #93c5fd; color: #1e40af; padding: 10px 16px; border-radius: 8px; font-size: 0.9rem; font-weight: 600; margin-bottom: 14px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px;">
+                    <span>📅 <strong>Search History Mode:</strong> Displaying candidates from search history database (Time Window: <strong>{{ time_window }}</strong>)</span>
+                    <span style="font-size: 0.82rem; background: #dbeafe; padding: 3px 8px; border-radius: 12px; color: #1d4ed8;">⚡ Fast DB Search (No Gmail API)</span>
+                </div>
+            {% endif %}
+
+            {% if scan_summary and scan_summary.get('source') != 'history' %}
                 <div style="background: #f0f9ff; border: 1px solid #bae6fd; color: #0369a1; padding: 10px 16px; border-radius: 8px; font-size: 0.9rem; font-weight: 600; margin-bottom: 14px;">
                     📊 <strong>Scan Summary:</strong> Scanned {{ scan_summary.get('pdf', 0) }} PDFs, {{ scan_summary.get('docx', 0) }} DOCX, {{ scan_summary.get('xlsx', 0) + scan_summary.get('xls', 0) }} Excel files ({{ scan_summary.get('xlsx_candidates', 0) }} rows total) &nbsp;·&nbsp; Found {{ total_matches }} matching candidates
                 </div>
@@ -1099,6 +1125,33 @@
             return formatDateIso(d);
         }
 
+        function onSearchModeToggle(mode) {
+            const modeLive = document.getElementById('mode_live');
+            const modeHist = document.getElementById('mode_history');
+            const modeInput = document.getElementById('search_mode_hidden');
+            if (modeInput) modeInput.value = mode;
+
+            if (mode === 'history') {
+                if (modeHist) modeHist.checked = true;
+                const badge = document.getElementById('search-mode-badge-info');
+                if (badge) {
+                    badge.textContent = '📅 Queries search_history table (Fast DB Query)';
+                    badge.style.background = '#eff6ff';
+                    badge.style.color = '#1d4ed8';
+                    badge.style.borderColor = '#93c5fd';
+                }
+            } else {
+                if (modeLive) modeLive.checked = true;
+                const badge = document.getElementById('search-mode-badge-info');
+                if (badge) {
+                    badge.textContent = '⚡ Queries Gmail API live';
+                    badge.style.background = '#f0fdf4';
+                    badge.style.color = '#15803d';
+                    badge.style.borderColor = '#86efac';
+                }
+            }
+        }
+
         function setTimeWindow(win) {
             const twInput = document.getElementById('time_window');
             const dpInput = document.getElementById('date_preset');
@@ -1127,6 +1180,13 @@
             } else {
                 if (customPanel) customPanel.style.display = 'none';
             }
+
+            if (win !== 'any') {
+                onSearchModeToggle('history');
+            } else {
+                onSearchModeToggle('live');
+            }
+
             onTimeWindowSelected(win);
         }
 

@@ -483,6 +483,57 @@ def process():
             min_exp = None
 
         max_candidates = int(request.form.get('max_candidates') or request.args.get('max_candidates') or 50)
+        user_search_mode = request.form.get('search_mode') or request.args.get('search_mode') or ('history' if time_window != 'any' else 'live')
+
+        # HISTORY SEARCH MODE: If user chose history OR if a Time Window filter is active (!= 'any')
+        if user_search_mode == 'history' or (user_search_mode != 'live' and time_window and time_window != 'any'):
+            hist_res = db.search_candidates_from_history(
+                mailbox_account=selected_account,
+                job_query=job_query,
+                time_window=time_window,
+                date_from=date_from,
+                date_to=date_to,
+                show_mode=show_mode,
+                min_exp=min_exp
+            )
+            all_records = hist_res.get('candidates', [])
+            total_matches = len(all_records)
+            search_id = str(uuid.uuid4())
+            db.cache_search_results(search_id, all_records)
+            date_display = compute_date_display(time_window, date_from, date_to)
+            search_source = "search_history"
+            scan_summary = {"pdf": 0, "docx": 0, "xlsx": 0, "xls": 0, "xlsx_candidates": 0, "source": "history"}
+            resolved_gmail_query = f"DB search_history: searched_at >= {time_window}"
+
+            if not all_records:
+                flash(f'No candidate records found in search history matching "{job_query}" for window [{time_window}].', 'info')
+
+            return render_template(
+                'process.jinja',
+                job_query=job_query,
+                job_role=job_query,
+                selected_account=selected_account,
+                available_accounts=available_accounts,
+                table_data=all_records,
+                columns=["Rank", "Name", "Gender", "Email", "Phone", "Experience", "Skill Set", "Matched Skills", "Match Score", "Match Reason"],
+                search_id=search_id,
+                total_matches=total_matches,
+                max_candidates=max_candidates,
+                min_exp=min_exp,
+                time_window=time_window,
+                date_preset=date_preset,
+                date_from=date_from,
+                date_to=date_to,
+                show_mode=show_mode,
+                search_mode='history',
+                search_source=search_source,
+                date_display=date_display,
+                resolved_gmail_query=resolved_gmail_query,
+                include_excel=include_excel,
+                scan_summary=scan_summary
+            )
+
+        # LIVE GMAIL SEARCH MODE: Query Gmail API live
         df, scan_summary = execute_full_candidate_search(
             job_query, 
             selected_account, 
@@ -515,6 +566,8 @@ def process():
                 date_from=date_from,
                 date_to=date_to,
                 show_mode=show_mode,
+                search_mode='live',
+                search_source='gmail',
                 date_display=date_display,
                 resolved_gmail_query=resolved_gmail_query,
                 include_excel=include_excel,
@@ -538,17 +591,30 @@ def process():
         total_matches = len(all_records)
         search_id = str(uuid.uuid4())
 
-        # Save Search History in Supabase
+        # Save Search History in Supabase with FULL Candidate Details
         try:
             user_email = session.get('user', {}).get('email') if isinstance(session.get('user'), dict) else selected_account
-            cand_list = df[['Name', 'Email']].fillna('N/A').to_dict(orient='records') if not df.empty and 'Name' in df.columns and 'Email' in df.columns else []
+            cand_list_full = [
+                {
+                    "name": str(r.get("Name", "")),
+                    "gender": str(r.get("Gender", "N/A")),
+                    "email": str(r.get("Email", "")),
+                    "phone": str(r.get("Phone", "")),
+                    "experience": str(r.get("Experience", "")),
+                    "skills": str(r.get("Skill Set", "")),
+                    "matched_skills": str(r.get("Matched Skills", "")),
+                    "match_score": str(r.get("Match Score", "")),
+                    "match_reason": str(r.get("Match Reason", ""))
+                }
+                for r in all_records
+            ]
             db.save_search_history(
                 user_email=user_email,
                 mailbox_account=selected_account,
                 job_description=job_query,
                 batch_size=max_candidates,
                 results_count=total_matches,
-                candidates_seen=cand_list
+                candidates_seen=cand_list_full
             )
         except Exception as e_hist:
             logging.warning(f"Error saving search history: {e_hist}")
@@ -1175,7 +1241,36 @@ def debug_copy_test():
         }).execute()
         return jsonify({"ok": True, "response": resp.data})
     except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
+@app.route('/api/search/from-history', methods=['GET'])
+@login_required
+def api_search_from_history():
+    mailbox = request.args.get('mailbox') or request.args.get('account_email') or session.get('selected_account') or 'recruiter@ecorptrainings.com'
+    jd = request.args.get('jd') or request.args.get('job_query') or ''
+    time_window = request.args.get('time_window') or request.args.get('date_preset') or 'any'
+    date_from = request.args.get('date_from') or request.args.get('from_date') or ''
+    date_to = request.args.get('date_to') or request.args.get('to_date') or ''
+    show_mode = request.args.get('show_mode') or 'all'
+    gender_filter = request.args.get('gender') or 'all'
+    
+    min_exp_raw = request.args.get('min_exp') or request.args.get('exp')
+    min_exp = None
+    if min_exp_raw is not None and str(min_exp_raw).strip() != '':
+        try:
+            min_exp = float(min_exp_raw)
+        except (ValueError, TypeError):
+            pass
+
+    res = db.search_candidates_from_history(
+        mailbox_account=mailbox,
+        job_query=jd,
+        time_window=time_window,
+        date_from=date_from,
+        date_to=date_to,
+        show_mode=show_mode,
+        min_exp=min_exp,
+        gender_filter=gender_filter
+    )
+    return jsonify(res)
 
 @app.route('/api/search', methods=['GET', 'POST'])
 @login_required

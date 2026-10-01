@@ -13,10 +13,14 @@ An intelligent automated recruitment dashboard that integrates with Gmail to sea
   - Action buttons: "Mark Used", "Mark Skipped", and "📋 Copy & Mark Used".
   - Quick status filter (`Not Used`, `New Only`, `Used Only`, `Skipped Only`).
   - Bulk actions bar for marking multiple selected candidates simultaneously.
-- **Search History Log (Feature 1)**:
-  - Stores all past searches persistently in Supabase.
+- **Repurposed Time Window Search History Filter**:
+  - Time Window pills (`Today`, `Yesterday`, `7d`, `14d`, `30d`, `Custom 📅`) query the `search_history` database directly.
+  - Super fast DB lookup with zero Gmail API calls and zero Gemini LLM extraction costs.
+  - Stores full candidate JSON schemas (`name`, `email`, `phone`, `skills`, `experience`, `gender`, `matched_skills`, `match_score`, `match_reason`) in `search_history.candidates_seen`.
+  - Toggle seamlessly between **⚡ Live Gmail Search** and **📅 From Search History**.
+- **Search History Log & API**:
+  - GET `/api/search/from-history` endpoint for querying candidate records filtered by time window, show mode (`Copied`, `Not Copied`), experience, and gender.
   - Dedicated `/history` page with Calendar Date Range Picker (`From`, `To`, `Last 7 Days`, `Last 30 Days`).
-  - One-click **Re-run Search 🔄** functionality.
 - **Cumulative Batch Search (Feature 2)**:
   - "Skip already-seen candidates" toggle to filter out candidates returned in previous searches.
   - Displays summary banner showing new vs hidden candidates with `[Show seen too]` toggle.

@@ -419,3 +419,177 @@ def get_table_debug_status() -> dict:
             }
             
     return result
+
+def parse_exp_years_helper(exp_str):
+    if not exp_str or exp_str == "N/A":
+        return None
+    try:
+        import re
+        m = re.search(r'(\d+(?:\.\d+)?)', str(exp_str))
+        if m:
+            return float(m.group(1))
+    except Exception:
+        pass
+    return None
+
+def search_candidates_from_history(mailbox_account: str, job_query: str = "", time_window: str = "any", date_from: str = None, date_to: str = None, show_mode: str = "all", min_exp: float = None, gender_filter: str = "all") -> dict:
+    """
+    Queries search_history and copied_history tables in Supabase for candidate resumes
+    previously searched or saved within the specified time window.
+    Does NOT invoke Gmail or Gemini API calls.
+    """
+    client = get_supabase()
+    now = datetime.now(timezone.utc)
+
+    # 1. Compute date range
+    from_dt, to_dt = None, None
+    tw_clean = (time_window or "any").lower().strip()
+    if tw_clean == 'today':
+        from_dt = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        to_dt = now
+    elif tw_clean == 'yesterday':
+        from_dt = (now - timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+        to_dt = (now - timedelta(days=1)).replace(hour=23, minute=59, second=59, microsecond=999999)
+    elif tw_clean == '7d':
+        from_dt = now - timedelta(days=7)
+        to_dt = now
+    elif tw_clean == '14d':
+        from_dt = now - timedelta(days=14)
+        to_dt = now
+    elif tw_clean == '30d':
+        from_dt = now - timedelta(days=30)
+        to_dt = now
+    elif tw_clean == 'custom':
+        if date_from:
+            try:
+                from_dt = datetime.strptime(date_from.strip(), "%Y-%m-%d").replace(tzinfo=timezone.utc)
+            except Exception:
+                pass
+        if date_to:
+            try:
+                to_dt = datetime.strptime(date_to.strip(), "%Y-%m-%d").replace(hour=23, minute=59, second=59, microsecond=999999, tzinfo=timezone.utc)
+            except Exception:
+                pass
+
+    m_account = mailbox_account.lower().strip() if mailbox_account else ""
+    jq_clean = job_query.strip().lower() if job_query else ""
+
+    searches = []
+    if client:
+        try:
+            q = client.table("search_history").select("candidates_seen, searched_at, job_description, mailbox_account")
+            if m_account:
+                q = q.eq("mailbox_account", m_account)
+            if from_dt:
+                q = q.gte("searched_at", from_dt.isoformat())
+            if to_dt:
+                q = q.lte("searched_at", to_dt.isoformat())
+
+            res = q.order("searched_at", desc=True).limit(200).execute()
+            searches = res.data or []
+        except Exception as e:
+            logging.error(f"Error querying search_history in search_candidates_from_history: {e}")
+
+    # 2. Filter searches by job_query if provided
+    filtered_searches = []
+    for s in searches:
+        s_jd = (s.get("job_description") or "").lower()
+        if not jq_clean:
+            filtered_searches.append(s)
+        elif jq_clean in s_jd or s_jd in jq_clean:
+            filtered_searches.append(s)
+        else:
+            words = [w for w in jq_clean.replace("and", " ").replace("or", " ").split() if len(w) > 2]
+            if words and any(w in s_jd for w in words):
+                filtered_searches.append(s)
+
+    # 3. Flatten candidates_seen
+    candidates_by_email = {}
+    for s in filtered_searches:
+        c_list = s.get("candidates_seen") or []
+        s_date_str = (s.get("searched_at") or "")[:10]
+        for c in c_list:
+            if isinstance(c, str):
+                em = c.strip().lower()
+                if not em or em == 'n/a': continue
+                cand = {
+                    "Name": em.split('@')[0].capitalize(),
+                    "Gender": "N/A",
+                    "Email": c.strip(),
+                    "Phone": "N/A",
+                    "Experience": "N/A",
+                    "Skill Set": s.get("job_description") or "N/A",
+                    "Matched Skills": "N/A",
+                    "Match Score": "85",
+                    "Match Reason": f"From search on {s_date_str}"
+                }
+            elif isinstance(c, dict):
+                em = (c.get("email") or c.get("Email") or "").strip().lower()
+                nm = (c.get("name") or c.get("Name") or "").strip()
+                if not em or em == 'n/a':
+                    if not nm: continue
+                    em = f"noemail_{nm.lower()}"
+
+                cand = {
+                    "Name": nm if nm else "N/A",
+                    "Gender": c.get("gender") or c.get("Gender") or "N/A",
+                    "Email": c.get("email") or c.get("Email") or "N/A",
+                    "Phone": c.get("phone") or c.get("Phone") or "N/A",
+                    "Experience": c.get("experience") or c.get("Experience") or "N/A",
+                    "Skill Set": c.get("skills") or c.get("Skill Set") or "N/A",
+                    "Matched Skills": c.get("matched_skills") or c.get("Matched Skills") or "N/A",
+                    "Match Score": str(c.get("match_score") or c.get("Match Score") or "85"),
+                    "Match Reason": c.get("match_reason") or c.get("Match Reason") or f"From search on {s_date_str}"
+                }
+            else:
+                continue
+
+            if em and em not in candidates_by_email:
+                candidates_by_email[em] = cand
+
+    candidates = list(candidates_by_email.values())
+
+    # 4. Filter by Show mode (copied / not_copied / all)
+    sm_clean = (show_mode or "all").lower().strip()
+    if sm_clean in ['copied', 'not_copied'] and client and m_account:
+        try:
+            copied_res = client.table("copied_history").select("candidate_email").eq("mailbox_account", m_account).execute()
+            copied_emails = {
+                (r.get("candidate_email") or "").strip().lower()
+                for r in (copied_res.data or [])
+                if r.get("candidate_email")
+            }
+            if sm_clean == 'not_copied':
+                candidates = [c for c in candidates if c.get("Email", "").strip().lower() not in copied_emails]
+            elif sm_clean == 'copied':
+                candidates = [c for c in candidates if c.get("Email", "").strip().lower() in copied_emails]
+        except Exception as e_cop:
+            logging.error(f"Error checking copied_history in history search: {e_cop}")
+
+    # 5. Filter by gender
+    if gender_filter and gender_filter != 'all':
+        candidates = [c for c in candidates if (c.get("Gender") or "").strip().lower() == gender_filter.lower().strip()]
+
+    # 6. Filter by min_exp
+    if min_exp is not None:
+        kept = []
+        for c in candidates:
+            yrs = parse_exp_years_helper(c.get("Experience"))
+            c["experience_years"] = yrs
+            if yrs is None or yrs >= min_exp:
+                kept.append(c)
+        candidates = kept
+
+    # 7. Add Rank
+    for idx, c in enumerate(candidates):
+        c["Rank"] = idx + 1
+
+    return {
+        "candidates": candidates,
+        "total": len(candidates),
+        "source": "search_history",
+        "time_window": tw_clean,
+        "from_dt": from_dt.isoformat() if from_dt else None,
+        "to_dt": to_dt.isoformat() if to_dt else None
+    }
+
