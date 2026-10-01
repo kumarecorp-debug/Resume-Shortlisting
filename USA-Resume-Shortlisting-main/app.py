@@ -1241,6 +1241,8 @@ def debug_copy_test():
         }).execute()
         return jsonify({"ok": True, "response": resp.data})
     except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
 @app.route('/api/search/from-history', methods=['GET'])
 @login_required
 def api_search_from_history():
