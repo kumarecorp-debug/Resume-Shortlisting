@@ -24,6 +24,15 @@ from flask import send_from_directory
 
 @app.route('/static/<path:filename>')
 def serve_static_fallback(filename):
+    possible_dirs = [
+        static_dir,
+        os.path.join(project_root, 'static'),
+        os.path.join(os.path.dirname(project_root), 'static'),
+        os.path.join(os.getcwd(), 'static')
+    ]
+    for s_dir in possible_dirs:
+        if s_dir and os.path.exists(os.path.join(s_dir, filename)):
+            return send_from_directory(s_dir, filename)
     return send_from_directory(static_dir, filename)
 
 # Supabase Authentication Setup
