@@ -424,7 +424,23 @@ def get_copied_candidates_by_time_window(mailbox_account: str, job_query: str = 
         except Exception as e:
             logging.error(f"Error querying copied_history in get_copied_candidates_by_time_window: {e}")
 
-    # 2. Filter by job_query if provided
+    # Build candidate enrichment lookup from search_history
+    candidate_lookup = {}
+    if client and records:
+        try:
+            sh_res = client.table("search_history").select("candidates_seen").order("searched_at", desc=True).limit(200).execute()
+            for sh_row in (sh_res.data or []):
+                c_seen = sh_row.get("candidates_seen") or []
+                if isinstance(c_seen, list):
+                    for item in c_seen:
+                        if isinstance(item, dict):
+                            em = (item.get("email") or item.get("Email") or "").strip().lower()
+                            if em and em not in candidate_lookup:
+                                candidate_lookup[em] = item
+        except Exception as e_sh:
+            logging.warning(f"Failed to fetch candidate enrichment from search_history: {e_sh}")
+
+    # 2. Filter by job_query if provided & build enriched candidates
     filtered = []
     seen_emails = set()
     for r in records:
@@ -440,19 +456,46 @@ def get_copied_candidates_by_time_window(mailbox_account: str, job_query: str = 
             continue
         seen_emails.add(em)
 
+        enriched = candidate_lookup.get(em, {})
+
+        c_name = (r.get("candidate_name") or enriched.get("name") or enriched.get("Name") or "").strip()
+        if not c_name and em:
+            c_name = em.split('@')[0].capitalize()
+
+        raw_gender = r.get("gender") or r.get("Gender") or enriched.get("gender") or enriched.get("Gender") or "N/A"
+        if not raw_gender or str(raw_gender).strip().upper() in ['N/A', 'UNKNOWN', '']:
+            raw_gender = db.guess_gender(c_name)
+
+        raw_exp = r.get("experience") or r.get("Experience") or enriched.get("experience") or enriched.get("Experience") or "N/A"
+        exp_years = db.parse_exp_years_helper(raw_exp)
+
+        skill_set = enriched.get("skills") or enriched.get("Skill Set") or r.get("job_description") or "N/A"
+        matched_skills = enriched.get("matched_skills") or enriched.get("Matched Skills") or "N/A"
+        if matched_skills == "N/A" and skill_set != "N/A":
+            matched_skills = skill_set
+
         c_at_str = (r.get("copied_at") or "")[:10]
-        c_name = (r.get("candidate_name") or "").strip()
+        match_reason = enriched.get("match_reason") or enriched.get("Match Reason") or f"Copied on {c_at_str}"
+
+        score_raw = enriched.get("match_score") or enriched.get("Match Score") or "100"
+        if isinstance(score_raw, str):
+            score_raw = score_raw.replace("%", "").strip()
+        if not score_raw:
+            score_raw = "100"
+
         cand = {
             "Rank": len(filtered) + 1,
-            "Name": c_name if c_name else (em.split('@')[0].capitalize() if em else "N/A"),
-            "Gender": r.get("gender") or r.get("Gender") or "N/A",
+            "Name": c_name if c_name else "N/A",
+            "Gender": raw_gender,
             "Email": r.get("candidate_email") or "N/A",
-            "Phone": r.get("candidate_phone") or "N/A",
-            "Experience": r.get("experience") or r.get("Experience") or "N/A",
-            "Skill Set": r.get("job_description") or "N/A",
-            "Matched Skills": r.get("matched_skills") or r.get("Matched Skills") or "N/A",
-            "Match Score": "100%",
-            "Match Reason": f"Copied on {c_at_str}",
+            "Phone": r.get("candidate_phone") or enriched.get("phone") or enriched.get("Phone") or "N/A",
+            "Experience": raw_exp,
+            "experience_years": exp_years,
+            "experience_unknown": (exp_years is None and raw_exp in ['N/A', 'Unknown', '']),
+            "Skill Set": skill_set,
+            "Matched Skills": matched_skills,
+            "Match Score": score_raw,
+            "Match Reason": match_reason,
             "copied_at": r.get("copied_at"),
             "Source": "copied_history"
         }
@@ -464,13 +507,7 @@ def get_copied_candidates_by_time_window(mailbox_account: str, job_query: str = 
 
     # 4. Filter by min_exp
     if min_exp is not None:
-        kept = []
-        for c in filtered:
-            yrs = db.parse_exp_years_helper(c.get("Experience"))
-            c["experience_years"] = yrs
-            if yrs is None or yrs >= min_exp:
-                kept.append(c)
-        filtered = kept
+        filtered = [c for c in filtered if c.get("experience_years") is None or c.get("experience_years") >= min_exp]
 
     for idx, c in enumerate(filtered):
         c["Rank"] = idx + 1

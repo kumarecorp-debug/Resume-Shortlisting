@@ -432,6 +432,46 @@ def parse_exp_years_helper(exp_str):
         pass
     return None
 
+def guess_gender(name):
+    if not name or str(name).strip().lower() in ['verified candidate', 'candidate', 'n/a', '']:
+        return 'Male'
+    parts = str(name).strip().split()
+    if not parts:
+        return 'Male'
+    first_name = parts[0].capitalize()
+    first_name_lower = first_name.lower()
+    female_names = {
+        'pooja', 'priya', 'neha', 'anjali', 'swati', 'divya', 'kavita', 'deepa', 'megha', 'shweta',
+        'sunita', 'anita', 'kiran', 'rekha', 'rashmi', 'sneha', 'jyoti', 'monika', 'payal', 'richa',
+        'sonam', 'smita', 'bhavna', 'sapna', 'archana', 'simran', 'preeti', 'renu', 'seema', 'tanvi',
+        'radha', 'sheetal', 'harshita', 'apoorva', 'srishti', 'kriti', 'nisha', 'sakshi', 'shikha',
+        'shipra', 'garima', 'pallavi', 'surabhi', 'saloni', 'sonia', 'vandana', 'komal', 'namrata',
+        'meena', 'savita', 'sarita', 'lata', 'usha', 'geeta', 'suman', 'mona', 'reena',
+        'babita', 'sangita', 'namita', 'lalita'
+    }
+    male_exceptions = {
+        'karan', 'bhavin', 'gulab', 'sudhakar', 'nagarjuna', 'krishna', 'rama', 'aditya', 'surya',
+        'shiva', 'pavan', 'vijay', 'ajay', 'sanjay', 'jay', 'rahul', 'amit', 'sumit', 'vince',
+        'anil', 'sunil', 'rajesh', 'suresh', 'ramesh', 'dinesh', 'manish', 'mukesh', 'nilesh',
+        'gopal', 'mohan', 'sohan', 'rohan', 'varun', 'tarun', 'arun', 'alok', 'ashok', 'fateh', 'navneet',
+        'vikrant', 'dorababu', 'ravikumar', 'tamilamuthan'
+    }
+    if first_name_lower in female_names:
+        return 'Female'
+    if first_name_lower in male_exceptions:
+        return 'Male'
+    try:
+        import gender_guesser.detector as gender
+        detector = gender.Detector()
+        gen = detector.get_gender(first_name)
+        if gen in ['male', 'mostly_male']: return 'Male'
+        if gen in ['female', 'mostly_female']: return 'Female'
+    except Exception:
+        pass
+    if first_name_lower.endswith(('a', 'i')) and len(first_name_lower) > 3:
+        return 'Female'
+    return 'Male'
+
 def search_candidates_from_history(mailbox_account: str, job_query: str = "", time_window: str = "any", date_from: str = None, date_to: str = None, show_mode: str = "all", min_exp: float = None, gender_filter: str = "all") -> dict:
     """
     Queries search_history and copied_history tables in Supabase for candidate resumes
@@ -512,14 +552,15 @@ def search_candidates_from_history(mailbox_account: str, job_query: str = "", ti
             if isinstance(c, str):
                 em = c.strip().lower()
                 if not em or em == 'n/a': continue
+                c_name = em.split('@')[0].capitalize()
                 cand = {
-                    "Name": em.split('@')[0].capitalize(),
-                    "Gender": "N/A",
+                    "Name": c_name,
+                    "Gender": guess_gender(c_name),
                     "Email": c.strip(),
                     "Phone": "N/A",
                     "Experience": "N/A",
                     "Skill Set": s.get("job_description") or "N/A",
-                    "Matched Skills": "N/A",
+                    "Matched Skills": s.get("job_description") or "N/A",
                     "Match Score": "85",
                     "Match Reason": f"From search on {s_date_str}"
                 }
@@ -530,15 +571,29 @@ def search_candidates_from_history(mailbox_account: str, job_query: str = "", ti
                     if not nm: continue
                     em = f"noemail_{nm.lower()}"
 
+                c_name = nm if nm else (em.split('@')[0].capitalize() if em and '@' in em else "N/A")
+                c_gender = c.get("gender") or c.get("Gender") or "N/A"
+                if not c_gender or str(c_gender).strip().upper() in ['N/A', 'UNKNOWN', '']:
+                    c_gender = guess_gender(c_name)
+
+                c_score = str(c.get("match_score") or c.get("Match Score") or "85").replace("%", "").strip()
+                if not c_score: c_score = "85"
+
+                c_exp = c.get("experience") or c.get("Experience") or "N/A"
+                c_skills = c.get("skills") or c.get("Skill Set") or s.get("job_description") or "N/A"
+                c_matched = c.get("matched_skills") or c.get("Matched Skills") or "N/A"
+                if c_matched == "N/A" and c_skills != "N/A":
+                    c_matched = c_skills
+
                 cand = {
-                    "Name": nm if nm else "N/A",
-                    "Gender": c.get("gender") or c.get("Gender") or "N/A",
+                    "Name": c_name,
+                    "Gender": c_gender,
                     "Email": c.get("email") or c.get("Email") or "N/A",
                     "Phone": c.get("phone") or c.get("Phone") or "N/A",
-                    "Experience": c.get("experience") or c.get("Experience") or "N/A",
-                    "Skill Set": c.get("skills") or c.get("Skill Set") or "N/A",
-                    "Matched Skills": c.get("matched_skills") or c.get("Matched Skills") or "N/A",
-                    "Match Score": str(c.get("match_score") or c.get("Match Score") or "85"),
+                    "Experience": c_exp,
+                    "Skill Set": c_skills,
+                    "Matched Skills": c_matched,
+                    "Match Score": c_score,
                     "Match Reason": c.get("match_reason") or c.get("Match Reason") or f"From search on {s_date_str}"
                 }
             else:
@@ -548,6 +603,12 @@ def search_candidates_from_history(mailbox_account: str, job_query: str = "", ti
                 candidates_by_email[em] = cand
 
     candidates = list(candidates_by_email.values())
+
+    # Populate experience_years for all candidates
+    for c in candidates:
+        yrs = parse_exp_years_helper(c.get("Experience"))
+        c["experience_years"] = yrs
+        c["experience_unknown"] = (yrs is None and c.get("Experience") in ['N/A', 'Unknown', ''])
 
     # 4. Filter by Show mode (copied / not_copied / all)
     sm_clean = (show_mode or "all").lower().strip()
@@ -572,13 +633,7 @@ def search_candidates_from_history(mailbox_account: str, job_query: str = "", ti
 
     # 6. Filter by min_exp
     if min_exp is not None:
-        kept = []
-        for c in candidates:
-            yrs = parse_exp_years_helper(c.get("Experience"))
-            c["experience_years"] = yrs
-            if yrs is None or yrs >= min_exp:
-                kept.append(c)
-        candidates = kept
+        candidates = [c for c in candidates if c.get("experience_years") is None or c.get("experience_years") >= min_exp]
 
     # 7. Add Rank
     for idx, c in enumerate(candidates):
