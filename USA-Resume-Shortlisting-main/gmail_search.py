@@ -84,7 +84,7 @@ def detect_search_mode(term):
 
     return 'keyword'
 
-def build_gmail_search_query(job_description, days_back=None, date_preset=None, date_from=None, date_to=None):
+def build_gmail_search_query(job_description, days_back=None, date_preset=None, date_from=None, date_to=None, **kwargs):
     """
     Constructs an optimized Gmail search query matching Gmail UI search semantics.
     Handles:
