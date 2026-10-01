@@ -474,6 +474,34 @@
         .btn-copy-action:hover {
             background: #dcfce7;
         }
+        .btn-row-copy {
+            background: #eff6ff;
+            color: #2563eb;
+            border: 1.5px solid #bfdbfe;
+            padding: 5px 12px;
+            border-radius: 6px;
+            font-weight: 700;
+            font-size: 0.84rem;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            transition: all 0.2s ease;
+        }
+        .btn-row-copy:hover:not(:disabled) {
+            background: #2563eb;
+            color: #ffffff;
+            border-color: #2563eb;
+            box-shadow: 0 2px 8px rgba(37, 99, 235, 0.25);
+            transform: translateY(-1px);
+        }
+        .btn-row-copy:disabled {
+            cursor: default;
+            opacity: 0.85;
+        }
+        .tr-copied-highlight {
+            background-color: #f0fdf4 !important;
+        }
         .bulk-bar {
             display: flex;
             align-items: center;
@@ -843,9 +871,10 @@
                     
                     <!-- Tabs, Slider & Filters Toolbar -->
                     <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap; width: 100%; justify-content: space-between; margin-top: 10px;">
-                        <div style="display: flex; gap: 6px; background: #e2e8f0; padding: 4px; border-radius: 8px;">
+                        <div style="display: flex; gap: 6px; background: #e2e8f0; padding: 4px; border-radius: 8px; align-items: center;">
                             <button type="button" id="tab-all-trainers" class="chip-btn" onclick="switchTrainerTab('all')" style="background: #2563eb; color: white; border: none; font-weight: 700; padding: 6px 16px; border-radius: 6px;">🎥 All Trainers ({{ table_data|length }})</button>
                             <button type="button" id="tab-selected-trainers" class="chip-btn" onclick="switchTrainerTab('selected')" style="background: transparent; color: #475569; border: none; font-weight: 600; padding: 6px 16px; border-radius: 6px;">⭐ Selected Trainers (<span id="tab-selected-count">0</span>)</button>
+                            <button type="button" id="btn-clear-selected-tab" onclick="clearSelectedTrainers()" style="display: none; background: #fee2e2; color: #991b1b; border: none; font-size: 0.78rem; font-weight: 700; padding: 4px 10px; border-radius: 6px; cursor: pointer; margin-right: 4px; transition: all 0.15s;" title="Clear selected trainers list">Clear</button>
                         </div>
 
                         <!-- FIX 4: Only show strong matches (score >= 80%) toggle -->
@@ -889,47 +918,33 @@
 
                             <input type="text" id="filter-box" class="filter-input" placeholder="Search by Name, Skill..." oninput="applyTableFilters()" style="width: 200px;">
 
-                            <button type="button" class="btn-download" onclick="downloadCSV()" style="display: inline-flex; align-items: center; gap: 6px;">Download CSV 📥</button>
+                            <button type="button" id="btn-download-csv" class="btn-download" onclick="downloadCSV()" style="display: inline-flex; align-items: center; gap: 6px;">📥 Download CSV</button>
                         </div>
                     </div>
-                </div>
-
-                <!-- Bulk Actions Toolbar -->
-                <div class="bulk-bar" style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; background: #f8fafc; border: 1.5px solid #e2e8f0; padding: 10px 16px; border-radius: 8px; margin-bottom: 14px; margin-top: 14px;">
-                    <div style="display: flex; align-items: center; gap: 12px;">
-                        <input type="checkbox" id="select-all-checkbox" onchange="toggleSelectAll(this)" title="Select All" style="cursor: pointer; transform: scale(1.2);">
-                        <span style="font-weight: 700; color: #1e293b; font-size: 0.9rem;">Select All (<span id="selected-count-badge">0</span> selected)</span>
-                    </div>
-                    <button type="button" id="btn-copy-selected" class="btn-action-small btn-copy-action" onclick="copySelectedCandidates()" style="padding: 8px 18px; font-size: 0.9rem; font-weight: 700; cursor: pointer;">
-                        📋 Copy Selected (0)
-                    </button>
                 </div>
 
                 <div class="table-wrapper">
                     <table class="results-table" id="results-table" style="min-width: 1100px;">
                         <thead>
                             <tr>
-                                <th style="text-align: center; width: 35px;">☐</th>
                                 <th style="text-align: center; width: 45px;">Rank</th>
-                                <th style="width: 140px;">Name <button type="button" class="copy-btn" data-column-copy="true" onclick="copyColumnData('Name', 3, this)" title="Copy all visible Names">📋</button></th>
-                                <th style="width: 75px;">Gender <button type="button" class="copy-btn" data-column-copy="true" onclick="copyColumnData('Gender', 4, this)" title="Copy all visible Genders">📋</button></th>
-                                <th style="width: 170px;">Email <button type="button" class="copy-btn" data-column-copy="true" onclick="copyColumnData('Email', 5, this)" title="Copy all visible Emails">📋</button></th>
-                                <th style="width: 150px;">Phone <button type="button" class="copy-btn" data-column-copy="true" onclick="copyColumnData('Phone', 6, this)" title="Copy all visible Phone Numbers">📋</button></th>
+                                <th style="width: 140px;">Name <button type="button" class="copy-btn" data-column-copy="true" onclick="copyColumnData('Name', 2, this)" title="Copy all visible Names">📋</button></th>
+                                <th style="width: 75px;">Gender <button type="button" class="copy-btn" data-column-copy="true" onclick="copyColumnData('Gender', 3, this)" title="Copy all visible Genders">📋</button></th>
+                                <th style="width: 170px;">Email <button type="button" class="copy-btn" data-column-copy="true" onclick="copyColumnData('Email', 4, this)" title="Copy all visible Emails">📋</button></th>
+                                <th style="width: 150px;">Phone <button type="button" class="copy-btn" data-column-copy="true" onclick="copyColumnData('Phone', 5, this)" title="Copy all visible Phone Numbers">📋</button></th>
                                 <th style="text-align: center; width: 95px; cursor: pointer;" onclick="sortTableByExperience()" id="th-exp">
-                                    Exp <span id="sort-exp-icon">⇅</span> <button type="button" class="copy-btn" data-column-copy="true" onclick="event.stopPropagation(); copyColumnData('Experience', 7, this)" title="Copy all visible Experience">📋</button>
+                                    Exp <span id="sort-exp-icon">⇅</span> <button type="button" class="copy-btn" data-column-copy="true" onclick="event.stopPropagation(); copyColumnData('Experience', 6, this)" title="Copy all visible Experience">📋</button>
                                 </th>
-                                <th style="width: 160px;">Skill Set <button type="button" class="copy-btn" data-column-copy="true" onclick="copyColumnData('Skill Set', 8, this)" title="Copy all visible Skill Sets">📋</button></th>
-                                <th style="width: 130px;">Matched Skills <button type="button" class="copy-btn" data-column-copy="true" onclick="copyColumnData('Matched Skills', 9, this)" title="Copy all visible Matched Skills">📋</button></th>
-                                <th style="text-align: center; width: 70px;">Score <button type="button" class="copy-btn" data-column-copy="true" onclick="copyColumnData('Match Score', 10, this)" title="Copy all visible Match Scores">📋</button></th>
-                                <th style="width: 150px;">Reason <button type="button" class="copy-btn" data-column-copy="true" onclick="copyColumnData('Match Reason', 11, this)" title="Copy all visible Match Reasons">📋</button></th>
+                                <th style="width: 160px;">Skill Set <button type="button" class="copy-btn" data-column-copy="true" onclick="copyColumnData('Skill Set', 7, this)" title="Copy all visible Skill Sets">📋</button></th>
+                                <th style="width: 130px;">Matched Skills <button type="button" class="copy-btn" data-column-copy="true" onclick="copyColumnData('Matched Skills', 8, this)" title="Copy all visible Matched Skills">📋</button></th>
+                                <th style="text-align: center; width: 70px;">Score <button type="button" class="copy-btn" data-column-copy="true" onclick="copyColumnData('Match Score', 9, this)" title="Copy all visible Match Scores">📋</button></th>
+                                <th style="width: 150px;">Reason <button type="button" class="copy-btn" data-column-copy="true" onclick="copyColumnData('Match Reason', 10, this)" title="Copy all visible Match Reasons">📋</button></th>
+                                <th style="text-align: center; width: 100px;">Action</th>
                             </tr>
                         </thead>
                         <tbody id="table-body">
                             {% for row in table_data %}
                                 <tr id="row-{{ loop.index }}" data-email="{{ row['Email'] if row['Email'] else '' }}" data-name="{{ row['Name'] if row['Name'] else '' }}" data-phone="{{ row['Phone'] if row['Phone'] else '' }}" data-gender="{{ row['Gender'] if row['Gender'] else 'N/A' }}" data-exp-years="{{ row['experience_years'] if row['experience_years'] is not none else '' }}">
-                                    <td style="text-align: center;">
-                                        <input type="checkbox" class="trainer-checkbox" data-email="{{ row['Email'] if row['Email'] else '' }}" data-name="{{ row['Name'] if row['Name'] else '' }}" data-phone="{{ row['Phone'] if row['Phone'] else '' }}" onchange="onTrainerSelectChange()" style="cursor: pointer; transform: scale(1.15);">
-                                    </td>
                                     <td style="text-align: center;">
                                         <span class="tag-rank">#{{ row['Rank'] if 'Rank' in row else loop.index }}</span>
                                     </td>
@@ -967,10 +982,22 @@
                                     <td style="font-size: 0.82rem; line-height: 1.3; color: #475569; word-break: break-word;">
                                         {{ row['Match Reason'] if 'Match Reason' in row else 'N/A' }}
                                     </td>
+                                    <td style="text-align: center; white-space: nowrap;">
+                                        <button type="button" class="btn-row-copy" onclick="handleRowCopy(this, '{{ row['Name']|escape }}', '{{ row['Email']|escape }}', '{{ row['Phone']|escape }}')" title="Copy candidate details & mark used">
+                                            <span class="copy-icon">📋</span> <span class="copy-text">Copy</span>
+                                        </button>
+                                    </td>
                                 </tr>
                             {% endfor %}
                         </tbody>
                     </table>
+                </div>
+
+                <!-- Empty state for Selected Trainers tab when 0 selected -->
+                <div id="selected-trainers-empty" style="display: none; text-align: center; padding: 56px 24px; background: #ffffff; border-radius: 12px; border: 1.5px dashed #cbd5e1; margin-top: 14px;">
+                    <div style="font-size: 3rem; margin-bottom: 12px;">⭐</div>
+                    <h3 style="margin: 0 0 6px 0; color: #0f172a; font-size: 1.2rem; font-weight: 700;">No trainers copied yet</h3>
+                    <p style="margin: 0; color: #64748b; font-size: 0.92rem;">Click the 📋 Copy button on any trainer row to add them here.</p>
                 </div>
 
 

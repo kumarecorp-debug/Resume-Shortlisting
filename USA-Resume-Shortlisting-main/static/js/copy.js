@@ -254,90 +254,213 @@ function reopenCopyPrefModal(e) {
 }
 
 // ============================================================
-// WIRE COPY BUTTONS TO HANDLERS
+// SELECTED TRAINERS & DIRECT ROW COPY HANDLERS
 // ============================================================
 
-window.copyCandidate = async function(candidate) {
-    console.log('[copy.js] copyCandidate called:', candidate);
-    
-    if (!candidate || (!candidate.email && !candidate.Email)) {
-        console.warn('[copy] no candidate provided');
+window.__selectedTrainers = window.__selectedTrainers || [];
+
+function getSelectedSessionKey() {
+    const mb = (window.__currentMailbox || document.getElementById('account_email')?.value || '').toLowerCase().trim();
+    const jd = (window.__currentJD || document.getElementById('job_query')?.value || '').toLowerCase().trim();
+    return `selected_trainers_${mb}_${jd}`;
+}
+
+function saveSelectedTrainersToSession() {
+    try {
+        const key = getSelectedSessionKey();
+        sessionStorage.setItem(key, JSON.stringify(window.__selectedTrainers || []));
+    } catch (e) {
+        console.warn('[copy] Failed to save selected trainers to sessionStorage:', e);
+    }
+}
+
+function loadSelectedTrainersFromSession() {
+    try {
+        const key = getSelectedSessionKey();
+        const saved = sessionStorage.getItem(key);
+        if (saved) {
+            window.__selectedTrainers = JSON.parse(saved) || [];
+        }
+    } catch (e) {
+        console.warn('[copy] Failed to load selected trainers from sessionStorage:', e);
+        window.__selectedTrainers = [];
+    }
+    updateSelectedTrainersUI();
+}
+
+function updateSelectedTrainersUI() {
+    const count = (window.__selectedTrainers || []).length;
+    const tabBadge = document.getElementById('tab-selected-count');
+    if (tabBadge) {
+        tabBadge.textContent = count;
+        tabBadge.style.fontWeight = count > 0 ? '700' : '600';
+    }
+
+    const clearBtn = document.getElementById('btn-clear-selected-tab');
+    if (clearBtn) {
+        clearBtn.style.display = count > 0 ? 'inline-block' : 'none';
+    }
+
+    // Mark rows visually in DOM
+    const selectedEmails = new Set((window.__selectedTrainers || []).map(c => (c.email || c.Email || '').toLowerCase().trim()));
+    document.querySelectorAll('#table-body tr').forEach(row => {
+        const em = (row.getAttribute('data-email') || row.querySelector('.cand-email')?.textContent || '').toLowerCase().trim();
+        if (em && selectedEmails.has(em)) {
+            row.classList.add('tr-copied-highlight');
+            row.setAttribute('data-status', 'used');
+            const btn = row.querySelector('.btn-row-copy');
+            if (btn) {
+                btn.disabled = true;
+                btn.style.background = '#dcfce7';
+                btn.style.color = '#15803d';
+                btn.style.borderColor = '#86efac';
+                const iconSpan = btn.querySelector('.copy-icon');
+                const textSpan = btn.querySelector('.copy-text');
+                if (iconSpan) iconSpan.textContent = '✅';
+                if (textSpan) textSpan.textContent = 'Copied';
+            }
+        }
+    });
+}
+
+window.clearSelectedTrainers = function() {
+    if (!window.__selectedTrainers || window.__selectedTrainers.length === 0) return;
+    if (confirm("Are you sure you want to clear the selected trainers list?")) {
+        window.__selectedTrainers = [];
+        saveSelectedTrainersToSession();
+        updateSelectedTrainersUI();
+        if (typeof applyTableFilters === 'function') applyTableFilters();
+        if (typeof showToast === 'function') showToast("Cleared selected trainers list.", false);
+    }
+};
+
+window.handleRowCopy = async function(btnElem, name, email, phone) {
+    console.log('[copy] clicked for:', email);
+    if (!email) {
+        console.warn('[copy] missing candidate email');
         return;
     }
 
-    const cEmail = candidate.email || candidate.Email || '';
-    const cName = candidate.name || candidate.Name || '';
-    const cPhone = candidate.phone || candidate.Phone || '';
-    
+    const row = btnElem.closest('tr');
+    const iconSpan = btnElem.querySelector('.copy-icon');
+    const textSpan = btnElem.querySelector('.copy-text');
+    const origIcon = iconSpan ? iconSpan.textContent : '📋';
+    const origText = textSpan ? textSpan.textContent : 'Copy';
+
+    // Show loading spinner
+    btnElem.disabled = true;
+    if (iconSpan) iconSpan.textContent = '⏳';
+    if (textSpan) textSpan.textContent = 'Saving...';
+    btnElem.style.opacity = '0.75';
+
     // 1. Copy to clipboard
-    const text = `${cName} | ${cEmail} | ${cPhone}`;
+    const textToCopy = `${name} | ${email} | ${phone}`;
     try {
-        await navigator.clipboard.writeText(text);
-    } catch (e) {
-        console.warn('[copy] clipboard failed:', e);
+        await navigator.clipboard.writeText(textToCopy);
+    } catch (clipErr) {
+        console.warn('[copy] clipboard failed:', clipErr);
     }
-    
-    // 2. Save to copied_history (existing function)
-    await saveCandidateToCopiedHistory({ email: cEmail, name: cName, phone: cPhone });
-    
-    // 3. Mark as Used
+
+    const mailbox = window.__currentMailbox || document.getElementById('account_email')?.value || '';
+    const jd = window.__currentJD || document.getElementById('job_query')?.value || '';
+
     try {
-        await fetch('/api/candidate/status', {
+        // 2. POST to /api/copied-history
+        const resCopied = await fetch('/api/copied-history', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                mailbox: window.__currentMailbox || document.getElementById('account_email')?.value || '',
-                email: cEmail,
-                name: cName,
+                mailbox_account: mailbox,
+                candidate_email: email,
+                candidate_name: name,
+                candidate_phone: phone,
+                job_description: jd
+            })
+        });
+        const dataCopied = await resCopied.json();
+        console.log('[copy] saved to copied_history:', dataCopied);
+
+        if (!resCopied.ok || (dataCopied && dataCopied.success === false)) {
+            throw new Error(dataCopied.error || 'Failed to save to copied history');
+        }
+
+        // 3. POST to /api/candidate/status with status='used'
+        const resStatus = await fetch('/api/candidate/status', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                mailbox_account: mailbox,
+                candidate_email: email,
+                candidate_name: name,
                 status: 'used'
             })
         });
-    } catch (e) {
-        console.warn('[copy] mark-used failed:', e);
-    }
-    
-    // 4. Toast
-    if (typeof showToast === 'function') {
-        showToast(`Copied ${cName || cEmail} (marked Used)`, false);
+        const dataStatus = await resStatus.json();
+        console.log('[copy] candidate status updated:', dataStatus);
+
+        // 4. Update UI for the row
+        if (row) {
+            row.setAttribute('data-status', 'used');
+            row.classList.add('tr-copied-highlight');
+        }
+
+        // Button success state
+        btnElem.disabled = true;
+        btnElem.style.opacity = '1';
+        btnElem.style.background = '#dcfce7';
+        btnElem.style.color = '#15803d';
+        btnElem.style.borderColor = '#86efac';
+        if (iconSpan) iconSpan.textContent = '✅';
+        if (textSpan) textSpan.textContent = 'Copied';
+
+        // 5. Add candidate to window.__selectedTrainers array
+        const emLower = email.toLowerCase().trim();
+        const exists = window.__selectedTrainers.some(c => (c.email || c.Email || '').toLowerCase().trim() === emLower);
+        if (!exists) {
+            window.__selectedTrainers.push({
+                name: name,
+                email: email,
+                phone: phone,
+                copiedAt: new Date().toISOString()
+            });
+            saveSelectedTrainersToSession();
+        }
+
+        updateSelectedTrainersUI();
+
+        // 6. Show Toast
+        if (typeof showToast === 'function') {
+            showToast(`📋 Copied ${name || email} (marked as Used)`, false);
+        }
+
+        // Trigger updates for side panels if present
+        if (typeof refreshCopiedHistoryPanel === 'function') refreshCopiedHistoryPanel();
+        if (typeof updateCopiedHistoryCount === 'function') updateCopiedHistoryCount();
+        if (typeof updateCopiedHistoryBadge === 'function') updateCopiedHistoryBadge();
+
+    } catch (err) {
+        console.error('[copy] Error:', err);
+        // Revert UI on failure
+        btnElem.disabled = false;
+        btnElem.style.opacity = '1';
+        if (iconSpan) iconSpan.textContent = '❌';
+        if (textSpan) textSpan.textContent = 'Error';
+        setTimeout(() => {
+            if (iconSpan) iconSpan.textContent = origIcon;
+            if (textSpan) textSpan.textContent = origText;
+        }, 2500);
+
+        if (typeof showToast === 'function') {
+            showToast(`❌ Failed to copy candidate: ${err.message || err}`, true);
+        }
     }
 };
 
-window.copySelected = async function(candidates) {
-    console.log('[copy.js] copySelected called with', (candidates || []).length, 'candidates');
-    if (typeof copySelectedCandidates === 'function') {
-        // Delegate to primary implementation in pagination.js to avoid duplicate POST requests
-        return copySelectedCandidates();
-    }
-    
-    if (!candidates || !candidates.length) return;
-    
-    // Fallback if pagination.js function is not available
-    const text = candidates.map(c => {
-        const cEmail = c.email || c.Email || '';
-        const cName = c.name || c.Name || '';
-        const cPhone = c.phone || c.Phone || '';
-        return `${cName} | ${cEmail} | ${cPhone}`;
-    }).join('\n');
+window.copyCandidate = window.handleRowCopy;
 
-    try {
-        await navigator.clipboard.writeText(text);
-    } catch (e) {
-        console.warn('[copy] clipboard failed:', e);
-    }
-    
-    const formattedCandidates = candidates.map(c => ({
-        email: c.email || c.Email || '',
-        name: c.name || c.Name || '',
-        phone: c.phone || c.Phone || ''
-    }));
-    await saveBulkCandidatesToCopiedHistory(formattedCandidates);
-    
-    if (typeof showToast === 'function') {
-        showToast(`Copied ${candidates.length} candidates (marked Used)`, false);
-    }
-};
+document.addEventListener('DOMContentLoaded', function() {
+    loadSelectedTrainersFromSession();
+});
 
-console.log('[copy.js] handlers registered:', 
-            typeof window.copyCandidate, 
-            typeof window.copySelected);
+console.log('[copy.js] handleRowCopy registered:', typeof window.handleRowCopy);
 

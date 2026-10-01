@@ -100,16 +100,16 @@ function copyColumnData(columnName, cellIndex, btnElem) {
     // 3. Ultimate safety net: map column name to exact index
     if (targetCellIdx === null || targetCellIdx < 0) {
         const nameLower = (columnName || '').toLowerCase();
-        if (nameLower.includes('name')) targetCellIdx = 2;
-        else if (nameLower.includes('gender')) targetCellIdx = 3;
-        else if (nameLower.includes('email')) targetCellIdx = 4;
-        else if (nameLower.includes('phone')) targetCellIdx = 5;
-        else if (nameLower.includes('exp')) targetCellIdx = 6;
-        else if (nameLower.includes('skill set') || nameLower === 'skills') targetCellIdx = 7;
-        else if (nameLower.includes('matched')) targetCellIdx = 8;
-        else if (nameLower.includes('score')) targetCellIdx = 9;
-        else if (nameLower.includes('reason')) targetCellIdx = 10;
-        else targetCellIdx = 2;
+        if (nameLower.includes('name')) targetCellIdx = 1;
+        else if (nameLower.includes('gender')) targetCellIdx = 2;
+        else if (nameLower.includes('email')) targetCellIdx = 3;
+        else if (nameLower.includes('phone')) targetCellIdx = 4;
+        else if (nameLower.includes('exp')) targetCellIdx = 5;
+        else if (nameLower.includes('skill set') || nameLower === 'skills') targetCellIdx = 6;
+        else if (nameLower.includes('matched')) targetCellIdx = 7;
+        else if (nameLower.includes('score')) targetCellIdx = 8;
+        else if (nameLower.includes('reason')) targetCellIdx = 9;
+        else targetCellIdx = 1;
     }
 
     const visibleRows = Array.from(document.querySelectorAll('#table-body tr'))
@@ -687,18 +687,16 @@ function switchTrainerTab(tab) {
         if (tabAll) { tabAll.style.background = 'transparent'; tabAll.style.color = '#475569'; }
     }
 
+    const dlBtn = document.getElementById('btn-download-csv');
+    if (dlBtn) {
+        dlBtn.textContent = tab === 'selected' ? '📥 Download Selected' : '📥 Download CSV';
+    }
+
     applyTableFilters();
 }
 
 function onTrainerSelectChange() {
-    const checked = document.querySelectorAll('.trainer-checkbox:checked');
-    const badge = document.getElementById('selected-count-badge');
-    const tabBadge = document.getElementById('tab-selected-count');
-    const copyBtn = document.getElementById('btn-copy-selected');
-
-    if (badge) badge.textContent = checked.length;
-    if (tabBadge) tabBadge.textContent = checked.length;
-    if (copyBtn) copyBtn.textContent = `📋 Copy Selected (${checked.length})`;
+    // Stubbed out - bulk selection removed
 }
 
 function applyTableFilters() {
@@ -709,6 +707,10 @@ function applyTableFilters() {
     const textFilter = document.getElementById('filter-box')?.value.toLowerCase().trim() || '';
     const minScore = parseInt(document.getElementById('score-slider')?.value || '0', 10);
 
+    const selectedEmails = new Set(
+        (window.__selectedTrainers || []).map(c => (c.email || c.Email || '').toLowerCase().trim())
+    );
+
     const rows = document.querySelectorAll('#table-body tr');
     let visibleCount = 0;
     let hiddenUsedCount = 0;
@@ -718,19 +720,19 @@ function applyTableFilters() {
         const status = row.getAttribute('data-status') || 'new';
         const genderVal = (row.getAttribute('data-gender') || row.querySelector('.cand-gender')?.textContent || '').toLowerCase().trim();
         const rowText = row.textContent.toLowerCase();
-        const cb = row.querySelector('.trainer-checkbox');
-        const isChecked = cb && cb.checked;
+        const emailCell = row.querySelector('.cand-email');
+        const rowEmail = (row.getAttribute('data-email') || emailCell?.textContent || '').toLowerCase().trim();
         const scoreElem = row.querySelector('.tag-score');
         const scoreText = scoreElem ? scoreElem.textContent.replace(/[^\d]/g, '') : '';
         const scoreVal = parseInt(scoreText || '0', 10);
 
         // Tab filter
         let showByTab = true;
-        if (currentTab === 'selected' && !isChecked) {
-            showByTab = false;
+        if (currentTab === 'selected') {
+            showByTab = selectedEmails.has(rowEmail);
         }
 
-        // Strong match filter (FIX 4)
+        // Strong match filter
         let showByStrong = true;
         if (strongOnly && scoreVal < 80) {
             showByStrong = false;
@@ -774,6 +776,22 @@ function applyTableFilters() {
         }
     });
 
+    // Handle empty state visibility for Selected Trainers tab
+    const tableWrapper = document.querySelector('.table-wrapper');
+    const emptyState = document.getElementById('selected-trainers-empty');
+    if (currentTab === 'selected') {
+        if (visibleCount === 0) {
+            if (tableWrapper) tableWrapper.style.display = 'none';
+            if (emptyState) emptyState.style.display = 'block';
+        } else {
+            if (tableWrapper) tableWrapper.style.display = 'block';
+            if (emptyState) emptyState.style.display = 'none';
+        }
+    } else {
+        if (tableWrapper) tableWrapper.style.display = 'block';
+        if (emptyState) emptyState.style.display = 'none';
+    }
+
     const visibleBadge = document.getElementById('visible-count');
     if (visibleBadge) visibleBadge.textContent = visibleCount;
 
@@ -795,9 +813,17 @@ function applyTableFilters() {
         }
     }
 
-    const checked = document.querySelectorAll('.trainer-checkbox:checked');
     const tabBadge = document.getElementById('tab-selected-count');
-    if (tabBadge) tabBadge.textContent = checked.length;
+    if (tabBadge) {
+        const count = (window.__selectedTrainers || []).length;
+        tabBadge.textContent = count;
+        tabBadge.style.fontWeight = count > 0 ? '700' : '600';
+    }
+
+    const clearBtn = document.getElementById('btn-clear-selected-tab');
+    if (clearBtn) {
+        clearBtn.style.display = (window.__selectedTrainers || []).length > 0 ? 'inline-block' : 'none';
+    }
 }
 
 function downloadCSV() {
@@ -809,13 +835,13 @@ function downloadCSV() {
         return;
     }
 
-    const headers = ["Rank", "Status", "Name", "Gender", "Email", "Phone", "Experience", "Skill Set", "Matched Skills", "Match Score", "Match Reason"];
+    const headers = ["Rank", "Name", "Gender", "Email", "Phone", "Experience", "Skill Set", "Matched Skills", "Match Score", "Match Reason"];
     const csvLines = [headers.join(",")];
 
     visibleRows.forEach(row => {
         const rowData = [
+            `"${(row.cells[0]?.textContent.trim() || '').replace(/"/g, '""')}"`,
             `"${(row.cells[1]?.textContent.trim() || '').replace(/"/g, '""')}"`,
-            `"${(row.getAttribute('data-status') || '').replace(/"/g, '""')}"`,
             `"${(row.cells[2]?.textContent.trim() || '').replace(/"/g, '""')}"`,
             `"${(row.cells[3]?.textContent.trim() || '').replace(/"/g, '""')}"`,
             `"${(row.cells[4]?.textContent.trim() || '').replace(/"/g, '""')}"`,
@@ -823,8 +849,7 @@ function downloadCSV() {
             `"${(row.cells[6]?.textContent.trim() || '').replace(/"/g, '""')}"`,
             `"${(row.cells[7]?.textContent.trim() || '').replace(/"/g, '""')}"`,
             `"${(row.cells[8]?.textContent.trim() || '').replace(/"/g, '""')}"`,
-            `"${(row.cells[9]?.textContent.trim() || '').replace(/"/g, '""')}"`,
-            `"${(row.cells[10]?.textContent.trim() || '').replace(/"/g, '""')}"`
+            `"${(row.cells[9]?.textContent.trim() || '').replace(/"/g, '""')}"`
         ];
         csvLines.push(rowData.join(","));
     });
@@ -833,7 +858,8 @@ function downloadCSV() {
     const url = URL.createObjectURL(csvBlob);
     const link = document.createElement("a");
     link.setAttribute("href", url);
-    link.setAttribute("download", `Shortlisted_Candidates_${new Date().toISOString().slice(0,10)}.csv`);
+    const filenamePrefix = currentTab === 'selected' ? 'Selected_Trainers_' : 'Shortlisted_Candidates_';
+    link.setAttribute("download", `${filenamePrefix}${new Date().toISOString().slice(0,10)}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);

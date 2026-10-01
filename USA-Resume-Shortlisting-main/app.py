@@ -994,6 +994,7 @@ def mark_candidate_status():
     if not candidate_email:
         return jsonify({'success': False, 'error': 'Candidate email is required'}), 400
 
+    logging.info(f"[candidate-status POST] mailbox={mailbox_account} email={candidate_email} status={status}")
     success = db.update_candidate_status(mailbox_account, candidate_email, candidate_name, status, notes)
     return jsonify({'success': success, 'status': status, 'email': candidate_email})
 
@@ -1032,6 +1033,7 @@ def api_save_copied_history():
     if not candidate_email:
         return jsonify({'success': False, 'error': 'Candidate email is required'}), 400
 
+    logging.info(f"[copied-history POST] mailbox={mailbox} email={candidate_email}")
     rec_id = db_copied_history.save_copied_entry(
         user_email=user_email,
         mailbox_account=mailbox,
