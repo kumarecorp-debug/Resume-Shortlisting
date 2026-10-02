@@ -1687,5 +1687,28 @@ def debug_phone_match():
         "matches": matches
     })
 
+@app.route('/debug/extract-text/<path:filename>')
+@login_required
+def debug_extract_text(filename):
+    """Show what text is being sent to Gemini for a given resume file."""
+    import RS_Project
+    filepath = os.path.join(RS_Project.RESUME_FOLDER, filename)
+    if not os.path.exists(filepath):
+        return jsonify({'error': 'file not found'}), 404
+    
+    try:
+        with open(filepath, 'rb') as f:
+            file_bytes = f.read()
+        text = RS_Project.extract_text_from_bytes(file_bytes, filename)
+    except Exception as e:
+        return jsonify({'error': f'Failed to extract text: {e}'}), 500
+    
+    return jsonify({
+        'file': filename,
+        'text_length': len(text),
+        'first_1000_chars': text[:1000],
+        'extracted_name_fallback': RS_Project.extract_name_from_resume_text(text)
+    })
+
 if __name__ == '__main__':
     app.run(debug=True)
