@@ -1611,6 +1611,19 @@ def main(job_query, account_email="recruiter@ecorptrainings.com", max_candidates
     default_cols = ["Rank", "Source", "source", "source_file", "source_sheet", "source_row", "Name", "Gender", "Email", "Phone", "Experience", "Skill Set", "Matched Skills", "Match Score", "Match Reason", "ReceivedAt"]
 
     if not messages:
+        logging.info(f"Primary search query '{search_query}' returned 0 emails. Triggering fallback search...")
+        extracted_skills = extract_tech_keywords_from_jd(job_query)
+        if extracted_skills:
+            fallback_query = "has:attachment (" + " OR ".join(extracted_skills[:10]) + ")"
+            logging.info(f"Retrying with fallback query: {fallback_query}")
+            messages = get_matching_emails(service, fallback_query, max_results=fetch_buffer)
+
+    if not messages:
+        fallback_query = "has:attachment"
+        logging.info(f"Retrying with generic fallback query: {fallback_query}")
+        messages = get_matching_emails(service, fallback_query, max_results=fetch_buffer)
+
+    if not messages:
         print(f"No emails found related to job description: '{job_query}' in mailbox '{email_key}'.")
         logging.info("No matching emails found.")
         pd.DataFrame(columns=default_cols).to_csv(OUTPUT_CSV, index=False)

@@ -147,7 +147,7 @@ def build_gmail_search_query(job_description, days_back=None, date_preset=None, 
                             if branch_tokens:
                                 valid_tokens.append(" ".join(branch_tokens))
                         if len(valid_tokens) > 1:
-                            kw_query = " ".join(valid_tokens)
+                            kw_query = "(" + " OR ".join(valid_tokens) + ")"
                         elif valid_tokens:
                             kw_query = valid_tokens[0]
                         else:
