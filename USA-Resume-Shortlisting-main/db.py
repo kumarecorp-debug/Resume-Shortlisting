@@ -543,6 +543,76 @@ def search_candidates_from_history(mailbox_account: str, job_query: str = "", ti
             if words and any(w in s_jd for w in words):
                 filtered_searches.append(s)
 
+    # Build candidate enrichment lookup map
+    lookup = {}
+    try:
+        import pandas as pd
+        for csv_path in [
+            os.path.join(os.path.dirname(__file__), "Resumes", "resume_analysis.csv"),
+            os.path.join(os.getcwd(), "Resumes", "resume_analysis.csv"),
+            os.path.join(os.getcwd(), "resume_analysis.csv")
+        ]:
+            if os.path.exists(csv_path):
+                try:
+                    df_csv = pd.read_csv(csv_path)
+                    for _, row in df_csv.iterrows():
+                        em = str(row.get("Email") or "").strip().lower()
+                        if em and em != "n/a":
+                            if em not in lookup: lookup[em] = {}
+                            ph = str(row.get("Phone") or "").strip()
+                            exp = str(row.get("Experience") or "").strip()
+                            nm = str(row.get("Name") or "").strip()
+                            gen = str(row.get("Gender") or "").strip()
+                            sk = str(row.get("Skill Set") or "").strip()
+                            if ph and ph not in ["N/A", "nan", ""]: lookup[em]["Phone"] = ph
+                            if exp and exp not in ["N/A", "nan", ""]: lookup[em]["Experience"] = exp
+                            if nm and nm not in ["N/A", "nan", ""]: lookup[em]["Name"] = nm
+                            if gen and gen not in ["N/A", "nan", "Unknown", ""]: lookup[em]["Gender"] = gen
+                            if sk and sk not in ["N/A", "nan", ""]: lookup[em]["Skill Set"] = sk
+                except Exception:
+                    pass
+    except Exception:
+        pass
+
+    if client:
+        try:
+            q_ch = client.table("copied_history").select("candidate_email, candidate_name, candidate_phone, job_description")
+            if m_account:
+                q_ch = q_ch.eq("mailbox_account", m_account)
+            ch_res = q_ch.limit(1000).execute()
+            for ch in (ch_res.data or []):
+                em = (ch.get("candidate_email") or "").strip().lower()
+                if em and em != "n/a":
+                    if em not in lookup: lookup[em] = {}
+                    ph = (ch.get("candidate_phone") or "").strip()
+                    nm = (ch.get("candidate_name") or "").strip()
+                    if ph and ph != "N/A": lookup[em]["Phone"] = ph
+                    if nm and nm != "N/A": lookup[em]["Name"] = nm
+        except Exception as e_ch:
+            logging.warning(f"Error reading copied_history enrichment: {e_ch}")
+
+        try:
+            for row in searches:
+                seen = row.get("candidates_seen") or []
+                if isinstance(seen, list):
+                    for item in seen:
+                        if isinstance(item, dict):
+                            em = (item.get("email") or item.get("Email") or "").strip().lower()
+                            if em and em != "n/a":
+                                if em not in lookup: lookup[em] = {}
+                                ph = (item.get("phone") or item.get("Phone") or "").strip()
+                                exp = (item.get("experience") or item.get("Experience") or "").strip()
+                                nm = (item.get("name") or item.get("Name") or "").strip()
+                                gen = (item.get("gender") or item.get("Gender") or "").strip()
+                                sk = (item.get("skills") or item.get("Skill Set") or "").strip()
+                                if ph and ph != "N/A": lookup[em]["Phone"] = ph
+                                if exp and exp != "N/A": lookup[em]["Experience"] = exp
+                                if nm and nm != "N/A": lookup[em]["Name"] = nm
+                                if gen and gen not in ["N/A", "Unknown", ""]: lookup[em]["Gender"] = gen
+                                if sk and sk != "N/A": lookup[em]["Skill Set"] = sk
+        except Exception as e_sh:
+            logging.warning(f"Error reading search_history enrichment: {e_sh}")
+
     # 3. Flatten candidates_seen
     candidates_by_email = {}
     for s in filtered_searches:
@@ -599,8 +669,28 @@ def search_candidates_from_history(mailbox_account: str, job_query: str = "", ti
             else:
                 continue
 
+            # Enrich from lookup map
+            em_key = em.lower().strip()
+            if em_key in lookup:
+                info = lookup[em_key]
+                if (not cand.get("Phone") or cand.get("Phone") == "N/A") and info.get("Phone"):
+                    cand["Phone"] = info["Phone"]
+                if (not cand.get("Experience") or cand.get("Experience") in ["N/A", "?", ""]) and info.get("Experience"):
+                    cand["Experience"] = info["Experience"]
+                if (not cand.get("Name") or cand.get("Name") in ["N/A", ""] or cand.get("Name") == em_key.split('@')[0].capitalize()) and info.get("Name"):
+                    cand["Name"] = info["Name"]
+                if (not cand.get("Gender") or cand.get("Gender") in ["N/A", "Unknown", ""]) and info.get("Gender"):
+                    cand["Gender"] = info["Gender"]
+                if (not cand.get("Skill Set") or cand.get("Skill Set") == "N/A") and info.get("Skill Set"):
+                    cand["Skill Set"] = info["Skill Set"]
+
             if em and em not in candidates_by_email:
                 candidates_by_email[em] = cand
+            elif em and em in candidates_by_email:
+                existing = candidates_by_email[em]
+                for key in ["Phone", "Experience", "Name", "Gender", "Skill Set"]:
+                    if (not existing.get(key) or existing.get(key) in ["N/A", "?"]) and cand.get(key) and cand.get(key) not in ["N/A", "?"]:
+                        existing[key] = cand[key]
 
     candidates = list(candidates_by_email.values())
 
