@@ -878,6 +878,25 @@ def api_get_history_item(search_id):
     item = db.get_search_history_item(search_id)
     if not item:
         return jsonify({'success': False, 'error': 'Search history record not found'}), 404
+    
+    c_seen = item.get('candidates_seen') or []
+    normalized = []
+    if isinstance(c_seen, list):
+        for c in c_seen:
+            if isinstance(c, dict):
+                nm = c.get('Name') or c.get('name') or (c.get('Email') or c.get('email') or '').split('@')[0] or 'Candidate'
+                em = c.get('Email') or c.get('email') or 'N/A'
+                c['Name'] = nm
+                c['name'] = nm
+                c['Email'] = em
+                c['email'] = em
+                normalized.append(c)
+            elif isinstance(c, str):
+                em = c
+                nm = c.split('@')[0] if '@' in c else c
+                normalized.append({'Name': nm, 'name': nm, 'Email': em, 'email': em})
+    item['candidates_seen'] = normalized
+
     return jsonify({'success': True, 'data': item})
 
 @app.route('/api/history/latest', methods=['GET'])

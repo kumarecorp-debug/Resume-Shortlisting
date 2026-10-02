@@ -327,7 +327,16 @@
                         if (data.candidates_seen && data.candidates_seen.length > 0) {
                             candHtml = '<ul style="padding-left: 20px; line-height: 1.6;">';
                             data.candidates_seen.forEach(c => {
-                                candHtml += `<li><strong>${c.Name || 'Candidate'}</strong> (${c.Email || 'N/A'})</li>`;
+                                let cName = 'Candidate';
+                                let cEmail = 'N/A';
+                                if (typeof c === 'string') {
+                                    cEmail = c;
+                                    cName = c.includes('@') ? c.split('@')[0] : c;
+                                } else if (c && typeof c === 'object') {
+                                    cName = c.Name || c.name || (c.Email || c.email ? (c.Email || c.email).split('@')[0] : 'Candidate');
+                                    cEmail = c.Email || c.email || 'N/A';
+                                }
+                                candHtml += `<li><strong>${cName}</strong> (${cEmail})</li>`;
                             });
                             candHtml += '</ul>';
                         } else {

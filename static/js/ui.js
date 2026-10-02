@@ -139,7 +139,16 @@ function viewHistoryDetailsModal(searchId) {
                 if (data.candidates_seen && data.candidates_seen.length > 0) {
                     candHtml = '<ul style="padding-left: 20px; line-height: 1.6; max-height: 240px; overflow-y: auto; font-size: 0.9rem;">';
                     data.candidates_seen.forEach(c => {
-                        candHtml += `<li><strong style="color: var(--text-primary);">${escapeHtmlUI(c.Name || 'Candidate')}</strong> <span style="color: var(--text-secondary);">(${escapeHtmlUI(c.Email || 'N/A')})</span></li>`;
+                        let cName = 'Candidate';
+                        let cEmail = 'N/A';
+                        if (typeof c === 'string') {
+                            cEmail = c;
+                            cName = c.includes('@') ? c.split('@')[0] : c;
+                        } else if (c && typeof c === 'object') {
+                            cName = c.Name || c.name || (c.Email || c.email ? (c.Email || c.email).split('@')[0] : 'Candidate');
+                            cEmail = c.Email || c.email || 'N/A';
+                        }
+                        candHtml += `<li><strong style="color: var(--text-primary);">${escapeHtmlUI(cName)}</strong> <span style="color: var(--text-secondary);">(${escapeHtmlUI(cEmail)})</span></li>`;
                     });
                     candHtml += '</ul>';
                 } else {
