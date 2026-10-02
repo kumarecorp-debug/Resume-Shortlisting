@@ -154,6 +154,8 @@ def auto_authenticate_google(account_email="recruiter@ecorptrainings.com"):
     Supports switching between recruiter, jai, kumar, pushpa, mahi, and contact accounts.
     Supports loading OAuth tokens from Environment Variables (for Vercel / Cloud) or local JSON files.
     """
+    if isinstance(account_email, dict):
+        account_email = account_email.get("email", "recruiter@ecorptrainings.com")
     email_key = account_email.lower().strip() if account_email else "recruiter@ecorptrainings.com"
     acct_config = SUPPORTED_ACCOUNTS.get(email_key, SUPPORTED_ACCOUNTS["recruiter@ecorptrainings.com"])
     
@@ -419,7 +421,7 @@ def ai_extract_batch_from_excel(excel_text, source_file):
     try:
         raw_json = ""
         if genai_client:
-            models_to_try = [WORKING_GEMINI_MODEL] if WORKING_GEMINI_MODEL else ["gemini-2.5-flash", "gemini-1.5-flash"]
+            models_to_try = [WORKING_GEMINI_MODEL] if WORKING_GEMINI_MODEL else ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-2.5-flash"]
             last_err = None
             for model_id in models_to_try:
                 if not model_id: continue
@@ -1457,7 +1459,7 @@ Content:
                     automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True)
                 )
                 response = None
-                models_to_try = [WORKING_GEMINI_MODEL] if WORKING_GEMINI_MODEL else ["gemini-2.5-flash", "gemini-1.5-flash"]
+                models_to_try = [WORKING_GEMINI_MODEL] if WORKING_GEMINI_MODEL else ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-2.5-flash"]
                 last_err = None
                 for model_id in models_to_try:
                     if not model_id: continue
@@ -1600,6 +1602,8 @@ def main(job_query, account_email="recruiter@ecorptrainings.com", max_candidates
 
     os.makedirs(RESUME_FOLDER, exist_ok=True)
 
+    if isinstance(account_email, dict):
+        account_email = account_email.get("email", "recruiter@ecorptrainings.com")
     email_key = account_email.lower().strip() if account_email else "recruiter@ecorptrainings.com"
     service = auto_authenticate_google(email_key)
     search_query = build_gmail_search_query(job_query, date_preset=date_preset, date_from=date_from, date_to=date_to)

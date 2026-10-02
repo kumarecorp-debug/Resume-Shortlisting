@@ -449,7 +449,7 @@ def execute_full_candidate_search(job_query, selected_account, max_candidates=20
 @login_required
 def process():
     available_accounts = list(RS_Project.SUPPORTED_ACCOUNTS.values())
-    default_account = available_accounts[0] if available_accounts else "recruiter@ecorptrainings.com"
+    default_account = "recruiter@ecorptrainings.com"
     
     # Support URL parameters for GET searches (e.g. /process?jd=sql&date_preset=7d&exp=5)
     is_get_search = request.method == 'GET' and (request.args.get('jd') or request.args.get('job_query'))
@@ -457,7 +457,11 @@ def process():
     if request.method == 'POST' or is_get_search:
         import uuid
         job_query = (request.form.get('job_query') or request.args.get('jd') or request.args.get('job_query') or '').strip()
-        selected_account = request.form.get('account_email') or request.args.get('account_email') or session.get('selected_account', default_account)
+        raw_acct = request.form.get('account_email') or request.form.get('mailbox') or request.args.get('account_email') or request.args.get('mailbox') or session.get('selected_account') or default_account
+        if isinstance(raw_acct, dict):
+            selected_account = raw_acct.get('email', default_account)
+        else:
+            selected_account = str(raw_acct).strip() if raw_acct else default_account
         session['selected_account'] = selected_account
 
         time_window = request.form.get('time_window') or request.args.get('time_window') or request.form.get('date_preset') or request.args.get('date_preset') or 'any'
@@ -749,7 +753,11 @@ def process():
             scan_summary=scan_summary
         )
 
-    selected_account = request.args.get('account_email') or session.get('selected_account', default_account)
+    raw_acct = request.args.get('account_email') or request.args.get('mailbox') or session.get('selected_account') or default_account
+    if isinstance(raw_acct, dict):
+        selected_account = raw_acct.get('email', default_account)
+    else:
+        selected_account = str(raw_acct).strip() if raw_acct else default_account
     return render_template(
         'process.jinja',
         job_query=None,
