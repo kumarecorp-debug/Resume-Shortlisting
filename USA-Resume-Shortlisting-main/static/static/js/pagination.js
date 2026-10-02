@@ -1,0 +1,841 @@
+/**
+ * Candidate Management & Pagination JS
+ * Features:
+ * - Candidate Status Tracking (new, used, not_used)
+ * - Copy = Auto-Mark Used with 5-second Undo Toast
+ * - Status Badge Click Popup Menu
+ * - Toolbar Filters: All, New, Used, Not Used & Hide Used Checkbox
+ * - "Load More" Pagination (25 per page)
+ */
+
+let state = {
+    searchId: null,
+    jobQuery: '',
+    mailbox: '',
+    offset: 25,
+    limit: 25,
+    total: 0,
+    minExp: null,
+    hiddenExp: 0,
+    candidates: [],
+    undoTimeout: null,
+    lastCopiedItems: [],
+    sortExpAsc: null
+};
+
+document.addEventListener('DOMContentLoaded', function () {
+    const metaContainer = document.getElementById('pagination-meta');
+    if (metaContainer) {
+        state.searchId = metaContainer.getAttribute('data-search-id') || null;
+        state.jobQuery = metaContainer.getAttribute('data-job-query') || '';
+        state.mailbox = metaContainer.getAttribute('data-mailbox') || '';
+        state.total = parseInt(metaContainer.getAttribute('data-total') || '0', 10);
+        const metaMin = metaContainer.getAttribute('data-min-exp');
+        state.minExp = (metaMin !== null && metaMin !== '') ? parseFloat(metaMin) : null;
+        state.hiddenExp = parseInt(metaContainer.getAttribute('data-hidden-exp') || '0', 10);
+    }
+
+    const minExpInput = document.getElementById('min_exp');
+    if (minExpInput) {
+        if (!minExpInput.value && localStorage.getItem('pref_min_exp')) {
+            minExpInput.value = localStorage.getItem('pref_min_exp');
+        }
+        minExpInput.addEventListener('input', function() {
+            localStorage.setItem('pref_min_exp', this.value.trim());
+        });
+    }
+
+    const chkHideUsed = document.getElementById('chk-hide-used');
+    if (chkHideUsed) {
+        // 3. State persistence: load from localStorage (default: ON / true)
+        const savedState = localStorage.getItem('pref_hide_used');
+        if (savedState !== null) {
+            chkHideUsed.checked = (savedState === 'true');
+        } else {
+            chkHideUsed.checked = true;
+        }
+
+        // 1 & 7. Explicit click / change event listener with console.log
+        chkHideUsed.addEventListener('change', function () {
+            console.log("hide_used toggled:", this.checked);
+            localStorage.setItem('pref_hide_used', this.checked);
+            onHideUsedToggled(this.checked);
+        });
+    }
+
+    applyTableFilters();
+});
+
+function onHideUsedToggled(isChecked) {
+    const spinner = document.getElementById('hide-used-spinner');
+    if (spinner) spinner.style.display = 'inline-block';
+
+    // 2. Immediate filter refresh
+    applyTableFilters();
+
+    setTimeout(() => {
+        if (spinner) spinner.style.display = 'none';
+    }, 250);
+}
+
+// ============================================================
+// COLUMN COPY FUNCTIONALITY
+// ============================================================
+function copyColumnData(columnName, cellIndex, btnElem) {
+    let targetCellIdx = null;
+
+    // 1. Try dynamic lookup from clicked button's parent TH
+    if (btnElem && btnElem.closest) {
+        const th = btnElem.closest('th');
+        if (th && typeof th.cellIndex === 'number' && th.cellIndex >= 0) {
+            targetCellIdx = th.cellIndex;
+        }
+    }
+
+    // 2. Fallback to passed 1-indexed cellIndex
+    if (targetCellIdx === null && typeof cellIndex === 'number') {
+        targetCellIdx = cellIndex - 1;
+    }
+
+    // 3. Ultimate safety net: map column name to exact index
+    if (targetCellIdx === null || targetCellIdx < 0) {
+        const nameLower = (columnName || '').toLowerCase();
+        if (nameLower.includes('name')) targetCellIdx = 2;
+        else if (nameLower.includes('gender')) targetCellIdx = 3;
+        else if (nameLower.includes('email')) targetCellIdx = 4;
+        else if (nameLower.includes('phone')) targetCellIdx = 5;
+        else if (nameLower.includes('exp')) targetCellIdx = 6;
+        else if (nameLower.includes('skill set') || nameLower === 'skills') targetCellIdx = 7;
+        else if (nameLower.includes('matched')) targetCellIdx = 8;
+        else if (nameLower.includes('score')) targetCellIdx = 9;
+        else if (nameLower.includes('reason')) targetCellIdx = 10;
+        else targetCellIdx = 2;
+    }
+
+    const visibleRows = Array.from(document.querySelectorAll('#table-body tr'))
+        .filter(r => r.style.display !== 'none');
+
+    if (visibleRows.length === 0) {
+        showToast('⚠️ No visible rows to copy.', true);
+        return;
+    }
+
+    const values = visibleRows.map(row => {
+        const cell = row.cells[targetCellIdx];
+        return cell ? cell.textContent.trim() : '';
+    }).filter(val => val.length > 0 && val !== 'N/A');
+
+    if (values.length === 0) {
+        showToast(`⚠️ No ${columnName} data found to copy.`, true);
+        return;
+    }
+
+    const copyText = values.join('\n');
+    navigator.clipboard.writeText(copyText).then(() => {
+        showToast(`📋 Copied ${values.length} ${columnName} entries to clipboard!`, false);
+    }).catch(err => {
+        console.error('Column copy failed:', err);
+        showToast('❌ Failed to copy to clipboard.', true);
+    });
+}
+
+// ============================================================
+// PAGINATION ("LOAD MORE") LOGIC
+// ============================================================
+function loadNextBatch() {
+    const btn = document.getElementById('btn-load-more');
+    const errBox = document.getElementById('load-more-error');
+    if (!btn || btn.disabled) return;
+
+    btn.disabled = true;
+    const origText = btn.innerHTML;
+    btn.innerHTML = `⏳ Loading...`;
+    if (errBox) errBox.style.display = 'none';
+
+    let url = `/api/search?search_id=${encodeURIComponent(state.searchId || '')}&jd=${encodeURIComponent(state.jobQuery)}&mailbox=${encodeURIComponent(state.mailbox)}&offset=${state.offset}&limit=${state.limit}`;
+    if (state.minExp !== null) {
+        url += `&min_exp=${encodeURIComponent(state.minExp)}`;
+    }
+
+    fetch(url)
+        .then(res => res.json())
+        .then(data => {
+            btn.disabled = false;
+            btn.innerHTML = origText;
+
+            if (data && data.candidates && data.candidates.length > 0) {
+                appendRowsToTable(data.candidates, state.offset);
+                state.offset += data.candidates.length;
+                state.total = data.total || state.total;
+                if (data.hidden_by_experience !== undefined) {
+                    state.hiddenExp = data.hidden_by_experience;
+                }
+                updatePaginationUI();
+                applyTableFilters();
+            } else if (data && data.candidates && data.candidates.length === 0) {
+                state.offset = state.total;
+                updatePaginationUI();
+            } else {
+                showLoadMoreError();
+            }
+        })
+        .catch(err => {
+            console.error('Error loading more candidates:', err);
+            btn.disabled = false;
+            btn.innerHTML = origText;
+            showLoadMoreError();
+        });
+}
+
+function showLoadMoreError() {
+    const errBox = document.getElementById('load-more-error');
+    if (errBox) {
+        errBox.style.display = 'block';
+    }
+}
+
+function updatePaginationUI() {
+    const container = document.getElementById('pagination-bar');
+    const counterText = document.getElementById('pagination-counter');
+    const btn = document.getElementById('btn-load-more');
+    const finishedText = document.getElementById('pagination-finished');
+
+    if (!container) return;
+
+    const visibleCount = Math.min(state.offset, state.total);
+
+    if (state.total === 0) {
+        container.style.display = 'none';
+        return;
+    }
+
+    container.style.display = 'flex';
+
+    if (counterText) {
+        let msg = `Showing ${visibleCount} of ${state.total} matches`;
+        if (state.hiddenExp > 0) {
+            msg += ` &nbsp;·&nbsp; ${state.hiddenExp} hidden by experience`;
+        }
+        counterText.innerHTML = msg;
+    }
+
+    if (visibleCount >= state.total) {
+        if (btn) btn.style.display = 'none';
+        if (finishedText) {
+            finishedText.style.display = 'inline';
+            finishedText.textContent = `All ${state.total} matches loaded.`;
+        }
+    } else {
+        if (btn) {
+            btn.style.display = 'inline-flex';
+            btn.textContent = `Load Next ${state.limit} →`;
+        }
+        if (finishedText) finishedText.style.display = 'none';
+    }
+}
+
+function appendRowsToTable(candidates, startOffset) {
+    const tbody = document.getElementById('table-body');
+    if (!tbody) return;
+
+    candidates.forEach((row, idx) => {
+        const rankNum = startOffset + idx + 1;
+        const status = row.Status || 'new';
+        const tr = document.createElement('tr');
+        tr.setAttribute('id', `row-${rankNum}`);
+        tr.setAttribute('data-status', status);
+        tr.setAttribute('data-email', row.Email || '');
+        tr.setAttribute('data-gender', row.Gender || 'N/A');
+        tr.setAttribute('data-exp-years', row.experience_years !== null && row.experience_years !== undefined ? row.experience_years : '');
+
+        let expDisplay = escapeHtml(row.Experience || 'N/A');
+        if (row.experience_years !== null && row.experience_years !== undefined) {
+            expDisplay = `${row.experience_years} yrs`;
+        } else if (row.experience_unknown || !row.Experience || row.Experience === 'N/A') {
+            expDisplay = `<span style="color: #d97706;" title="Experience unknown / unparseable">⚠️ ? yrs</span>`;
+        }
+
+        tr.innerHTML = `
+            <td style="text-align: center;">
+                <input type="checkbox" class="trainer-checkbox" data-email="${escapeHtml(row.Email || '')}" data-name="${escapeHtml(row.Name || '')}" data-phone="${escapeHtml(row.Phone || '')}" onchange="onTrainerSelectChange()" style="cursor: pointer; transform: scale(1.15);">
+            </td>
+            <td style="text-align: center;">
+                <span class="tag-rank">#${rankNum}</span>
+            </td>
+            <td class="cand-name" style="font-weight: 600; color: #0f172a; word-break: break-word;">${escapeHtml(row.Name || 'N/A')}</td>
+            <td class="cand-gender" style="font-size: 0.88rem; color: #334155;">${escapeHtml(row.Gender || 'N/A')}</td>
+            <td class="cand-email" style="word-break: break-word; color: #334155; font-size: 0.88rem;">${escapeHtml(row.Email || 'N/A')}</td>
+            <td class="cand-phone" style="padding-right: 12px; color: #334155; font-size: 0.88rem; word-break: break-word;">${escapeHtml(row.Phone || 'N/A')}</td>
+            <td style="text-align: center; white-space: nowrap; font-weight: 600;">${expDisplay}</td>
+            <td style="font-size: 0.85rem; line-height: 1.35; color: #334155; word-break: break-word;">${escapeHtml(row['Skill Set'] || 'N/A')}</td>
+            <td style="font-size: 0.85rem; line-height: 1.35; color: #166534; word-break: break-word;">${escapeHtml(row['Matched Skills'] || 'N/A')}</td>
+            <td style="text-align: center;">
+                <span class="tag-score tag-score-val">${escapeHtml(row['Match Score'] || '85')}%</span>
+            </td>
+            <td style="font-size: 0.82rem; line-height: 1.3; color: #475569; word-break: break-word;">${escapeHtml(row['Match Reason'] || 'N/A')}</td>
+        `;
+
+        tbody.appendChild(tr);
+    });
+}
+
+function sortTableByExperience() {
+    const tbody = document.getElementById('table-body');
+    if (!tbody) return;
+    const rows = Array.from(tbody.querySelectorAll('tr'));
+    if (rows.length === 0) return;
+
+    state.sortExpAsc = (state.sortExpAsc === null || state.sortExpAsc === false) ? true : false;
+    const icon = document.getElementById('sort-exp-icon');
+    if (icon) icon.textContent = state.sortExpAsc ? '▲' : '▼';
+
+    rows.sort((a, b) => {
+        const valA = a.getAttribute('data-exp-years');
+        const valB = b.getAttribute('data-exp-years');
+        const numA = (valA !== null && valA !== '') ? parseFloat(valA) : -1;
+        const numB = (valB !== null && valB !== '') ? parseFloat(valB) : -1;
+
+        if (state.sortExpAsc) {
+            return numA - numB;
+        } else {
+            return numB - numA;
+        }
+    });
+
+    rows.forEach(r => tbody.appendChild(r));
+}
+
+function renderStatusBadge(status, email, name) {
+    let badgeClass = 'badge-status-new';
+    let label = '🟢 New';
+
+    if (status === 'used') {
+        badgeClass = 'badge-status-used';
+        label = '🔵 Used';
+    } else if (status === 'not_used' || status === 'skipped') {
+        badgeClass = 'badge-status-notused';
+        label = '🟡 Not Used';
+    }
+
+    return `
+        <div class="status-dropdown-wrapper" style="position: relative; display: inline-block;">
+            <button type="button" class="badge-status ${badgeClass}" onclick="toggleStatusMenu(this, event)" style="cursor: pointer; border: none; font-family: inherit;">
+                ${label} ▾
+            </button>
+            <div class="status-menu" style="display: none; position: absolute; top: 100%; left: 50%; transform: translateX(-50%); background: white; border: 1px solid #cbd5e1; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); z-index: 100; min-width: 110px; padding: 4px 0; text-align: left;">
+                <div onclick="changeCandidateStatus(this, '${escapeHtml(email || '')}', '${escapeHtml(name || '')}', 'new')" style="padding: 6px 12px; cursor: pointer; font-size: 0.86rem; font-weight: 600; color: #15803d; transition: background 0.15s;" onmouseover="this.style.background='#f0fdf4'" onmouseout="this.style.background='transparent'">🟢 New</div>
+                <div onclick="changeCandidateStatus(this, '${escapeHtml(email || '')}', '${escapeHtml(name || '')}', 'used')" style="padding: 6px 12px; cursor: pointer; font-size: 0.86rem; font-weight: 600; color: #1d4ed8; transition: background 0.15s;" onmouseover="this.style.background='#eff6ff'" onmouseout="this.style.background='transparent'">🔵 Used</div>
+                <div onclick="changeCandidateStatus(this, '${escapeHtml(email || '')}', '${escapeHtml(name || '')}', 'not_used')" style="padding: 6px 12px; cursor: pointer; font-size: 0.86rem; font-weight: 600; color: #b45309; transition: background 0.15s;" onmouseover="this.style.background='#fefce8'" onmouseout="this.style.background='transparent'">🟡 Not Used</div>
+            </div>
+        </div>
+    `;
+}
+
+// ============================================================
+// STATUS DROPDOWN MENU
+// ============================================================
+function toggleStatusMenu(btn, event) {
+    if (event) event.stopPropagation();
+    const menu = btn.nextElementSibling;
+    document.querySelectorAll('.status-menu').forEach(m => {
+        if (m !== menu) m.style.display = 'none';
+    });
+    if (menu) {
+        menu.style.display = (menu.style.display === 'block') ? 'none' : 'block';
+    }
+}
+
+document.addEventListener('click', function () {
+    document.querySelectorAll('.status-menu').forEach(m => m.style.display = 'none');
+});
+
+function changeCandidateStatus(menuItem, email, name, newStatus) {
+    const row = menuItem.closest('tr');
+    const oldStatus = row ? row.getAttribute('data-status') : 'new';
+
+    if (row) {
+        row.setAttribute('data-status', newStatus);
+        const cell = row.querySelector('.status-cell');
+        if (cell) {
+            cell.innerHTML = renderStatusBadge(newStatus, email, name);
+        }
+    }
+
+    applyTableFilters();
+
+    const mailbox = state.mailbox || document.getElementById('account_email')?.value || 'recruiter@ecorptrainings.com';
+
+    fetch('/api/candidate/status', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mailbox, email, name, status: newStatus })
+    }).catch(err => {
+        console.error('Error updating status:', err);
+        if (row) {
+            row.setAttribute('data-status', oldStatus);
+            const cell = row.querySelector('.status-cell');
+            if (cell) cell.innerHTML = renderStatusBadge(oldStatus, email, name);
+            applyTableFilters();
+        }
+        showToast('⚠️ Failed to save status update. Reverted.', true);
+    });
+}
+
+// ============================================================
+// COPY & AUTO-MARK USED WITH 5-SEC UNDO TOAST
+// ============================================================
+// Helper to get current search context
+function getCurrentSearchContext() {
+    const mailbox = (window.__currentMailbox || state.mailbox || document.getElementById('account_email')?.value || window.__currentSearch?.mailbox || 'recruiter@ecorptrainings.com').trim();
+    const jobDesc = (window.__currentJD || state.jobQuery || document.getElementById('job_query')?.value || window.__currentSearch?.jd || '').trim();
+    return { mailbox, jobDesc };
+}
+
+let _isSingleCopying = false;
+async function copySingleCandidate(btn) {
+    if (_isSingleCopying) return;
+    _isSingleCopying = true;
+    try {
+        const row = btn.closest('tr');
+        if (!row) return;
+
+        const cb = row.querySelector('.trainer-checkbox');
+        const name = cb ? cb.getAttribute('data-name') : row.cells[2].textContent.trim();
+        const email = cb ? cb.getAttribute('data-email') : row.cells[3].textContent.trim();
+        const phone = cb ? cb.getAttribute('data-phone') : row.cells[4].textContent.trim();
+
+        const formattedText = `${name} | ${email} | ${phone}`;
+        const oldStatus = row.getAttribute('data-status') || 'new';
+        const { mailbox, jobDesc } = getCurrentSearchContext();
+
+        // 1. Copy to clipboard
+        try {
+            await navigator.clipboard.writeText(formattedText);
+        } catch (err) {
+            console.error('Clipboard copy failed:', err);
+            showToast('❌ Clipboard copy failed.', true);
+            return;
+        }
+
+        // 2. Optimistic UI update to 'used'
+        row.setAttribute('data-status', 'used');
+        const cell = row.querySelector('.status-cell');
+        if (cell) cell.innerHTML = renderStatusBadge('used', email, name);
+        applyTableFilters();
+
+        // 3. Mark candidate as used
+        fetch('/api/candidate/status', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ mailbox, email, name, status: 'used' })
+        }).catch(err => console.error('[status] error:', err));
+
+        // 4. Save to copied_history table
+        try {
+            const res = await fetch('/api/copied-history', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    mailbox_account: mailbox,
+                    candidate_email: email,
+                    candidate_name: name,
+                    candidate_phone: phone,
+                    job_description: jobDesc
+                })
+            });
+            const data = await res.json();
+            console.log('[copied-history] saved:', data);
+
+            if (data.success) {
+                if (typeof refreshCopiedHistoryPanel === 'function') {
+                    refreshCopiedHistoryPanel();
+                }
+                if (typeof updateCopiedHistoryCount === 'function') {
+                    updateCopiedHistoryCount();
+                }
+                if (typeof updateCopiedHistoryBadge === 'function') {
+                    updateCopiedHistoryBadge();
+                }
+            }
+        } catch (err) {
+            console.error('[copied-history] POST failed:', err);
+        }
+
+        // 5. Show 5-second Undo Toast
+        showUndoToast(1, [{ email, name, oldStatus }]);
+    } finally {
+        setTimeout(() => { _isSingleCopying = false; }, 1000);
+    }
+}
+
+let _isBulkCopying = false;
+async function copySelectedCandidates() {
+    if (_isBulkCopying) return;
+    _isBulkCopying = true;
+    try {
+        const checked = Array.from(document.querySelectorAll('.trainer-checkbox:checked'));
+        if (checked.length === 0) {
+            showToast('⚠️ Please select at least one candidate first.', true);
+            return;
+        }
+
+        const { mailbox, jobDesc } = getCurrentSearchContext();
+        const lines = [];
+        const itemsToMark = [];
+        const restoreList = [];
+        const candidatesToPost = [];
+
+        checked.forEach(cb => {
+            const row = cb.closest('tr');
+            const name = cb.getAttribute('data-name') || '';
+            const email = cb.getAttribute('data-email') || '';
+            const phone = cb.getAttribute('data-phone') || '';
+            const oldStatus = row ? (row.getAttribute('data-status') || 'new') : 'new';
+
+            lines.push(`${name} | ${email} | ${phone}`);
+            itemsToMark.push({ email, name });
+            restoreList.push({ email, name, oldStatus });
+            candidatesToPost.push({ email, name, phone });
+
+            if (row) {
+                row.setAttribute('data-status', 'used');
+                const cell = row.querySelector('.status-cell');
+                if (cell) cell.innerHTML = renderStatusBadge('used', email, name);
+            }
+        });
+
+        applyTableFilters();
+
+        const formattedText = lines.join('\n');
+
+        try {
+            await navigator.clipboard.writeText(formattedText);
+        } catch (err) {
+            console.error('Bulk copy failed:', err);
+            showToast('❌ Clipboard copy failed.', true);
+            return;
+        }
+
+        // Mark bulk status
+        fetch('/api/candidate/bulk_status', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ mailbox, items: itemsToMark, status: 'used' })
+        }).catch(err => console.error('[bulk_status] failed:', err));
+
+        // Save bulk copied_history
+        try {
+            const res = await fetch('/api/copied-history/bulk', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    mailbox_account: mailbox,
+                    job_description: jobDesc,
+                    candidates: candidatesToPost
+                })
+            });
+            const data = await res.json();
+            console.log('[copied-history-bulk] inserted:', data.inserted);
+
+            if (data.success) {
+                if (typeof refreshCopiedHistoryPanel === 'function') {
+                    refreshCopiedHistoryPanel();
+                }
+                if (typeof updateCopiedHistoryCount === 'function') {
+                    updateCopiedHistoryCount();
+                }
+                if (typeof updateCopiedHistoryBadge === 'function') {
+                    updateCopiedHistoryBadge();
+                }
+            }
+        } catch (err) {
+            console.error('[copied-history-bulk] POST failed:', err);
+        }
+
+        showUndoToast(checked.length, restoreList);
+    } finally {
+        setTimeout(() => { _isBulkCopying = false; }, 1000);
+    }
+}
+
+// ============================================================
+// TOAST & UNDO NOTIFICATION
+// ============================================================
+function showUndoToast(count, restoreList) {
+    state.lastCopiedItems = restoreList;
+
+    let toast = document.getElementById('undo-toast');
+    if (!toast) {
+        toast = document.createElement('div');
+        toast.id = 'undo-toast';
+        toast.style.cssText = `
+            position: fixed;
+            bottom: 24px;
+            right: 24px;
+            background: #0f172a;
+            color: #ffffff;
+            padding: 14px 22px;
+            border-radius: 10px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.3);
+            font-size: 0.92rem;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            z-index: 10000;
+            animation: slideInToast 0.25s ease-out;
+        `;
+        document.body.appendChild(toast);
+    }
+
+    if (state.undoTimeout) clearTimeout(state.undoTimeout);
+
+    toast.innerHTML = `
+        <span>✅ Copied ${count} candidate${count > 1 ? 's' : ''} (marked as Used).</span>
+        <button type="button" onclick="undoLastCopyStatus()" style="background: #2563eb; color: white; border: none; padding: 6px 14px; border-radius: 6px; font-weight: 700; cursor: pointer; font-size: 0.86rem;">[Undo]</button>
+    `;
+    toast.style.display = 'flex';
+
+    state.undoTimeout = setTimeout(() => {
+        if (toast) toast.style.display = 'none';
+    }, 5000);
+}
+
+function undoLastCopyStatus() {
+    const toast = document.getElementById('undo-toast');
+    if (toast) toast.style.display = 'none';
+    if (state.undoTimeout) clearTimeout(state.undoTimeout);
+
+    if (!state.lastCopiedItems || state.lastCopiedItems.length === 0) return;
+
+    const mailbox = state.mailbox || 'recruiter@ecorptrainings.com';
+
+    state.lastCopiedItems.forEach(item => {
+        const tr = document.querySelector(`tr[data-email="${CSS.escape(item.email)}"]`) ||
+                   Array.from(document.querySelectorAll('#table-body tr')).find(r => r.cells[3] && r.cells[3].textContent.trim().toLowerCase() === item.email.toLowerCase());
+
+        if (tr) {
+            tr.setAttribute('data-status', item.oldStatus);
+            const cell = tr.querySelector('.status-cell');
+            if (cell) cell.innerHTML = renderStatusBadge(item.oldStatus, item.email, item.name);
+        }
+
+        fetch('/api/candidate/status', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ mailbox, email: item.email, name: item.name, status: item.oldStatus })
+        });
+    });
+
+    applyTableFilters();
+    showToast(`🔄 Reverted status for ${state.lastCopiedItems.length} candidate(s).`, false);
+    state.lastCopiedItems = [];
+}
+
+function showToast(msg, isError = false) {
+    let toast = document.getElementById('simple-toast');
+    if (!toast) {
+        toast = document.createElement('div');
+        toast.id = 'simple-toast';
+        toast.style.cssText = `
+            position: fixed;
+            bottom: 24px;
+            right: 24px;
+            padding: 12px 20px;
+            border-radius: 8px;
+            font-size: 0.9rem;
+            font-weight: 600;
+            z-index: 10000;
+        `;
+        document.body.appendChild(toast);
+    }
+    toast.style.background = isError ? '#991b1b' : '#15803d';
+    toast.style.color = '#ffffff';
+    toast.textContent = msg;
+    toast.style.display = 'block';
+
+    setTimeout(() => {
+        if (toast) toast.style.display = 'none';
+    }, 3500);
+}
+
+// ============================================================
+// TOOLBAR SELECTION & FILTERS
+// ============================================================
+function toggleSelectAll(masterCb) {
+    const visibleCheckboxes = Array.from(document.querySelectorAll('#table-body tr'))
+        .filter(r => r.style.display !== 'none')
+        .map(r => r.querySelector('.trainer-checkbox'))
+        .filter(cb => cb !== null);
+
+    visibleCheckboxes.forEach(cb => cb.checked = masterCb.checked);
+    onTrainerSelectChange();
+}
+
+let currentTab = 'all';
+
+function switchTrainerTab(tab) {
+    currentTab = tab;
+    const tabAll = document.getElementById('tab-all-trainers');
+    const tabSel = document.getElementById('tab-selected-trainers');
+
+    if (tab === 'all') {
+        if (tabAll) { tabAll.style.background = '#2563eb'; tabAll.style.color = '#ffffff'; }
+        if (tabSel) { tabSel.style.background = 'transparent'; tabSel.style.color = '#475569'; }
+    } else {
+        if (tabSel) { tabSel.style.background = '#2563eb'; tabSel.style.color = '#ffffff'; }
+        if (tabAll) { tabAll.style.background = 'transparent'; tabAll.style.color = '#475569'; }
+    }
+
+    applyTableFilters();
+}
+
+function onTrainerSelectChange() {
+    const checked = document.querySelectorAll('.trainer-checkbox:checked');
+    const badge = document.getElementById('selected-count-badge');
+    const tabBadge = document.getElementById('tab-selected-count');
+    const copyBtn = document.getElementById('btn-copy-selected');
+
+    if (badge) badge.textContent = checked.length;
+    if (tabBadge) tabBadge.textContent = checked.length;
+    if (copyBtn) copyBtn.textContent = `📋 Copy Selected (${checked.length})`;
+}
+
+function applyTableFilters() {
+    const statusFilter = document.getElementById('status-filter-select')?.value || 'all';
+    const genderFilter = (document.getElementById('gender-filter-select')?.value || 'all').toLowerCase();
+    const hideUsed = document.getElementById('chk-hide-used')?.checked ?? true;
+    const strongOnly = document.getElementById('chk-strong-matches')?.checked ?? false;
+    const textFilter = document.getElementById('filter-box')?.value.toLowerCase().trim() || '';
+    const minScore = parseInt(document.getElementById('score-slider')?.value || '0', 10);
+
+    const rows = document.querySelectorAll('#table-body tr');
+    let visibleCount = 0;
+    let hiddenUsedCount = 0;
+    let hiddenApproxCount = 0;
+
+    rows.forEach(row => {
+        const status = row.getAttribute('data-status') || 'new';
+        const genderVal = (row.getAttribute('data-gender') || row.querySelector('.cand-gender')?.textContent || '').toLowerCase().trim();
+        const rowText = row.textContent.toLowerCase();
+        const cb = row.querySelector('.trainer-checkbox');
+        const isChecked = cb && cb.checked;
+        const scoreElem = row.querySelector('.tag-score');
+        const scoreText = scoreElem ? scoreElem.textContent.replace(/[^\d]/g, '') : '';
+        const scoreVal = parseInt(scoreText || '0', 10);
+
+        // Tab filter
+        let showByTab = true;
+        if (currentTab === 'selected' && !isChecked) {
+            showByTab = false;
+        }
+
+        // Strong match filter (FIX 4)
+        let showByStrong = true;
+        if (strongOnly && scoreVal < 80) {
+            showByStrong = false;
+            hiddenApproxCount++;
+        }
+
+        // Score filter
+        let showByScore = true;
+        if (minScore > 0 && scoreVal < minScore) {
+            showByScore = false;
+        }
+
+        // Status filter
+        let showByStatus = true;
+        if (hideUsed && status === 'used') {
+            showByStatus = false;
+            hiddenUsedCount++;
+        } else if ((statusFilter === 'never' || statusFilter === 'new') && status !== 'new' && status !== '') {
+            showByStatus = false;
+        } else if (statusFilter === 'used' && status !== 'used') {
+            showByStatus = false;
+        } else if (statusFilter === 'not_used' && (status !== 'not_used' && status !== 'skipped')) {
+            showByStatus = false;
+        }
+
+        // Gender filter
+        let showByGender = true;
+        if (genderFilter === 'male') {
+            showByGender = genderVal === 'male' || genderVal === 'm' || (genderVal.startsWith('m') && !genderVal.startsWith('f'));
+        } else if (genderFilter === 'female') {
+            showByGender = genderVal === 'female' || genderVal === 'f' || genderVal.startsWith('f');
+        }
+
+        let showByText = !textFilter || rowText.includes(textFilter);
+
+        if (showByTab && showByStrong && showByScore && showByStatus && showByGender && showByText) {
+            row.style.display = '';
+            visibleCount++;
+        } else {
+            row.style.display = 'none';
+        }
+    });
+
+    const visibleBadge = document.getElementById('visible-count');
+    if (visibleBadge) visibleBadge.textContent = visibleCount;
+
+    const hiddenTextElem = document.getElementById('hidden-used-text');
+    if (hiddenTextElem) {
+        if (hideUsed && hiddenUsedCount > 0) {
+            hiddenTextElem.textContent = ` (${hiddenUsedCount} hidden as Used)`;
+        } else {
+            hiddenTextElem.textContent = '';
+        }
+    }
+
+    const approxHiddenElem = document.getElementById('approx-hidden-text');
+    if (approxHiddenElem) {
+        if (strongOnly && hiddenApproxCount > 0) {
+            approxHiddenElem.textContent = `(${hiddenApproxCount} approximate matches hidden)`;
+        } else {
+            approxHiddenElem.textContent = '';
+        }
+    }
+
+    const checked = document.querySelectorAll('.trainer-checkbox:checked');
+    const tabBadge = document.getElementById('tab-selected-count');
+    if (tabBadge) tabBadge.textContent = checked.length;
+}
+
+function downloadCSV() {
+    const visibleRows = Array.from(document.querySelectorAll('#table-body tr'))
+        .filter(r => r.style.display !== 'none');
+
+    if (visibleRows.length === 0) {
+        showToast('⚠️ No visible candidate rows to export.', true);
+        return;
+    }
+
+    const headers = ["Rank", "Status", "Name", "Gender", "Email", "Phone", "Experience", "Skill Set", "Matched Skills", "Match Score", "Match Reason"];
+    const csvLines = [headers.join(",")];
+
+    visibleRows.forEach(row => {
+        const rowData = [
+            `"${(row.cells[1]?.textContent.trim() || '').replace(/"/g, '""')}"`,
+            `"${(row.getAttribute('data-status') || '').replace(/"/g, '""')}"`,
+            `"${(row.cells[2]?.textContent.trim() || '').replace(/"/g, '""')}"`,
+            `"${(row.cells[3]?.textContent.trim() || '').replace(/"/g, '""')}"`,
+            `"${(row.cells[4]?.textContent.trim() || '').replace(/"/g, '""')}"`,
+            `"${(row.cells[5]?.textContent.trim() || '').replace(/"/g, '""')}"`,
+            `"${(row.cells[6]?.textContent.trim() || '').replace(/"/g, '""')}"`,
+            `"${(row.cells[7]?.textContent.trim() || '').replace(/"/g, '""')}"`,
+            `"${(row.cells[8]?.textContent.trim() || '').replace(/"/g, '""')}"`,
+            `"${(row.cells[9]?.textContent.trim() || '').replace(/"/g, '""')}"`,
+            `"${(row.cells[10]?.textContent.trim() || '').replace(/"/g, '""')}"`
+        ];
+        csvLines.push(rowData.join(","));
+    });
+
+    const csvBlob = new Blob([csvLines.join("\n")], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(csvBlob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", `Shortlisted_Candidates_${new Date().toISOString().slice(0,10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    showToast(`📥 Exported ${visibleRows.length} candidates to CSV!`, false);
+}
