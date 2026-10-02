@@ -14,12 +14,30 @@ import db
 import db_copied_history
 from supabase import create_client, Client
 
+from jinja2 import ChoiceLoader, FileSystemLoader
+
 project_root = os.path.dirname(os.path.abspath(__file__))
 template_dir = os.path.join(project_root, 'templates')
 static_dir = os.path.join(project_root, 'static')
 
 app = Flask(__name__, template_folder=template_dir, static_folder=static_dir, static_url_path='/static')
 app.secret_key = 'your-secret-key-here-ecorp-resume'
+
+possible_template_dirs = [
+    template_dir,
+    os.path.join(project_root, 'templates'),
+    os.path.join(project_root, 'USA-Resume-Shortlisting-main', 'templates'),
+    os.path.join(os.path.dirname(project_root), 'templates'),
+    os.path.join(os.path.dirname(project_root), 'USA-Resume-Shortlisting-main', 'templates'),
+    os.path.join(os.getcwd(), 'templates')
+]
+existing_template_dirs = []
+for d in possible_template_dirs:
+    if d and os.path.exists(d) and d not in existing_template_dirs:
+        existing_template_dirs.append(d)
+
+if existing_template_dirs:
+    app.jinja_loader = ChoiceLoader([FileSystemLoader(d) for d in existing_template_dirs])
 
 from flask import send_from_directory
 
