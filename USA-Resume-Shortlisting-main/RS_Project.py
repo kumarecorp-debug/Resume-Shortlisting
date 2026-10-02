@@ -421,7 +421,7 @@ def ai_extract_batch_from_excel(excel_text, source_file):
     try:
         raw_json = ""
         if genai_client:
-            models_to_try = [WORKING_GEMINI_MODEL] if WORKING_GEMINI_MODEL else ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-2.5-flash"]
+            models_to_try = [WORKING_GEMINI_MODEL] if WORKING_GEMINI_MODEL else ["gemini-1.5-flash-latest", "gemini-1.5-flash", "gemini-2.0-flash", "gemini-1.5-pro"]
             last_err = None
             for model_id in models_to_try:
                 if not model_id: continue
@@ -1459,7 +1459,7 @@ Content:
                     automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True)
                 )
                 response = None
-                models_to_try = [WORKING_GEMINI_MODEL] if WORKING_GEMINI_MODEL else ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-2.5-flash"]
+                models_to_try = [WORKING_GEMINI_MODEL] if WORKING_GEMINI_MODEL else ["gemini-1.5-flash-latest", "gemini-1.5-flash", "gemini-2.0-flash", "gemini-1.5-pro"]
                 last_err = None
                 for model_id in models_to_try:
                     if not model_id: continue
