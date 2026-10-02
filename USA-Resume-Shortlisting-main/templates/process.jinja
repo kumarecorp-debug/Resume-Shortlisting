@@ -17,98 +17,6 @@
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             background-color: #f8fafc;
         }
-        .navbar {
-            height: 64px;
-            background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
-            color: #ffffff;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            padding: 0 32px;
-            position: sticky;
-            top: 0;
-            z-index: 1000;
-            box-shadow: 0 4px 20px rgba(0,0,0,0.15);
-        }
-        .nav-brand {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            font-weight: 700;
-            font-size: 1.25rem;
-            letter-spacing: -0.02em;
-            color: #ffffff;
-            text-decoration: none;
-        }
-        .nav-brand-logo {
-            font-size: 1.5rem;
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            background: rgba(255,255,255,0.1);
-            width: 38px;
-            height: 38px;
-            border-radius: 8px;
-            border: 1px solid rgba(255,255,255,0.15);
-        }
-        .nav-tagline {
-            font-size: 0.82rem;
-            color: #94a3b8;
-            font-weight: 400;
-            margin-left: 8px;
-            background: rgba(255,255,255,0.08);
-            padding: 2px 8px;
-            border-radius: 12px;
-        }
-        .nav-right {
-            display: flex;
-            align-items: center;
-            gap: 16px;
-        }
-        .nav-btn {
-            display: inline-flex;
-            align-items: center;
-            gap: 8px;
-            background: rgba(255,255,255,0.08);
-            color: #f8fafc;
-            border: 1px solid rgba(255,255,255,0.15);
-            padding: 8px 16px;
-            border-radius: 8px;
-            font-size: 0.88rem;
-            font-weight: 500;
-            text-decoration: none;
-            cursor: pointer;
-            transition: all 0.2s ease;
-        }
-        .nav-btn:hover {
-            background: rgba(255,255,255,0.18);
-            color: #ffffff;
-            transform: translateY(-1px);
-        }
-        .user-menu-btn {
-            display: inline-flex;
-            align-items: center;
-            gap: 8px;
-            background: rgba(255,255,255,0.06);
-            color: #e2e8f0;
-            padding: 6px 14px;
-            border-radius: 20px;
-            font-size: 0.85rem;
-            font-weight: 500;
-            border: 1px solid rgba(255,255,255,0.1);
-        }
-        .theme-toggle-btn {
-            background: transparent;
-            border: none;
-            color: #f8fafc;
-            font-size: 1.2rem;
-            cursor: pointer;
-            padding: 6px;
-            border-radius: 8px;
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-        }
         .container {
             flex: 1;
             max-width: 1350px;
@@ -474,34 +382,6 @@
         .btn-copy-action:hover {
             background: #dcfce7;
         }
-        .btn-row-copy {
-            background: #eff6ff;
-            color: #2563eb;
-            border: 1.5px solid #bfdbfe;
-            padding: 5px 12px;
-            border-radius: 6px;
-            font-weight: 700;
-            font-size: 0.84rem;
-            cursor: pointer;
-            display: inline-flex;
-            align-items: center;
-            gap: 5px;
-            transition: all 0.2s ease;
-        }
-        .btn-row-copy:hover:not(:disabled) {
-            background: #2563eb;
-            color: #ffffff;
-            border-color: #2563eb;
-            box-shadow: 0 2px 8px rgba(37, 99, 235, 0.25);
-            transform: translateY(-1px);
-        }
-        .btn-row-copy:disabled {
-            cursor: default;
-            opacity: 0.85;
-        }
-        .tr-copied-highlight {
-            background-color: #f0fdf4 !important;
-        }
         .bulk-bar {
             display: flex;
             align-items: center;
@@ -695,24 +575,6 @@
                         </label>
                     </div>
 
-                    <!-- Search Mode Selector -->
-                    <div style="margin-top: 10px; margin-bottom: 12px; background: #f8fafc; padding: 10px 14px; border-radius: 8px; border: 1.5px solid #cbd5e1; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px;">
-                        <div style="display: flex; align-items: center; gap: 14px; flex-wrap: wrap;">
-                            <span style="font-weight: 700; color: #0f172a; font-size: 0.92rem; display: flex; align-items: center; gap: 6px;">🔍 Search Mode:</span>
-                            <label style="display: inline-flex; align-items: center; gap: 6px; font-weight: 600; font-size: 0.88rem; color: #1e293b; cursor: pointer;">
-                                <input type="radio" name="search_mode" value="live" id="mode_live" {% if not search_mode or search_mode == 'live' %}checked{% endif %} onchange="onSearchModeToggle('live')">
-                                ⚡ Live Gmail Search (Fetch new emails)
-                            </label>
-                            <label style="display: inline-flex; align-items: center; gap: 6px; font-weight: 600; font-size: 0.88rem; color: #1e293b; cursor: pointer;">
-                                <input type="radio" name="search_mode" value="history" id="mode_history" {% if search_mode == 'history' %}checked{% endif %} onchange="onSearchModeToggle('history')">
-                                📅 From Search History (Fast DB Query)
-                            </label>
-                        </div>
-                        <span id="search-mode-badge-info" style="font-size: 0.8rem; font-weight: 700; padding: 3px 10px; border-radius: 12px; background: {% if search_mode == 'history' %}#eff6ff{% else %}#f0fdf4{% endif %}; color: {% if search_mode == 'history' %}#1d4ed8{% else %}#15803d{% endif %}; border: 1px solid {% if search_mode == 'history' %}#93c5fd{% else %}#86efac{% endif %};">
-                            {% if search_mode == 'history' %}📅 Queries search_history table{% else %}⚡ Queries Gmail API live{% endif %}
-                        </span>
-                    </div>
-
                     <!-- Time Window & Show Filter Section -->
                     <div class="time-window-section" style="margin-top: 14px; margin-bottom: 16px; background: #ffffff; padding: 14px 16px; border-radius: 10px; border: 1.5px solid #cbd5e1; box-shadow: 0 1px 3px rgba(0,0,0,0.03);">
                         <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin-bottom: 10px;">
@@ -723,7 +585,6 @@
                             <button type="button" onclick="setTimeWindow('any')" style="font-size: 0.8rem; color: #2563eb; background: none; border: none; font-weight: 600; cursor: pointer; text-decoration: underline;">Reset to Any</button>
                         </div>
 
-                        <input type="hidden" name="search_mode" id="search_mode_hidden" value="{{ search_mode or 'live' }}">
                         <input type="hidden" name="time_window" id="time_window" value="{{ time_window or date_preset or 'any' }}">
                         <input type="hidden" name="date_preset" id="date_preset" value="{{ time_window or date_preset or 'any' }}">
                         <input type="hidden" name="date_from" id="date_from_hidden" value="{{ date_from or '' }}">
@@ -780,17 +641,6 @@
                                 <button type="button" class="show-pill-btn {% if show_mode == 'not_copied' %}active{% endif %}" data-show="not_copied" onclick="setShowMode('not_copied')">○ Not copied</button>
                             </div>
                         </div>
-
-                        <!-- Live Filter Hint Label (PART 4) -->
-                        <div id="show-filter-hint-label" style="margin-top: 10px; font-size: 0.84rem; font-weight: 600; color: {% if show_mode == 'copied' %}#92400e{% elif show_mode == 'not_copied' %}#15803d{% else %}#0369a1{% endif %}; background: {% if show_mode == 'copied' %}#fef3c7{% elif show_mode == 'not_copied' %}#f0fdf4{% else %}#f0f9ff{% endif %}; padding: 6px 12px; border-radius: 6px; border: 1px solid {% if show_mode == 'copied' %}#fcd34d{% elif show_mode == 'not_copied' %}#86efac{% else %}#bae6fd{% endif %};">
-                            {% if show_mode == 'copied' %}
-                                💡 Candidates <strong>YOU COPIED</strong> {% if time_window and time_window != 'any' %}{{ time_window }}{% else %}at any time{% endif %}
-                            {% elif show_mode == 'not_copied' %}
-                                💡 Fresh resumes {% if time_window and time_window != 'any' %}{{ time_window }}{% else %}from any time{% endif %} you haven't contacted
-                            {% else %}
-                                💡 All matching resumes received {% if time_window and time_window != 'any' %}{{ time_window }}{% else %}at any time{% endif %}
-                            {% endif %}
-                        </div>
                     </div>
 
                     <div class="query-hints">
@@ -816,14 +666,7 @@
         {% if table_data is not none and table_data|length > 0 %}
             <div id="pagination-meta" data-search-id="{{ search_id or '' }}" data-job-query="{{ job_query or '' }}" data-mailbox="{{ selected_account or '' }}" data-total="{{ total_matches or table_data|length }}" data-offset="{{ table_data|length }}" data-limit="{{ page_size or 25 }}" data-min-exp="{{ min_exp if min_exp is not none else '' }}" data-hidden-exp="{{ hidden_by_experience or 0 }}"></div>
 
-            {% if search_mode == 'history' or search_source == 'search_history' %}
-                <div style="background: #eff6ff; border: 1.5px solid #93c5fd; color: #1e40af; padding: 10px 16px; border-radius: 8px; font-size: 0.9rem; font-weight: 600; margin-bottom: 14px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px;">
-                    <span>📅 <strong>Search History Mode:</strong> Displaying candidates from search history database (Time Window: <strong>{{ time_window }}</strong>)</span>
-                    <span style="font-size: 0.82rem; background: #dbeafe; padding: 3px 8px; border-radius: 12px; color: #1d4ed8;">⚡ Fast DB Search (No Gmail API)</span>
-                </div>
-            {% endif %}
-
-            {% if scan_summary and scan_summary.get('source') != 'history' %}
+            {% if scan_summary %}
                 <div style="background: #f0f9ff; border: 1px solid #bae6fd; color: #0369a1; padding: 10px 16px; border-radius: 8px; font-size: 0.9rem; font-weight: 600; margin-bottom: 14px;">
                     📊 <strong>Scan Summary:</strong> Scanned {{ scan_summary.get('pdf', 0) }} PDFs, {{ scan_summary.get('docx', 0) }} DOCX, {{ scan_summary.get('xlsx', 0) + scan_summary.get('xls', 0) }} Excel files ({{ scan_summary.get('xlsx_candidates', 0) }} rows total) &nbsp;·&nbsp; Found {{ total_matches }} matching candidates
                 </div>
@@ -871,10 +714,9 @@
                     
                     <!-- Tabs, Slider & Filters Toolbar -->
                     <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap; width: 100%; justify-content: space-between; margin-top: 10px;">
-                        <div style="display: flex; gap: 6px; background: #e2e8f0; padding: 4px; border-radius: 8px; align-items: center;">
+                        <div style="display: flex; gap: 6px; background: #e2e8f0; padding: 4px; border-radius: 8px;">
                             <button type="button" id="tab-all-trainers" class="chip-btn" onclick="switchTrainerTab('all')" style="background: #2563eb; color: white; border: none; font-weight: 700; padding: 6px 16px; border-radius: 6px;">🎥 All Trainers ({{ table_data|length }})</button>
                             <button type="button" id="tab-selected-trainers" class="chip-btn" onclick="switchTrainerTab('selected')" style="background: transparent; color: #475569; border: none; font-weight: 600; padding: 6px 16px; border-radius: 6px;">⭐ Selected Trainers (<span id="tab-selected-count">0</span>)</button>
-                            <button type="button" id="btn-clear-selected-tab" onclick="clearSelectedTrainers()" style="display: none; background: #fee2e2; color: #991b1b; border: none; font-size: 0.78rem; font-weight: 700; padding: 4px 10px; border-radius: 6px; cursor: pointer; margin-right: 4px; transition: all 0.15s;" title="Clear selected trainers list">Clear</button>
                         </div>
 
                         <!-- FIX 4: Only show strong matches (score >= 80%) toggle -->
@@ -918,33 +760,50 @@
 
                             <input type="text" id="filter-box" class="filter-input" placeholder="Search by Name, Skill..." oninput="applyTableFilters()" style="width: 200px;">
 
-                            <button type="button" id="btn-download-csv" class="btn-download" onclick="downloadCSV()" style="display: inline-flex; align-items: center; gap: 6px;">📥 Download CSV</button>
+                            <button type="button" class="btn-download" onclick="downloadCSV()" style="display: inline-flex; align-items: center; gap: 6px;">Download CSV 📥</button>
                         </div>
                     </div>
+                </div>
+
+                <!-- Bulk Actions Toolbar -->
+                <div class="bulk-bar" style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; background: #f8fafc; border: 1.5px solid #e2e8f0; padding: 10px 16px; border-radius: 8px; margin-bottom: 14px; margin-top: 14px;">
+                    <div style="display: flex; align-items: center; gap: 12px;">
+                        <input type="checkbox" id="select-all-checkbox" onchange="toggleSelectAll(this)" title="Select All" style="cursor: pointer; transform: scale(1.2);">
+                        <span style="font-weight: 700; color: #1e293b; font-size: 0.9rem;">Select All (<span id="selected-count-badge">0</span> selected)</span>
+                    </div>
+                    <button type="button" id="btn-copy-selected" class="btn-action-small btn-copy-action" onclick="copySelectedCandidates()" style="padding: 8px 18px; font-size: 0.9rem; font-weight: 700; cursor: pointer;">
+                        📋 Copy Selected (0)
+                    </button>
                 </div>
 
                 <div class="table-wrapper">
                     <table class="results-table" id="results-table" style="min-width: 1100px;">
                         <thead>
                             <tr>
-                                <th style="text-align: center; width: 45px;">Rank</th>
-                                <th style="width: 140px;">Name <button type="button" class="copy-btn" data-column-copy="true" onclick="copyColumnData('Name', 2, this)" title="Copy all visible Names">📋</button></th>
-                                <th style="width: 75px;">Gender <button type="button" class="copy-btn" data-column-copy="true" onclick="copyColumnData('Gender', 3, this)" title="Copy all visible Genders">📋</button></th>
-                                <th style="width: 170px;">Email <button type="button" class="copy-btn" data-column-copy="true" onclick="copyColumnData('Email', 4, this)" title="Copy all visible Emails">📋</button></th>
-                                <th style="width: 150px;">Phone <button type="button" class="copy-btn" data-column-copy="true" onclick="copyColumnData('Phone', 5, this)" title="Copy all visible Phone Numbers">📋</button></th>
-                                <th style="text-align: center; width: 95px; cursor: pointer;" onclick="sortTableByExperience()" id="th-exp">
-                                    Exp <span id="sort-exp-icon">⇅</span> <button type="button" class="copy-btn" data-column-copy="true" onclick="event.stopPropagation(); copyColumnData('Experience', 6, this)" title="Copy all visible Experience">📋</button>
+                                <th style="text-align: center; width: 35px;">
+                                    <input type="checkbox" id="header-select-all" onchange="toggleSelectAll(this)" title="Select All" style="cursor: pointer; transform: scale(1.15);">
                                 </th>
-                                <th style="width: 160px;">Skill Set <button type="button" class="copy-btn" data-column-copy="true" onclick="copyColumnData('Skill Set', 7, this)" title="Copy all visible Skill Sets">📋</button></th>
-                                <th style="width: 130px;">Matched Skills <button type="button" class="copy-btn" data-column-copy="true" onclick="copyColumnData('Matched Skills', 8, this)" title="Copy all visible Matched Skills">📋</button></th>
-                                <th style="text-align: center; width: 70px;">Score <button type="button" class="copy-btn" data-column-copy="true" onclick="copyColumnData('Match Score', 9, this)" title="Copy all visible Match Scores">📋</button></th>
-                                <th style="width: 150px;">Reason <button type="button" class="copy-btn" data-column-copy="true" onclick="copyColumnData('Match Reason', 10, this)" title="Copy all visible Match Reasons">📋</button></th>
-                                <th style="text-align: center; width: 100px;">Action</th>
+                                <th style="text-align: center; width: 45px;">Rank</th>
+                                <th style="width: 140px;">Name <button type="button" class="copy-btn" data-column-copy="true" onclick="copyColumnData('Name', 3, this)" title="Copy all visible Names & Save to Copied History">📋</button></th>
+                                <th style="width: 75px;">Gender <button type="button" class="copy-btn" data-column-copy="true" onclick="copyColumnData('Gender', 4, this)" title="Copy all visible Genders & Save to Copied History">📋</button></th>
+                                <th style="width: 170px;">Email <button type="button" class="copy-btn" data-column-copy="true" onclick="copyColumnData('Email', 5, this)" title="Copy all visible Emails & Save to Copied History">📋</button></th>
+                                <th style="width: 150px;">Phone <button type="button" class="copy-btn" data-column-copy="true" onclick="copyColumnData('Phone', 6, this)" title="Copy all visible Phone Numbers & Save to Copied History">📋</button></th>
+                                <th style="text-align: center; width: 95px; cursor: pointer;" onclick="sortTableByExperience()" id="th-exp">
+                                    Exp <span id="sort-exp-icon">⇅</span> <button type="button" class="copy-btn" data-column-copy="true" onclick="event.stopPropagation(); copyColumnData('Experience', 7, this)" title="Copy all visible Experience & Save to Copied History">📋</button>
+                                </th>
+                                <th style="width: 160px;">Skill Set <button type="button" class="copy-btn" data-column-copy="true" onclick="copyColumnData('Skill Set', 8, this)" title="Copy all visible Skill Sets & Save to Copied History">📋</button></th>
+                                <th style="width: 130px;">Matched Skills <button type="button" class="copy-btn" data-column-copy="true" onclick="copyColumnData('Matched Skills', 9, this)" title="Copy all visible Matched Skills & Save to Copied History">📋</button></th>
+                                <th style="text-align: center; width: 70px;">Score <button type="button" class="copy-btn" data-column-copy="true" onclick="copyColumnData('Match Score', 10, this)" title="Copy all visible Match Scores & Save to Copied History">📋</button></th>
+                                <th style="width: 150px;">Reason <button type="button" class="copy-btn" data-column-copy="true" onclick="copyColumnData('Match Reason', 11, this)" title="Copy all visible Match Reasons & Save to Copied History">📋</button></th>
+                                <th style="text-align: center; width: 85px;">Copy</th>
                             </tr>
                         </thead>
                         <tbody id="table-body">
                             {% for row in table_data %}
                                 <tr id="row-{{ loop.index }}" data-email="{{ row['Email'] if row['Email'] else '' }}" data-name="{{ row['Name'] if row['Name'] else '' }}" data-phone="{{ row['Phone'] if row['Phone'] else '' }}" data-gender="{{ row['Gender'] if row['Gender'] else 'N/A' }}" data-exp-years="{{ row['experience_years'] if row['experience_years'] is not none else '' }}">
+                                    <td style="text-align: center;">
+                                        <input type="checkbox" class="trainer-checkbox" data-email="{{ row['Email'] if row['Email'] else '' }}" data-name="{{ row['Name'] if row['Name'] else '' }}" data-phone="{{ row['Phone'] if row['Phone'] else '' }}" onchange="onTrainerSelectChange()" style="cursor: pointer; transform: scale(1.15);">
+                                    </td>
                                     <td style="text-align: center;">
                                         <span class="tag-rank">#{{ row['Rank'] if 'Rank' in row else loop.index }}</span>
                                     </td>
@@ -983,21 +842,12 @@
                                         {{ row['Match Reason'] if 'Match Reason' in row else 'N/A' }}
                                     </td>
                                     <td style="text-align: center; white-space: nowrap;">
-                                        <button type="button" class="btn-row-copy" onclick="handleRowCopy(this, '{{ row['Name']|escape }}', '{{ row['Email']|escape }}', '{{ row['Phone']|escape }}')" title="Copy candidate details & mark used">
-                                            <span class="copy-icon">📋</span> <span class="copy-text">Copy</span>
-                                        </button>
+                                        <button type="button" class="btn-copy-row-icon" onclick="copySingleCandidate(this)" style="padding: 4px 10px; font-size: 0.8rem; font-weight: 700; cursor: pointer; background: #2563eb; color: white; border: none; border-radius: 6px; font-family: inherit;" title="Copy candidate details & save to Copied History">📋 Copy</button>
                                     </td>
                                 </tr>
                             {% endfor %}
                         </tbody>
                     </table>
-                </div>
-
-                <!-- Empty state for Selected Trainers tab when 0 selected -->
-                <div id="selected-trainers-empty" style="display: none; text-align: center; padding: 56px 24px; background: #ffffff; border-radius: 12px; border: 1.5px dashed #cbd5e1; margin-top: 14px;">
-                    <div style="font-size: 3rem; margin-bottom: 12px;">⭐</div>
-                    <h3 style="margin: 0 0 6px 0; color: #0f172a; font-size: 1.2rem; font-weight: 700;">No trainers copied yet</h3>
-                    <p style="margin: 0; color: #64748b; font-size: 0.92rem;">Click the 📋 Copy button on any trainer row to add them here.</p>
                 </div>
 
 
@@ -1163,33 +1013,6 @@
             return formatDateIso(d);
         }
 
-        function onSearchModeToggle(mode) {
-            const modeLive = document.getElementById('mode_live');
-            const modeHist = document.getElementById('mode_history');
-            const modeInput = document.getElementById('search_mode_hidden');
-            if (modeInput) modeInput.value = mode;
-
-            if (mode === 'history') {
-                if (modeHist) modeHist.checked = true;
-                const badge = document.getElementById('search-mode-badge-info');
-                if (badge) {
-                    badge.textContent = '📅 Queries search_history table (Fast DB Query)';
-                    badge.style.background = '#eff6ff';
-                    badge.style.color = '#1d4ed8';
-                    badge.style.borderColor = '#93c5fd';
-                }
-            } else {
-                if (modeLive) modeLive.checked = true;
-                const badge = document.getElementById('search-mode-badge-info');
-                if (badge) {
-                    badge.textContent = '⚡ Queries Gmail API live';
-                    badge.style.background = '#f0fdf4';
-                    badge.style.color = '#15803d';
-                    badge.style.borderColor = '#86efac';
-                }
-            }
-        }
-
         function setTimeWindow(win) {
             const twInput = document.getElementById('time_window');
             const dpInput = document.getElementById('date_preset');
@@ -1218,55 +1041,11 @@
             } else {
                 if (customPanel) customPanel.style.display = 'none';
             }
-
-            if (win !== 'any') {
-                onSearchModeToggle('history');
-            } else {
-                onSearchModeToggle('live');
-            }
-
             onTimeWindowSelected(win);
-            updateShowFilterHint();
         }
 
         function closeCustomPanel() {
             setTimeWindow('any');
-        }
-
-        function updateShowFilterHint() {
-            const hintElem = document.getElementById('show-filter-hint-label');
-            if (!hintElem) return;
-
-            const sm = document.getElementById('show_mode')?.value || 'all';
-            const tw = document.getElementById('time_window')?.value || 'any';
-            const dateFrom = document.getElementById('custom_date_from')?.value || '';
-            const dateTo = document.getElementById('custom_date_to')?.value || '';
-
-            let twText = 'at any time';
-            if (tw === 'today') twText = 'today';
-            else if (tw === 'yesterday') twText = 'yesterday';
-            else if (tw === '7d') twText = 'in the last 7 days';
-            else if (tw === '14d') twText = 'in the last 14 days';
-            else if (tw === '30d') twText = 'in the last 30 days';
-            else if (tw === 'custom' && dateFrom && dateTo) twText = `between ${dateFrom} and ${dateTo}`;
-            else if (tw === 'custom') twText = 'in custom date range';
-
-            if (sm === 'copied') {
-                hintElem.innerHTML = `💡 Candidates <strong>YOU COPIED</strong> ${twText}`;
-                hintElem.style.background = '#fef3c7';
-                hintElem.style.color = '#92400e';
-                hintElem.style.borderColor = '#fcd34d';
-            } else if (sm === 'not_copied') {
-                hintElem.innerHTML = `💡 Fresh resumes ${twText} you haven't contacted`;
-                hintElem.style.background = '#f0fdf4';
-                hintElem.style.color = '#15803d';
-                hintElem.style.borderColor = '#86efac';
-            } else {
-                hintElem.innerHTML = `💡 All matching resumes received ${twText}`;
-                hintElem.style.background = '#f0f9ff';
-                hintElem.style.color = '#0369a1';
-                hintElem.style.borderColor = '#bae6fd';
-            }
         }
 
         function setShowMode(mode) {
@@ -1283,7 +1062,6 @@
                     b.classList.remove('active');
                 }
             });
-            updateShowFilterHint();
         }
 
         function applyCustomPreset(preset) {

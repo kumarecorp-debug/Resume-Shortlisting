@@ -81,7 +81,7 @@ function onHideUsedToggled(isChecked) {
 // ============================================================
 // COLUMN COPY FUNCTIONALITY
 // ============================================================
-function copyColumnData(columnName, cellIndex, btnElem) {
+async function copyColumnData(columnName, cellIndex, btnElem) {
     let targetCellIdx = null;
 
     // 1. Try dynamic lookup from clicked button's parent TH
@@ -120,10 +120,30 @@ function copyColumnData(columnName, cellIndex, btnElem) {
         return;
     }
 
-    const values = visibleRows.map(row => {
+    const values = [];
+    const candidatesToSave = [];
+    const itemsToMark = [];
+
+    visibleRows.forEach(row => {
         const cell = row.cells[targetCellIdx];
-        return cell ? cell.textContent.trim() : '';
-    }).filter(val => val.length > 0 && val !== 'N/A');
+        const val = cell ? cell.textContent.trim() : '';
+        if (val.length > 0 && val !== 'N/A') {
+            values.push(val);
+        }
+
+        const cb = row.querySelector('.trainer-checkbox');
+        const name = cb ? cb.getAttribute('data-name') : (row.cells[2] ? row.cells[2].textContent.trim() : '');
+        const email = cb ? cb.getAttribute('data-email') : (row.cells[4] ? row.cells[4].textContent.trim() : '');
+        const phone = cb ? cb.getAttribute('data-phone') : (row.cells[5] ? row.cells[5].textContent.trim() : '');
+
+        if (email && email !== 'N/A') {
+            candidatesToSave.push({ email, name, phone });
+            itemsToMark.push({ email, name });
+            row.setAttribute('data-status', 'used');
+            const statusCell = row.querySelector('.status-cell');
+            if (statusCell) statusCell.innerHTML = renderStatusBadge('used', email, name);
+        }
+    });
 
     if (values.length === 0) {
         showToast(`⚠️ No ${columnName} data found to copy.`, true);
@@ -131,12 +151,47 @@ function copyColumnData(columnName, cellIndex, btnElem) {
     }
 
     const copyText = values.join('\n');
-    navigator.clipboard.writeText(copyText).then(() => {
-        showToast(`📋 Copied ${values.length} ${columnName} entries to clipboard!`, false);
-    }).catch(err => {
+    try {
+        await navigator.clipboard.writeText(copyText);
+    } catch (err) {
         console.error('Column copy failed:', err);
         showToast('❌ Failed to copy to clipboard.', true);
-    });
+        return;
+    }
+
+    applyTableFilters();
+
+    // Save candidates to copied_history & mark used in Supabase
+    const { mailbox, jobDesc } = getCurrentSearchContext();
+    if (candidatesToSave.length > 0) {
+        fetch('/api/candidate/bulk_status', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ mailbox, items: itemsToMark, status: 'used' })
+        }).catch(err => console.error('[column_status] failed:', err));
+
+        try {
+            const res = await fetch('/api/copied-history/bulk', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    mailbox_account: mailbox,
+                    job_description: jobDesc,
+                    candidates: candidatesToSave
+                })
+            });
+            const data = await res.json();
+            if (data.success) {
+                if (typeof refreshCopiedHistoryPanel === 'function') refreshCopiedHistoryPanel();
+                if (typeof updateCopiedHistoryCount === 'function') updateCopiedHistoryCount();
+                if (typeof updateCopiedHistoryBadge === 'function') updateCopiedHistoryBadge();
+            }
+        } catch (err) {
+            console.error('[copied-history-column] POST failed:', err);
+        }
+    }
+
+    showToast(`📋 Copied ${values.length} ${columnName} entries to clipboard (saved & marked as Used)!`, false);
 }
 
 // ============================================================
@@ -663,12 +718,20 @@ function showToast(msg, isError = false) {
 // TOOLBAR SELECTION & FILTERS
 // ============================================================
 function toggleSelectAll(masterCb) {
+    const isChecked = masterCb.checked;
+    
+    // Sync both master select-all checkboxes
+    const selectAllToolbar = document.getElementById('select-all-checkbox');
+    const selectAllHeader = document.getElementById('header-select-all');
+    if (selectAllToolbar) selectAllToolbar.checked = isChecked;
+    if (selectAllHeader) selectAllHeader.checked = isChecked;
+
     const visibleCheckboxes = Array.from(document.querySelectorAll('#table-body tr'))
         .filter(r => r.style.display !== 'none')
         .map(r => r.querySelector('.trainer-checkbox'))
         .filter(cb => cb !== null);
 
-    visibleCheckboxes.forEach(cb => cb.checked = masterCb.checked);
+    visibleCheckboxes.forEach(cb => cb.checked = isChecked);
     onTrainerSelectChange();
 }
 
@@ -691,14 +754,23 @@ function switchTrainerTab(tab) {
 }
 
 function onTrainerSelectChange() {
-    const checked = document.querySelectorAll('.trainer-checkbox:checked');
+    const visibleRows = Array.from(document.querySelectorAll('#table-body tr')).filter(r => r.style.display !== 'none');
+    const checkedInVisible = visibleRows.map(r => r.querySelector('.trainer-checkbox')).filter(cb => cb && cb.checked);
+    
     const badge = document.getElementById('selected-count-badge');
     const tabBadge = document.getElementById('tab-selected-count');
     const copyBtn = document.getElementById('btn-copy-selected');
 
-    if (badge) badge.textContent = checked.length;
-    if (tabBadge) tabBadge.textContent = checked.length;
-    if (copyBtn) copyBtn.textContent = `📋 Copy Selected (${checked.length})`;
+    if (badge) badge.textContent = checkedInVisible.length;
+    if (tabBadge) tabBadge.textContent = checkedInVisible.length;
+    if (copyBtn) copyBtn.textContent = `📋 Copy Selected (${checkedInVisible.length})`;
+
+    // Sync master select-all checkboxes state
+    const selectAllToolbar = document.getElementById('select-all-checkbox');
+    const selectAllHeader = document.getElementById('header-select-all');
+    const allChecked = visibleRows.length > 0 && checkedInVisible.length === visibleRows.length;
+    if (selectAllToolbar) selectAllToolbar.checked = allChecked;
+    if (selectAllHeader) selectAllHeader.checked = allChecked;
 }
 
 function applyTableFilters() {
