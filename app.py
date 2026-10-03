@@ -61,6 +61,18 @@ supabase_client: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
+def check_dependencies():
+    try:
+        import openpyxl
+        import xlrd
+        import pandas
+        logging.info("[startup] openpyxl, xlrd, pandas — all OK")
+    except ImportError as e:
+        logging.error(f"[startup] MISSING DEPENDENCY: {e}")
+        logging.error("Run: pip install openpyxl xlrd pandas")
+
+check_dependencies()
+
 if not os.environ.get("VERCEL"):
     try:
         os.chdir(project_root)

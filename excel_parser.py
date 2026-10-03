@@ -59,6 +59,33 @@ def _normalize_columns(df):
         col_map[field] = match
     return col_map
 
+def read_excel_safe(file_path, sheet_name=None, max_rows=None):
+    """
+    Safely read Excel file selecting explicit engines:
+    - openpyxl for .xlsx
+    - xlrd for .xls
+    Logs engine usage and catches exceptions cleanly.
+    """
+    fn_lower = file_path.lower()
+    try:
+        if fn_lower.endswith('.xlsx'):
+            logger.info(f"[excel] Reading {file_path} using openpyxl engine")
+            return pd.read_excel(file_path, sheet_name=sheet_name, engine='openpyxl', dtype=str, nrows=max_rows)
+        elif fn_lower.endswith('.xls'):
+            logger.info(f"[excel] Reading {file_path} using xlrd engine")
+            return pd.read_excel(file_path, sheet_name=sheet_name, engine='xlrd', dtype=str, nrows=max_rows)
+        else:
+            logger.info(f"[excel] Reading {file_path} using default engine")
+            return pd.read_excel(file_path, sheet_name=sheet_name, dtype=str, nrows=max_rows)
+    except Exception as e:
+        logger.error(f"[excel] {file_path} read failed with engine: {e}")
+        try:
+            logger.info(f"[excel] Retrying {file_path} with fallback auto engine")
+            return pd.read_excel(file_path, sheet_name=sheet_name, dtype=str, nrows=max_rows)
+        except Exception as e2:
+            logger.error(f"[excel] {file_path} read failed completely: {e2}")
+            return None
+
 def parse_excel_to_candidates(file_path, max_rows=500):
     """
     Read an Excel file. Return a list of candidate dicts.
@@ -66,7 +93,7 @@ def parse_excel_to_candidates(file_path, max_rows=500):
     
     Handles:
     - xlsx via openpyxl
-    - xls via xlrd / default pandas engine
+    - xls via xlrd
     - multiple sheets (all merged)
     """
     if not os.path.exists(file_path):
@@ -89,23 +116,22 @@ def parse_excel_to_candidates(file_path, max_rows=500):
 
     all_rows = []
     try:
-        # Read all sheets
-        is_xlsx = file_path.lower().endswith('.xlsx')
-        engine = 'openpyxl' if is_xlsx else None
+        sheets = read_excel_safe(file_path, sheet_name=None)
+        if sheets is None:
+            return []
         
-        sheets = pd.read_excel(
-            file_path,
-            sheet_name=None,
-            engine=engine,
-            dtype=str,
-        )
-        for sheet_name, df in sheets.items():
-            if df.empty:
-                continue
-            df['__sheet__'] = sheet_name
-            all_rows.append(df)
+        if isinstance(sheets, dict):
+            for sheet_name, df in sheets.items():
+                if df is None or df.empty:
+                    continue
+                df['__sheet__'] = sheet_name
+                all_rows.append(df)
+        elif isinstance(sheets, pd.DataFrame):
+            if not sheets.empty:
+                sheets['__sheet__'] = 'Sheet1'
+                all_rows.append(sheets)
     except Exception as e:
-        logger.error(f"[excel] failed to read {file_path}: {e}")
+        logger.error(f"[excel] failed to parse sheets for {file_path}: {e}")
         return []
 
     if not all_rows:
@@ -174,9 +200,16 @@ def excel_to_text(file_path, max_rows=100):
     Used as a Gemini fallback if column detection fails.
     """
     try:
-        is_xlsx = file_path.lower().endswith('.xlsx')
-        engine = 'openpyxl' if is_xlsx else None
-        df = pd.read_excel(file_path, engine=engine, dtype=str, nrows=max_rows)
+        df = read_excel_safe(file_path, max_rows=max_rows)
+        if df is None:
+            return ''
+        if isinstance(df, dict):
+            # merge sheets if dict returned
+            dfs = [d for d in df.values() if isinstance(d, pd.DataFrame) and not d.empty]
+            if dfs:
+                df = pd.concat(dfs, ignore_index=True)
+            else:
+                return ''
         return df.to_csv(index=False)
     except Exception as e:
         logger.error(f"[excel] to_text failed: {e}")

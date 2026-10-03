@@ -262,21 +262,94 @@ def auto_authenticate_google(account_email="recruiter@ecorptrainings.com"):
 
     return build('gmail', 'v1', credentials=creds)
 
+# Rate Limiting & Attachment Cache Configuration
+MAX_EMAILS_PER_SEARCH = int(os.environ.get("MAX_EMAILS_PER_SEARCH", 50))
+_last_gmail_call = 0
+GMAIL_MIN_INTERVAL = 0.15  # 150ms between calls = ~6.6 calls/sec
+_attachment_cache = {}  # {cache_key: file_path}
+
+def rate_limit_gmail():
+    global _last_gmail_call
+    now = time.time()
+    elapsed = now - _last_gmail_call
+    if elapsed < GMAIL_MIN_INTERVAL:
+        time.sleep(GMAIL_MIN_INTERVAL - elapsed)
+    _last_gmail_call = time.time()
+
+def gmail_call_with_retry(func, max_retries=5):
+    """Executes a Gmail API call function with rate limiting and exponential backoff on 403/429 errors."""
+    for attempt in range(max_retries):
+        rate_limit_gmail()
+        try:
+            return func()
+        except Exception as e:
+            from googleapiclient.errors import HttpError
+            err_str = str(e)
+            is_rate_limit = False
+            if isinstance(e, HttpError) and e.resp.status in (403, 429):
+                is_rate_limit = True
+            elif "403" in err_str or "429" in err_str or "Quota exceeded" in err_str:
+                is_rate_limit = True
+
+            if is_rate_limit and attempt < max_retries - 1:
+                wait = (2 ** attempt) + 1  # 2, 5, 9, 17, 33 sec
+                _safe_log('warning', f"[gmail] Rate limited (HTTP/Quota error). Retry {attempt+1}/{max_retries} in {wait}s")
+                time.sleep(wait)
+            else:
+                raise
+
+def download_attachment_cached(service, message_id, attachment_id, filename):
+    """Downloads attachment bytes from Gmail API using an in-memory and disk cache."""
+    cache_key = f"{message_id}|{attachment_id}"
+    saved_path = os.path.join(RESUME_FOLDER, filename)
+    
+    if cache_key in _attachment_cache:
+        cached_path = _attachment_cache[cache_key]
+        if os.path.exists(cached_path):
+            try:
+                with open(cached_path, "rb") as f_in:
+                    return f_in.read()
+            except Exception:
+                pass
+            
+    if os.path.exists(saved_path):
+        try:
+            with open(saved_path, "rb") as f_in:
+                data = f_in.read()
+                if data:
+                    _attachment_cache[cache_key] = saved_path
+                    return data
+        except Exception:
+            pass
+
+    file_bytes = get_attachment_data(service, message_id, attachment_id)
+    if file_bytes:
+        _attachment_cache[cache_key] = saved_path
+        try:
+            with open(saved_path, "wb") as f_out:
+                f_out.write(file_bytes)
+        except Exception as e_w:
+            _safe_log('warning', f"[attachment] Failed saving {filename}: {e_w}")
+    return file_bytes
+
 # ==========================================
 # 2. Smart Search Query Generation & Email Fetching
 # ==========================================
 def get_matching_emails(service, search_query, max_results=60):
-    """Searches and fetches matching messages from Gmail."""
+    """Searches and fetches matching messages from Gmail with rate limiting."""
+    max_results = min(max_results, MAX_EMAILS_PER_SEARCH)
     all_messages = []
     page_token = None
     try:
         while len(all_messages) < max_results:
-            results = service.users().messages().list(
+            fetch_count = min(50, max_results - len(all_messages))
+            req = service.users().messages().list(
                 userId="me",
                 q=search_query,
-                maxResults=min(50, max_results - len(all_messages)),
+                maxResults=fetch_count,
                 pageToken=page_token
-            ).execute()
+            )
+            results = gmail_call_with_retry(lambda: req.execute())
             messages = results.get("messages", [])
             all_messages.extend(messages)
             page_token = results.get("nextPageToken")
@@ -284,9 +357,8 @@ def get_matching_emails(service, search_query, max_results=60):
                 break
     except Exception as e:
         err_msg = str(e)
-        logging.error(f"Error fetching emails from Gmail: {e}")
+        _safe_log('error', f"Error fetching emails from Gmail: {e}")
         if "accessNotConfigured" in err_msg or "has not been used in project" in err_msg:
-            # Extract project number if present
             proj_match = re.search(r'project\s+(\d+)', err_msg)
             proj_id = proj_match.group(1) if proj_match else ""
             link = f"https://console.developers.google.com/apis/api/gmail.googleapis.com/overview?project={proj_id}" if proj_id else "https://console.cloud.google.com/apis/library/gmail.googleapis.com"
@@ -295,17 +367,18 @@ def get_matching_emails(service, search_query, max_results=60):
 
     # Fallback if 0 messages
     if not all_messages:
-        logging.info("Zero messages on initial search. Attempting broad query fallback...")
+        _safe_log('info', "Zero messages on initial search. Attempting broad query fallback...")
         broad_terms = re.findall(r'[a-zA-Z0-9+#.]+', search_query)
         clean_terms = [t for t in broad_terms if t.lower() not in ['has', 'attachment', 'after'] and len(t) > 1]
         if clean_terms:
             broad_query = " ".join(clean_terms)
             try:
-                results = service.users().messages().list(
+                req_b = service.users().messages().list(
                     userId="me",
                     q=broad_query,
                     maxResults=max_results
-                ).execute()
+                )
+                results = gmail_call_with_retry(lambda: req_b.execute())
                 all_messages = results.get("messages", [])
             except Exception as e:
                 err_msg = str(e)
@@ -314,9 +387,9 @@ def get_matching_emails(service, search_query, max_results=60):
                     proj_id = proj_match.group(1) if proj_match else ""
                     link = f"https://console.developers.google.com/apis/api/gmail.googleapis.com/overview?project={proj_id}" if proj_id else "https://console.cloud.google.com/apis/library/gmail.googleapis.com"
                     raise RuntimeError(f"Gmail API is disabled for this Google Cloud Project. Please enable it by visiting: {link}")
-                logging.error(f"Broad search fallback failed: {e}")
+                _safe_log('error', f"Broad search fallback failed: {e}")
 
-    logging.info(f"Total matching email messages found: {len(all_messages)}")
+    _safe_log('info', f"Total matching email messages found: {len(all_messages)}")
     return all_messages
 
 # ==========================================
@@ -346,9 +419,10 @@ def extract_email_body(payload):
     return ""
 
 def fetch_attachments(service, message_id):
-    """Fetches all attachment metadata for a given message."""
+    """Fetches all attachment metadata for a given message with rate limiting."""
     try:
-        msg = service.users().messages().get(userId="me", id=message_id, format="full").execute()
+        req = service.users().messages().get(userId="me", id=message_id, format="full")
+        msg = gmail_call_with_retry(lambda: req.execute())
         payload = msg.get("payload", {})
         parts = payload.get("parts", [])
         attachments = []
@@ -365,21 +439,22 @@ def fetch_attachments(service, message_id):
         walk_parts(parts)
         return msg, payload, attachments
     except Exception as e:
-        logging.error(f"Error fetching message {message_id}: {e}")
+        _safe_log('error', f"Error fetching message {message_id}: {e}")
         return None, {}, []
 
 def get_attachment_data(service, message_id, attachment_id):
-    """Downloads attachment bytes from Gmail API."""
+    """Downloads attachment bytes from Gmail API with rate limiting."""
     try:
-        attachment = service.users().messages().attachments().get(
+        req = service.users().messages().attachments().get(
             userId="me",
             messageId=message_id,
             id=attachment_id
-        ).execute()
+        )
+        attachment = gmail_call_with_retry(lambda: req.execute())
         data = attachment.get("data", "")
         return urlsafe_b64decode(data)
     except Exception as e:
-        logging.error(f"Error downloading attachment {attachment_id}: {e}")
+        _safe_log('error', f"Error downloading attachment {attachment_id}: {e}")
         return None
 
 def is_valid_resume_filename(filename, include_excel=True):
@@ -1663,6 +1738,7 @@ def main(job_query, account_email="recruiter@ecorptrainings.com", max_candidates
     seen_identifiers = set()
     processed_count = 0
     failed_count = 0
+    rate_limit_failures = 0
 
     for idx, msg_meta in enumerate(messages, start=1):
         if (idx - 1) % 10 == 0 or idx == len(messages):
@@ -1718,13 +1794,10 @@ def main(job_query, account_email="recruiter@ecorptrainings.com", max_candidates
             # Process attachments
             if valid_files:
                 for filename, attachment_id in valid_files:
-                    file_bytes = get_attachment_data(service, message_id, attachment_id)
+                    saved_path = os.path.join(RESUME_FOLDER, filename)
+                    file_bytes = download_attachment_cached(service, message_id, attachment_id, filename)
                     if not file_bytes:
                         continue
-                    
-                    saved_path = os.path.join(RESUME_FOLDER, filename)
-                    with open(saved_path, "wb") as f_out:
-                        f_out.write(file_bytes)
 
                     fn_low = filename.lower()
 
@@ -1850,7 +1923,15 @@ def main(job_query, account_email="recruiter@ecorptrainings.com", max_candidates
             processed_count += 1
         except Exception as e:
             failed_count += 1
+            err_str = str(e)
+            if "403" in err_str or "429" in err_str or "Quota exceeded" in err_str or "rate limit" in err_str.lower():
+                rate_limit_failures += 1
             _safe_log('error', f"Error processing message index {idx} ({message_id}): {e}")
+
+    if rate_limit_failures > 0:
+        warning_msg = f"⚠️ {rate_limit_failures} email(s) could not be processed due to Gmail API rate limits. Try again in 1 minute or reduce Max Candidate Limit."
+        scan_summary['warning'] = warning_msg
+        _safe_log('warning', warning_msg)
 
     summary_json_path = os.path.join(RESUME_FOLDER, "scan_summary.json")
     try:
