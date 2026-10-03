@@ -878,6 +878,25 @@ def api_get_history_item(search_id):
     item = db.get_search_history_item(search_id)
     if not item:
         return jsonify({'success': False, 'error': 'Search history record not found'}), 404
+    
+    c_seen = item.get('candidates_seen') or []
+    normalized = []
+    if isinstance(c_seen, list):
+        for c in c_seen:
+            if isinstance(c, dict):
+                nm = c.get('Name') or c.get('name') or (c.get('Email') or c.get('email') or '').split('@')[0] or 'Candidate'
+                em = c.get('Email') or c.get('email') or 'N/A'
+                c['Name'] = nm
+                c['name'] = nm
+                c['Email'] = em
+                c['email'] = em
+                normalized.append(c)
+            elif isinstance(c, str):
+                em = c
+                nm = c.split('@')[0] if '@' in c else c
+                normalized.append({'Name': nm, 'name': nm, 'Email': em, 'email': em})
+    item['candidates_seen'] = normalized
+
     return jsonify({'success': True, 'data': item})
 
 @app.route('/api/history/latest', methods=['GET'])
@@ -1686,6 +1705,69 @@ def debug_phone_match():
         "matches_found": matches_count,
         "matches": matches
     })
+
+@app.route('/debug/extract-text/<path:filename>')
+@login_required
+def debug_extract_text(filename):
+    """Show what text is being sent to Gemini for a given resume file."""
+    import RS_Project
+    filepath = os.path.join(RS_Project.RESUME_FOLDER, filename)
+    if not os.path.exists(filepath):
+        return jsonify({'error': 'file not found'}), 404
+    
+    try:
+        with open(filepath, 'rb') as f:
+            file_bytes = f.read()
+        text = RS_Project.extract_text_from_bytes(file_bytes, filename)
+    except Exception as e:
+        return jsonify({'error': f'Failed to extract text: {e}'}), 500
+    
+    return jsonify({
+        'file': filename,
+        'text_length': len(text),
+        'first_1000_chars': text[:1000],
+        'extracted_name_fallback': RS_Project.extract_name_from_resume_text(text)
+    })
+
+@app.route('/debug/search-pipeline')
+@login_required
+def debug_search_pipeline():
+    """Run a test search and return detailed stats."""
+    mailbox = request.args.get('mailbox', 'recruiter@ecorptrainings.com')
+    jd = request.args.get('jd', 'python')
+    max_candidates = int(request.args.get('max', 10))
+    
+    from RS_Project import search_resumes
+    try:
+        result = search_resumes(
+            jd, 
+            account_email=mailbox, 
+            max_candidates=max_candidates
+        )
+        if hasattr(result, 'to_dict'):
+            stats = {
+                'candidate_count': len(result),
+                'candidates': result.to_dict(orient='records')
+            }
+        elif isinstance(result, list):
+            stats = {
+                'candidate_count': len(result),
+                'candidates': result
+            }
+        else:
+            stats = {'result': str(result)}
+
+        return jsonify({
+            'success': True,
+            'result_stats': stats,
+        })
+    except Exception as e:
+        import traceback
+        return jsonify({
+            'success': False,
+            'error': str(e),
+            'traceback': traceback.format_exc()
+        }), 500
 
 if __name__ == '__main__':
     app.run(debug=True)

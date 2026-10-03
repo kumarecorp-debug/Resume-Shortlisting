@@ -3,6 +3,18 @@ import re
 import time
 import json
 import logging
+logger = logging.getLogger(__name__)
+
+# Silence oauth2client file_cache warning
+logging.getLogger('googleapiclient.discovery_cache').setLevel(logging.ERROR)
+
+def _safe_log(level, msg, *args, **kwargs):
+    """Fallback-safe logger that never raises."""
+    try:
+        getattr(logger, level)(msg, *args, **kwargs)
+    except Exception:
+        import logging as _l
+        getattr(_l.getLogger(__name__), level)(msg, *args, **kwargs)
 import io
 import shutil
 import tempfile
@@ -1605,6 +1617,9 @@ def main(job_query, account_email="recruiter@ecorptrainings.com", max_candidates
     if isinstance(account_email, dict):
         account_email = account_email.get("email", "recruiter@ecorptrainings.com")
     email_key = account_email.lower().strip() if account_email else "recruiter@ecorptrainings.com"
+
+    _safe_log('info', f"[search-START] mailbox={email_key} jd={job_query} max_candidates={max_candidates}")
+
     service = auto_authenticate_google(email_key)
     search_query = build_gmail_search_query(job_query, date_preset=date_preset, date_from=date_from, date_to=date_to)
     
@@ -1615,34 +1630,46 @@ def main(job_query, account_email="recruiter@ecorptrainings.com", max_candidates
     default_cols = ["Rank", "Source", "source", "source_file", "source_sheet", "source_row", "Name", "Gender", "Email", "Phone", "Experience", "Skill Set", "Matched Skills", "Match Score", "Match Reason", "ReceivedAt"]
 
     if not messages:
-        logging.info(f"Primary search query '{search_query}' returned 0 emails. Triggering fallback search...")
+        _safe_log('info', f"Primary search query '{search_query}' returned 0 emails. Triggering fallback search...")
         extracted_skills = extract_tech_keywords_from_jd(job_query)
         if extracted_skills:
             fallback_query = "has:attachment (" + " OR ".join(extracted_skills[:10]) + ")"
-            logging.info(f"Retrying with fallback query: {fallback_query}")
+            _safe_log('info', f"Retrying with fallback query: {fallback_query}")
             messages = get_matching_emails(service, fallback_query, max_results=fetch_buffer)
 
     if not messages:
         fallback_query = "has:attachment"
-        logging.info(f"Retrying with generic fallback query: {fallback_query}")
+        _safe_log('info', f"Retrying with generic fallback query: {fallback_query}")
         messages = get_matching_emails(service, fallback_query, max_results=fetch_buffer)
+
+    _safe_log('info', f"[search-FETCH] Gmail returned {len(messages) if messages else 0} emails")
 
     if not messages:
         print(f"No emails found related to job description: '{job_query}' in mailbox '{email_key}'.")
-        logging.info("No matching emails found.")
+        _safe_log('info', "No matching emails found.")
         pd.DataFrame(columns=default_cols).to_csv(OUTPUT_CSV, index=False)
         summary_json_path = os.path.join(RESUME_FOLDER, "scan_summary.json")
         with open(summary_json_path, "w") as f_sum:
             json.dump(scan_summary, f_sum)
-        return
+        _safe_log('info', "[search-DONE]")
+        _safe_log('info', "  Emails fetched:    0")
+        _safe_log('info', "  Emails processed:  0")
+        _safe_log('info', "  Emails failed:     0")
+        _safe_log('info', "  Total candidates:  0")
+        return []
 
     print(f"Found {len(messages)} matching emails in '{email_key}'. Downloading and extracting candidate details...")
     candidates = []
     seen_identifiers = set()
+    processed_count = 0
+    failed_count = 0
 
     for idx, msg_meta in enumerate(messages, start=1):
+        if (idx - 1) % 10 == 0 or idx == len(messages):
+            _safe_log('info', f"[search-PROGRESS] {idx}/{len(messages)} ({int(100*idx/len(messages))}%)")
+
         if len(candidates) >= max_candidates:
-            logging.info(f"Reached user target limit of {max_candidates} candidates. Completing extraction.")
+            _safe_log('info', f"Reached user target limit of {max_candidates} candidates. Completing extraction.")
             break
         message_id = msg_meta["id"]
         try:
@@ -1685,6 +1712,7 @@ def main(job_query, account_email="recruiter@ecorptrainings.com", max_candidates
             )
             
             if not has_valid_attachment and not has_structured_cv_body:
+                processed_count += 1
                 continue
 
             # Process attachments
@@ -1704,15 +1732,16 @@ def main(job_query, account_email="recruiter@ecorptrainings.com", max_candidates
                         key = 'xlsx' if fn_low.endswith('.xlsx') else 'xls'
                         scan_summary[key] += 1
                         
-                        logger.info(f"[excel] processing attachment {filename}")
+                        _safe_log('info', f"[excel] processing attachment {filename}")
                         excel_cands = parse_excel_to_candidates(saved_path)
 
                         if not excel_cands or all(not c.get('Name') and not c.get('Email') for c in excel_cands):
-                            logger.info(f"[excel] fallback to Gemini for {filename}")
+                            _safe_log('info', f"[excel] fallback to Gemini for {filename}")
                             raw_text = excel_to_text(saved_path)
                             if raw_text:
                                 excel_cands = ai_extract_batch_from_excel(raw_text, filename)
 
+                        extracted_excel_count = 0
                         for c_ex in excel_cands:
                             c_email = str(c_ex.get('Email', '')).strip().lower()
                             if not c_email or is_system_or_portal_email(c_email, email_key):
@@ -1740,6 +1769,10 @@ def main(job_query, account_email="recruiter@ecorptrainings.com", max_candidates
                             seen_identifiers.add(dedup_k)
                             candidates.append(c_ex)
                             scan_summary['xlsx_candidates'] += 1
+                            extracted_excel_count += 1
+
+                        _safe_log('info', f"[excel] {filename} → {extracted_excel_count} candidates")
+                        _safe_log('info', f"[search-EXTRACT] {filename} → {extracted_excel_count} candidates")
 
                     else:
                         src_type = 'pdf' if fn_low.endswith('.pdf') else ('docx' if fn_low.endswith('.docx') else 'doc')
@@ -1787,6 +1820,7 @@ def main(job_query, account_email="recruiter@ecorptrainings.com", max_candidates
                         if dedup_key not in seen_identifiers:
                             seen_identifiers.add(dedup_key)
                             candidates.append(candidate)
+                            _safe_log('info', f"[search-EXTRACT] {filename} → 1 candidates")
 
             elif has_structured_cv_body:
                 # Body-only single candidate flow
@@ -1811,23 +1845,35 @@ def main(job_query, account_email="recruiter@ecorptrainings.com", max_candidates
                     if dedup_key not in seen_identifiers:
                         seen_identifiers.add(dedup_key)
                         candidates.append(candidate)
+                        _safe_log('info', "[search-EXTRACT] Email Body → 1 candidates")
 
+            processed_count += 1
         except Exception as e:
-            logging.error(f"Error processing message index {idx} ({message_id}): {e}")
+            failed_count += 1
+            _safe_log('error', f"Error processing message index {idx} ({message_id}): {e}")
 
     summary_json_path = os.path.join(RESUME_FOLDER, "scan_summary.json")
     try:
         with open(summary_json_path, "w") as f_sum:
             json.dump(scan_summary, f_sum)
     except Exception as e_sum:
-        logging.warning(f"Error saving scan_summary.json: {e_sum}")
+        _safe_log('warning', f"Error saving scan_summary.json: {e_sum}")
 
-    logging.info(f"[excel] scan summary: {scan_summary}")
+    _safe_log('info', f"[excel] scan summary: {scan_summary}")
 
     if not candidates:
         print("No candidate resumes or data could be extracted.")
         pd.DataFrame(columns=default_cols).to_csv(OUTPUT_CSV, index=False)
-        return
+        _safe_log('info', "[search-DONE]")
+        _safe_log('info', f"  Emails fetched:    {len(messages)}")
+        _safe_log('info', f"  Emails processed:  {processed_count}")
+        _safe_log('info', f"  Emails failed:     {failed_count}")
+        _safe_log('info', f"  PDF attachments:   {scan_summary.get('pdf', 0)}")
+        _safe_log('info', f"  DOCX attachments:  {scan_summary.get('docx', 0)}")
+        _safe_log('info', f"  XLSX attachments:  {scan_summary.get('xlsx', 0) + scan_summary.get('xls', 0)}")
+        _safe_log('info', f"  Excel rows parsed: {scan_summary.get('xlsx_candidates', 0)}")
+        _safe_log('info', "  Total candidates:  0")
+        return []
 
     df = pd.DataFrame(candidates)
     
@@ -1875,7 +1921,18 @@ def main(job_query, account_email="recruiter@ecorptrainings.com", max_candidates
     df["Match Reason"] = df["Match Reason"].replace(["", "N/A", "None", None], f"Profile matched target {job_query} skills.")
 
     df.to_csv(OUTPUT_CSV, index=False)
-    logging.info(f"Successfully processed {len(df)} candidates. Results saved to {OUTPUT_CSV}")
+    _safe_log('info', f"Successfully processed {len(df)} candidates. Results saved to {OUTPUT_CSV}")
+
+    _safe_log('info', "[search-DONE]")
+    _safe_log('info', f"  Emails fetched:    {len(messages)}")
+    _safe_log('info', f"  Emails processed:  {processed_count}")
+    _safe_log('info', f"  Emails failed:     {failed_count}")
+    _safe_log('info', f"  PDF attachments:   {scan_summary.get('pdf', 0)}")
+    _safe_log('info', f"  DOCX attachments:  {scan_summary.get('docx', 0)}")
+    _safe_log('info', f"  XLSX attachments:  {scan_summary.get('xlsx', 0) + scan_summary.get('xls', 0)}")
+    _safe_log('info', f"  Excel rows parsed: {scan_summary.get('xlsx_candidates', 0)}")
+    _safe_log('info', f"  Total candidates:  {len(candidates)}")
+    _safe_log('info', f"  After matching:    {len(df)}")
 
     print("\n" + "="*80)
     print(f"RESUME SHORTLISTING RESULTS FOR: '{job_query}'")
@@ -1883,6 +1940,8 @@ def main(job_query, account_email="recruiter@ecorptrainings.com", max_candidates
     print(tabulate(df, headers="keys", tablefmt="grid", showindex=False))
 
     return df
+
+search_resumes = main
 
 if __name__ == "__main__":
     query = input("Enter the Job Description or Role keywords to search for: ").strip()

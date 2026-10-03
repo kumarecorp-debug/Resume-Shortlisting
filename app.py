@@ -1729,5 +1729,45 @@ def debug_extract_text(filename):
         'extracted_name_fallback': RS_Project.extract_name_from_resume_text(text)
     })
 
+@app.route('/debug/search-pipeline')
+@login_required
+def debug_search_pipeline():
+    """Run a test search and return detailed stats."""
+    mailbox = request.args.get('mailbox', 'recruiter@ecorptrainings.com')
+    jd = request.args.get('jd', 'python')
+    max_candidates = int(request.args.get('max', 10))
+    
+    from RS_Project import search_resumes
+    try:
+        result = search_resumes(
+            jd, 
+            account_email=mailbox, 
+            max_candidates=max_candidates
+        )
+        if hasattr(result, 'to_dict'):
+            stats = {
+                'candidate_count': len(result),
+                'candidates': result.to_dict(orient='records')
+            }
+        elif isinstance(result, list):
+            stats = {
+                'candidate_count': len(result),
+                'candidates': result
+            }
+        else:
+            stats = {'result': str(result)}
+
+        return jsonify({
+            'success': True,
+            'result_stats': stats,
+        })
+    except Exception as e:
+        import traceback
+        return jsonify({
+            'success': False,
+            'error': str(e),
+            'traceback': traceback.format_exc()
+        }), 500
+
 if __name__ == '__main__':
     app.run(debug=True)
