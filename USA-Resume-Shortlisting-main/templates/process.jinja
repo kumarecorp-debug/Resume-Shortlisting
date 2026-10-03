@@ -506,42 +506,41 @@
 
     <div class="container">
         <div class="card">
-            <div class="account-select-bar">
-                <div class="account-select-left">
-                    <label for="account_email">📬 Select Mailbox Account:</label>
-                    <select name="account_email" id="account_email" form="search-form" class="account-dropdown" onchange="updateAccountBadge(this.value)">
-                        {% for acct in available_accounts %}
-                            <option value="{{ acct.email }}" {% if selected_account == acct.email %}selected{% endif %}>
-                                {{ acct.name }} ({{ acct.email }})
-                            </option>
-                        {% endfor %}
-                    </select>
-
-                    <label for="max_candidates" style="margin-left: 14px;">🎯 Max Candidate Limit:</label>
-                    <select name="max_candidates" id="max_candidates" form="search-form" class="account-dropdown" style="padding: 6px 12px;">
-                        <option value="25" {% if max_candidates == 25 %}selected{% endif %}>⚡ Fast Batch (25 Candidates)</option>
-                        <option value="50" {% if max_candidates == 50 or not max_candidates %}selected{% endif %}>📊 Medium Batch (50 Candidates)</option>
-                        <option value="100" {% if max_candidates == 100 %}selected{% endif %}>🚀 Large Batch (100 Candidates)</option>
-                        <option value="200" {% if max_candidates == 200 %}selected{% endif %}>🔥 Extra Large Batch (200 Candidates)</option>
-                        <option value="500" {% if max_candidates == 500 %}selected{% endif %}>🌟 Fetch All (up to 500 Candidates)</option>
-                    </select>
-                </div>
-                <div class="account-badge">
-                    <span>Active Mail: <strong id="active-mail-label">{{ selected_account }}</strong></span>
-                </div>
-            </div>
-            
-            {% with messages = get_flashed_messages(with_categories=true) %}
-                {% if messages %}
-                    {% for category, message in messages %}
-                        <div class="{{ category }}" style="padding: 12px 16px; margin-bottom: 14px; border-radius: 6px; background-color: #fee2e2; color: #991b1b; border: 1px solid #f87171;">
-                            {{ message }}
-                        </div>
-                    {% endfor %}
-                {% endif %}
-            {% endwith %}
-
             <form method="POST" action="{{ url_for('process') }}" id="search-form">
+                <div class="account-select-bar">
+                    <div class="account-select-left">
+                        <label for="account_email">📬 Select Mailbox Account:</label>
+                        <select name="account_email" id="account_email" class="account-dropdown" onchange="updateAccountBadge(this.value)">
+                            {% for acct in available_accounts %}
+                                <option value="{{ acct.email }}" {% if selected_account == acct.email %}selected{% endif %}>
+                                    {{ acct.name }} ({{ acct.email }})
+                                </option>
+                            {% endfor %}
+                        </select>
+
+                        <label for="max_candidates" style="margin-left: 14px;">🎯 Max Candidate Limit:</label>
+                        <select name="max_candidates" id="max_candidates" class="account-dropdown" style="padding: 6px 12px;">
+                            <option value="25" {% if max_candidates == 25 %}selected{% endif %}>⚡ Fast Batch (25 Candidates)</option>
+                            <option value="50" {% if max_candidates == 50 %}selected{% endif %}>📊 Medium Batch (50 Candidates)</option>
+                            <option value="100" {% if max_candidates == 100 %}selected{% endif %}>🚀 Large Batch (100 Candidates)</option>
+                            <option value="200" {% if max_candidates == 200 or not max_candidates %}selected{% endif %}>🔥 Extra Large Batch (200 Candidates)</option>
+                            <option value="500" {% if max_candidates == 500 %}selected{% endif %}>🌟 Fetch All (up to 500 Candidates)</option>
+                        </select>
+                    </div>
+                    <div class="account-badge">
+                        <span>Active Mail: <strong id="active-mail-label">{{ selected_account }}</strong></span>
+                    </div>
+                </div>
+                
+                {% with messages = get_flashed_messages(with_categories=true) %}
+                    {% if messages %}
+                        {% for category, message in messages %}
+                            <div class="{{ category }}" style="padding: 12px 16px; margin-bottom: 14px; border-radius: 6px; background-color: #fee2e2; color: #991b1b; border: 1px solid #f87171;">
+                                {{ message }}
+                            </div>
+                        {% endfor %}
+                    {% endif %}
+                {% endwith %}
                 <div class="form-group">
                     <label for="job_query">Enter Job Role, Keywords, or Paste Full Job Description (supports <code>AND</code> / <code>OR</code>):</label>
                     <textarea 

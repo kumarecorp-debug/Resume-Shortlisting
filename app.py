@@ -528,8 +528,8 @@ def process():
         except (ValueError, TypeError):
             min_exp = None
 
-        max_candidates = int(request.form.get('max_candidates') or request.args.get('max_candidates') or 50)
-        user_search_mode = request.form.get('search_mode') or request.args.get('search_mode') or ('history' if time_window != 'any' else 'live')
+        max_candidates = int(request.form.get('max_candidates') or request.args.get('max_candidates') or 200)
+        user_search_mode = request.form.get('search_mode') or request.args.get('search_mode') or 'live'
 
         # SHOW = COPIED MODE: Filter by copied_history.copied_at timestamp (No Gmail / Gemini API calls)
         if show_mode == 'copied':
@@ -576,8 +576,8 @@ def process():
                 scan_summary={"pdf": 0, "docx": 0, "xlsx": 0, "xls": 0, "xlsx_candidates": 0, "source": "copied"}
             )
 
-        # HISTORY SEARCH MODE: If user chose history OR if a Time Window filter is active (!= 'any')
-        if user_search_mode == 'history' or (user_search_mode != 'live' and time_window and time_window != 'any'):
+        # HISTORY SEARCH MODE: Executed only if explicitly requested as 'history'
+        if user_search_mode == 'history':
             hist_res = db.search_candidates_from_history(
                 mailbox_account=selected_account,
                 job_query=job_query,
@@ -1525,9 +1525,9 @@ def api_search():
             logging.info("Search cache expired or missing; rerunning")
 
     try:
-        max_candidates = int(request.args.get('max_candidates') or request.form.get('max_candidates') or 50)
+        max_candidates = int(request.args.get('max_candidates') or request.form.get('max_candidates') or 200)
     except (ValueError, TypeError):
-        max_candidates = 50
+        max_candidates = 200
 
     df, scan_summary = execute_full_candidate_search(job_query, selected_account, max_candidates=max_candidates, date_preset=time_window, date_from=date_from, date_to=date_to)
     
