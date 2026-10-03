@@ -71,6 +71,17 @@ def check_dependencies():
         logging.error(f"[startup] MISSING DEPENDENCY: {e}")
         logging.error("Run: pip install openpyxl xlrd pandas")
 
+    try:
+        import RS_Project
+        required = ['STOP_WORDS', 'logger', 'SUPPORTED_ACCOUNTS', 'RESUME_FOLDER', 'OUTPUT_CSV']
+        missing = [name for name in required if not hasattr(RS_Project, name)]
+        if missing:
+            logging.error(f"[startup] MISSING MODULE GLOBALS in RS_Project: {missing}")
+        else:
+            logging.info("[startup] All required RS_Project module globals present OK")
+    except Exception as e_glob:
+        logging.warning(f"[startup] Unable to verify RS_Project globals: {e_glob}")
+
 check_dependencies()
 
 if not os.environ.get("VERCEL"):

@@ -97,6 +97,44 @@ if USE_MODERN_GENAI and GEMINI_API_KEY:
     except Exception as e:
         logging.warning(f"Failed to initialize modern GenAI client: {e}")
 
+# Common English/job-posting words to exclude from skill matching
+STOP_WORDS = {
+    # English stopwords
+    'a', 'an', 'the', 'and', 'or', 'but', 'if', 'then', 'else',
+    'of', 'in', 'on', 'at', 'by', 'for', 'with', 'about', 'to',
+    'from', 'up', 'down', 'is', 'are', 'was', 'were', 'be',
+    'been', 'being', 'have', 'has', 'had', 'do', 'does', 'did',
+    'will', 'would', 'could', 'should', 'may', 'might', 'must',
+    'this', 'that', 'these', 'those', 'i', 'you', 'he',
+    'she', 'it', 'we', 'they', 'them', 'their', 'there', 'here',
+    
+    # Job-posting noise (common in JD text)
+    'job', 'jobs', 'role', 'roles', 'position', 'candidate',
+    'candidates', 'required', 'requirement', 'requirements',
+    'must', 'should', 'need', 'needed', 'wanted', 'looking',
+    'experience', 'experienced', 'expert', 'expertise',
+    'skill', 'skills', 'skilled', 'knowledge', 'ability',
+    'good', 'strong', 'excellent', 'great', 'plus', 'bonus',
+    'work', 'working', 'team', 'teams', 'company', 'client',
+    'project', 'projects', 'time', 'full', 'part', 'contract',
+    'permanent', 'immediate', 'urgent', 'hiring', 'apply',
+    'send', 'share', 'contact', 'email', 'call', 'reach',
+    'thanks', 'regards', 'hi', 'hello', 'dear', 'sir', 'madam',
+    
+    # Common resume/email noise
+    'resume', 'cv', 'curriculum', 'vitae', 'profile',
+    'attachment', 'attached', 'please', 'find',
+    
+    # Very common verbs
+    'has', 'have', 'had', 'do', 'does', 'did', 'is', 'are',
+    'was', 'were', 'be', 'been', 'being',
+    
+    # Generic locations/attributes
+    'india', 'indian', 'location', 'city', 'state', 'country',
+    'current', 'preferred', 'salary', 'annual', 'monthly',
+    'years', 'year', 'months', 'month', 'days', 'day',
+}
+
 # Common Technical Skills Dictionary
 KNOWN_SKILLS = [
     "python", "snowflake", "sql", "postgresql", "mysql", "oracle", "mongodb",
