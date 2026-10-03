@@ -522,7 +522,8 @@
                         <option value="25" {% if max_candidates == 25 %}selected{% endif %}>⚡ Fast Batch (25 Candidates)</option>
                         <option value="50" {% if max_candidates == 50 or not max_candidates %}selected{% endif %}>📊 Medium Batch (50 Candidates)</option>
                         <option value="100" {% if max_candidates == 100 %}selected{% endif %}>🚀 Large Batch (100 Candidates)</option>
-                        <option value="200" {% if max_candidates == 200 %}selected{% endif %}>🔥 Full Scanning (All ~200 Candidates)</option>
+                        <option value="200" {% if max_candidates == 200 %}selected{% endif %}>🔥 Extra Large Batch (200 Candidates)</option>
+                        <option value="500" {% if max_candidates == 500 %}selected{% endif %}>🌟 Fetch All (up to 500 Candidates)</option>
                     </select>
                 </div>
                 <div class="account-badge">

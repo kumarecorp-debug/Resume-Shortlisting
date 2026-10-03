@@ -1792,5 +1792,55 @@ def debug_search_pipeline():
             'traceback': traceback.format_exc()
         }), 500
 
+@app.route('/debug/search-limits')
+@login_required
+def debug_search_limits():
+    mailbox = request.args.get('mailbox', 'recruiter@ecorptrainings.com')
+    jd = request.args.get('jd', 'datadog')
+    max_c = request.args.get('max', 200, type=int)
+    
+    from gmail_search import build_gmail_search_query
+    query = build_gmail_search_query(jd)
+    
+    service = RS_Project.auto_authenticate_google(mailbox)
+    
+    # Total available estimate
+    try:
+        count_req = service.users().messages().list(userId='me', q=query, maxResults=1)
+        count_resp = RS_Project.gmail_call_with_retry(lambda: count_req.execute())
+        total = count_resp.get('resultSizeEstimate', 0)
+    except Exception as e:
+        total = 0
+    
+    # Fetch up to max_c using pagination
+    messages = []
+    page_token = None
+    while len(messages) < max_c:
+        batch_size = min(max_c - len(messages), 500)
+        params = {
+            'userId': 'me',
+            'q': query,
+            'maxResults': batch_size,
+        }
+        if page_token:
+            params['pageToken'] = page_token
+        req = service.users().messages().list(**params)
+        resp = RS_Project.gmail_call_with_retry(lambda: req.execute())
+        msgs = resp.get('messages', [])
+        if not msgs:
+            break
+        messages.extend(msgs)
+        page_token = resp.get('nextPageToken')
+        if not page_token:
+            break
+    
+    return jsonify({
+        'mailbox': mailbox,
+        'query': query,
+        'total_estimate': total,
+        'fetched': len(messages),
+        'requested_max': max_c,
+    })
+
 if __name__ == '__main__':
     app.run(debug=True)

@@ -301,7 +301,8 @@ def auto_authenticate_google(account_email="recruiter@ecorptrainings.com"):
     return build('gmail', 'v1', credentials=creds)
 
 # Rate Limiting & Attachment Cache Configuration
-MAX_EMAILS_PER_SEARCH = int(os.environ.get("MAX_EMAILS_PER_SEARCH", 50))
+# Rate Limiting & Attachment Cache Configuration
+MAX_EMAILS_PER_SEARCH = int(os.environ.get("MAX_EMAILS_PER_SEARCH", 500))
 _last_gmail_call = 0
 GMAIL_MIN_INTERVAL = 0.15  # 150ms between calls = ~6.6 calls/sec
 _attachment_cache = {}  # {cache_key: file_path}
@@ -373,22 +374,38 @@ def download_attachment_cached(service, message_id, attachment_id, filename):
 # ==========================================
 # 2. Smart Search Query Generation & Email Fetching
 # ==========================================
-def get_matching_emails(service, search_query, max_results=60):
-    """Searches and fetches matching messages from Gmail with rate limiting."""
-    max_results = min(max_results, MAX_EMAILS_PER_SEARCH)
+def get_matching_emails(service, search_query, max_results=200):
+    """Searches and fetches matching messages from Gmail with rate limiting and pagination."""
+    effective_max = min(max_results, MAX_EMAILS_PER_SEARCH)
+
+    try:
+        count_req = service.users().messages().list(userId="me", q=search_query, maxResults=1)
+        count_res = gmail_call_with_retry(lambda: count_req.execute())
+        total_estimate = count_res.get("resultSizeEstimate", 0)
+        _safe_log('info', f"[search-FETCH] Gmail total estimate: ~{total_estimate} matching emails")
+    except Exception as e_est:
+        total_estimate = 0
+        _safe_log('warning', f"[search-FETCH] Estimate query failed: {e_est}")
+
+    _safe_log('info', f"[search-FETCH] Fetching up to {effective_max} emails")
+
     all_messages = []
     page_token = None
     try:
-        while len(all_messages) < max_results:
-            fetch_count = min(50, max_results - len(all_messages))
-            req = service.users().messages().list(
-                userId="me",
-                q=search_query,
-                maxResults=fetch_count,
-                pageToken=page_token
-            )
+        while len(all_messages) < effective_max:
+            fetch_count = min(500, effective_max - len(all_messages))
+            params = {
+                "userId": "me",
+                "q": search_query,
+                "maxResults": fetch_count
+            }
+            if page_token:
+                params["pageToken"] = page_token
+            req = service.users().messages().list(**params)
             results = gmail_call_with_retry(lambda: req.execute())
             messages = results.get("messages", [])
+            if not messages:
+                break
             all_messages.extend(messages)
             page_token = results.get("nextPageToken")
             if not page_token:
@@ -414,7 +431,7 @@ def get_matching_emails(service, search_query, max_results=60):
                 req_b = service.users().messages().list(
                     userId="me",
                     q=broad_query,
-                    maxResults=max_results
+                    maxResults=effective_max
                 )
                 results = gmail_call_with_retry(lambda: req_b.execute())
                 all_messages = results.get("messages", [])
@@ -1774,6 +1791,7 @@ def main(job_query, account_email="recruiter@ecorptrainings.com", max_candidates
     print(f"Found {len(messages)} matching emails in '{email_key}'. Downloading and extracting candidate details...")
     candidates = []
     seen_identifiers = set()
+    processed_attachments = set()
     processed_count = 0
     failed_count = 0
     rate_limit_failures = 0
@@ -1832,6 +1850,11 @@ def main(job_query, account_email="recruiter@ecorptrainings.com", max_candidates
             # Process attachments
             if valid_files:
                 for filename, attachment_id in valid_files:
+                    attach_key = f"{filename.strip().lower()}|{attachment_id}"
+                    if attach_key in processed_attachments:
+                        continue
+                    processed_attachments.add(attach_key)
+
                     saved_path = os.path.join(RESUME_FOLDER, filename)
                     file_bytes = download_attachment_cached(service, message_id, attachment_id, filename)
                     if not file_bytes:
