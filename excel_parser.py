@@ -5,96 +5,185 @@ import pandas as pd
 
 logger = logging.getLogger(__name__)
 
+# Known header keywords to look for during header row auto-detection
+HEADER_KEYWORDS = {
+    'name', 'candidate name', 'full name', 'fullname', 'trainer',
+    'trainer name', 'consultant', 'candidate', 'consultant name',
+    'email', 'email id', 'e-mail', 'mail', 'mail id', 'email address', 'emailid',
+    'phone', 'mobile', 'contact', 'contact no', 'contact no.',
+    'contact number', 'phone number', 'mobile no', 'mobile number', 'ph', 'cell',
+    'skills', 'skill', 'skill set', 'skillset', 'primary skills',
+    'key skills', 'core skills', 'resume title', 'expertise', 'technologies', 'tech stack',
+    'experience', 'work exp', 'work experience', 'total experience',
+    'exp', 'years of experience', 'yrs', 'exp.',
+    'designation', 'current employer', 'current location',
+    'preferred location', 'annual salary', 'ug course', 'pg course',
+}
+
 # Column aliases — map friendly names to internal field names
 COLUMN_ALIASES = {
     'name': [
-        'name', 'full name', 'fullname', 'candidate name',
-        'trainer', 'trainer name', 'candidate', 'consultant name',
+        'name', 'candidate name', 'full name', 'fullname',
+        'candidate', 'trainer', 'trainer name', 'consultant name',
     ],
     'email': [
         'email', 'email id', 'e-mail', 'mail', 'mail id',
-        'email address', 'e mail', 'emailid',
+        'email address', 'emailid',
     ],
     'phone': [
-        'phone', 'phone number', 'phone no', 'mobile', 'mobile no',
-        'mobile number', 'contact', 'contact number', 'contact no',
-        'ph', 'cell', 'cell number',
+        'phone', 'phone number', 'phone no', 'mobile', 
+        'mobile no', 'mobile number', 'contact', 
+        'contact no', 'contact no.', 'contact number',
     ],
     'skills': [
-        'skills', 'skill', 'skill set', 'skillset', 'skill-set',
-        'technologies', 'technology', 'tech stack', 'primary skills',
-        'primary skill', 'key skills', 'core skills', 'expertise',
+        'skills', 'skill', 'skill set', 'skillset', 
+        'primary skills', 'key skills', 'core skills',
+        'resume title',
+        'technologies', 'tech stack', 'expertise',
     ],
     'experience': [
-        'experience', 'exp', 'exp.', 'years of experience',
-        'total experience', 'total exp', 'yrs', 'year(s)',
-        'exp in years', 'experience (years)',
+        'experience', 'exp', 'work exp',
+        'work experience', 'total experience', 'total exp',
+        'years of experience', 'yrs',
     ],
+    'designation': ['designation', 'role', 'current role'],
+    'current_employer': ['current employer', 'employer', 'company'],
+    'location': ['current location', 'location', 'preferred location'],
+    'ug_course': ['u.g. course', 'ug course', 'ug'],
+    'pg_course': ['p.g. course', 'pg course', 'pg'],
+    'age_dob': ['age/date of birth', 'age', 'dob'],
 }
 
 # 10-minute in-memory cache: (file_path, mtime) -> (timestamp, candidates)
 _EXCEL_CACHE = {}
 
+def detect_header_row(file_path, sheet_name=0, max_scan=15):
+    """
+    Scan first N rows to find the one that looks like a table header.
+    Return 0-based row index of the best candidate row.
+    """
+    try:
+        engine = 'openpyxl' if file_path.lower().endswith('.xlsx') else 'xlrd'
+        df_raw = pd.read_excel(
+            file_path,
+            sheet_name=sheet_name,
+            header=None,
+            nrows=max_scan,
+            dtype=str,
+            engine=engine
+        )
+    except Exception as e:
+        logger.error(f"[excel] header detect failed for {file_path}: {e}")
+        return 0
+
+    best_idx = 0
+    best_score = 0
+
+    for idx in range(len(df_raw)):
+        row = df_raw.iloc[idx]
+        score = 0
+        non_empty = 0
+        for cell in row:
+            if pd.isna(cell):
+                continue
+            cell_lower = str(cell).strip().lower()
+            if not cell_lower:
+                continue
+            non_empty += 1
+            for keyword in HEADER_KEYWORDS:
+                if keyword in cell_lower or cell_lower in keyword:
+                    score += 1
+                    break
+
+        if score >= 2 and score > best_score:
+            best_score = score
+            best_idx = idx
+
+    logger.info(
+        f"[excel] {file_path} (sheet={sheet_name}) header row detected at index {best_idx} (score={best_score})"
+    )
+    return best_idx
+
+def find_column(df_columns, aliases):
+    """
+    Match any of the aliases to a real column in df_columns.
+    Try exact match first, then substring match, then word-intersection match.
+    """
+    cols_normalized = {
+        col: str(col).strip().lower().rstrip('.')
+        for col in df_columns
+    }
+
+    # 1. Exact match (after normalization)
+    for alias in aliases:
+        alias_norm = alias.strip().lower().rstrip('.')
+        for col, norm in cols_normalized.items():
+            if norm == alias_norm:
+                return col
+
+    # 2. Substring match (either direction)
+    for alias in aliases:
+        alias_norm = alias.strip().lower()
+        for col, norm in cols_normalized.items():
+            if alias_norm in norm or norm in alias_norm:
+                return col
+
+    # 3. Word-level match
+    for alias in aliases:
+        alias_words = set(alias.lower().split())
+        for col, norm in cols_normalized.items():
+            col_words = set(norm.split())
+            if alias_words & col_words:
+                return col
+
+    return None
+
 def _normalize_columns(df):
-    """Return a dict mapping internal field -> actual column name."""
-    cols_clean = [str(c).strip().lower() for c in df.columns]
-    df.columns = cols_clean
+    """Return a dict mapping internal field -> actual column name using find_column."""
     col_map = {}
     for field, aliases in COLUMN_ALIASES.items():
-        # exact match first
-        match = None
-        for alias in aliases:
-            if alias in df.columns:
-                match = alias
-                break
-        # fallback: substring match
-        if not match:
-            for col in df.columns:
-                for alias in aliases:
-                    if alias in col:
-                        match = col
-                        break
-                if match:
-                    break
-        col_map[field] = match
+        matched_col = find_column(df.columns, aliases)
+        col_map[field] = matched_col
     return col_map
 
-def read_excel_safe(file_path, sheet_name=None, max_rows=None):
+def is_valid_data_row(row, col_map):
+    """Return True if this row has real candidate data."""
+    name = str(row.get(col_map.get('name'), '') if col_map.get('name') else '').strip()
+    email = str(row.get(col_map.get('email'), '') if col_map.get('email') else '').strip()
+
+    # Skip if name is a header-like string or '#'
+    if name.lower() in ('name', 'candidate name', '#', 'full name', 'candidate', 'trainer'):
+        return False
+
+    # Require at least non-empty name or non-empty email
+    return bool(name) or bool(email)
+
+def read_excel_safe(file_path, sheet_name=None, max_rows=None, header=0):
     """
-    Safely read Excel file selecting explicit engines:
+    Safely read Excel file selecting explicit engines with header row offset:
     - openpyxl for .xlsx
     - xlrd for .xls
-    Logs engine usage and catches exceptions cleanly.
     """
     fn_lower = file_path.lower()
     try:
         if fn_lower.endswith('.xlsx'):
-            logger.info(f"[excel] Reading {file_path} using openpyxl engine")
-            return pd.read_excel(file_path, sheet_name=sheet_name, engine='openpyxl', dtype=str, nrows=max_rows)
+            return pd.read_excel(file_path, sheet_name=sheet_name, header=header, engine='openpyxl', dtype=str, nrows=max_rows)
         elif fn_lower.endswith('.xls'):
-            logger.info(f"[excel] Reading {file_path} using xlrd engine")
-            return pd.read_excel(file_path, sheet_name=sheet_name, engine='xlrd', dtype=str, nrows=max_rows)
+            return pd.read_excel(file_path, sheet_name=sheet_name, header=header, engine='xlrd', dtype=str, nrows=max_rows)
         else:
-            logger.info(f"[excel] Reading {file_path} using default engine")
-            return pd.read_excel(file_path, sheet_name=sheet_name, dtype=str, nrows=max_rows)
+            return pd.read_excel(file_path, sheet_name=sheet_name, header=header, dtype=str, nrows=max_rows)
     except Exception as e:
         logger.error(f"[excel] {file_path} read failed with engine: {e}")
         try:
-            logger.info(f"[excel] Retrying {file_path} with fallback auto engine")
-            return pd.read_excel(file_path, sheet_name=sheet_name, dtype=str, nrows=max_rows)
+            return pd.read_excel(file_path, sheet_name=sheet_name, header=header, dtype=str, nrows=max_rows)
         except Exception as e2:
             logger.error(f"[excel] {file_path} read failed completely: {e2}")
             return None
 
 def parse_excel_to_candidates(file_path, max_rows=500):
     """
-    Read an Excel file. Return a list of candidate dicts.
+    Read an Excel file. Auto-detect header row and return candidate dicts.
     Each row = one candidate.
-    
-    Handles:
-    - xlsx via openpyxl
-    - xls via xlrd
-    - multiple sheets (all merged)
     """
     if not os.path.exists(file_path):
         logger.warning(f"[excel] file not found: {file_path}")
@@ -106,7 +195,7 @@ def parse_excel_to_candidates(file_path, max_rows=500):
         now = time.time()
         if cache_key in _EXCEL_CACHE:
             ts, cached_cands = _EXCEL_CACHE[cache_key]
-            if now - ts < 600: # 10 minutes cache
+            if now - ts < 600:
                 logger.info(f"[excel] Returning cached {len(cached_cands)} candidates for {file_path}")
                 return cached_cands
     except Exception:
@@ -116,18 +205,22 @@ def parse_excel_to_candidates(file_path, max_rows=500):
 
     all_rows = []
     try:
-        sheets = read_excel_safe(file_path, sheet_name=None)
+        # Detect header row first
+        header_idx = detect_header_row(file_path)
+        sheets = read_excel_safe(file_path, sheet_name=None, header=header_idx)
         if sheets is None:
             return []
-        
+
         if isinstance(sheets, dict):
             for sheet_name, df in sheets.items():
                 if df is None or df.empty:
                     continue
+                df = df.dropna(how='all')
                 df['__sheet__'] = sheet_name
                 all_rows.append(df)
         elif isinstance(sheets, pd.DataFrame):
             if not sheets.empty:
+                sheets = sheets.dropna(how='all')
                 sheets['__sheet__'] = 'Sheet1'
                 all_rows.append(sheets)
     except Exception as e:
@@ -145,10 +238,15 @@ def parse_excel_to_candidates(file_path, max_rows=500):
         df = df.head(max_rows)
 
     col_map = _normalize_columns(df)
+    logger.info(f"[excel] {file_path} header row: {header_idx}")
+    logger.info(f"[excel] {file_path} actual columns: {list(df.columns)}")
     logger.info(f"[excel] {file_path} column mapping: {col_map}")
 
     candidates = []
     for idx, row in df.iterrows():
+        if not is_valid_data_row(row, col_map):
+            continue
+
         def get(field):
             col = col_map.get(field)
             if not col:
@@ -172,18 +270,16 @@ def parse_excel_to_candidates(file_path, max_rows=500):
             'skills': cand_skills,
             'Experience': f"{cand_exp} yrs" if cand_exp and 'yr' not in cand_exp.lower() else (cand_exp or 'N/A'),
             'experience': cand_exp,
+            'Designation': get('designation'),
+            'Employer': get('current_employer'),
+            'Location': get('location'),
             'source': 'excel',
             'source_file': os.path.basename(file_path),
             'source_sheet': str(row.get('__sheet__', 'Sheet1')),
-            'source_row': int(idx) + 2, # +2 accounts for header
+            'source_row': int(idx) + header_idx + 2,
         }
 
-        # Keep only rows with SOME data
-        if cand_name or cand_email or cand_skills:
-            # Skip header-like rows (if any sneaked through)
-            if cand_name.lower() in ('name', 'full name', 'candidate name', 'trainer', 'trainer name'):
-                continue
-            candidates.append(cand)
+        candidates.append(cand)
 
     logger.info(f"[excel] {file_path} → {len(candidates)} candidates")
 
@@ -200,12 +296,12 @@ def excel_to_text(file_path, max_rows=100):
     Used as a Gemini fallback if column detection fails.
     """
     try:
-        df = read_excel_safe(file_path, max_rows=max_rows)
+        header_idx = detect_header_row(file_path)
+        df = read_excel_safe(file_path, max_rows=max_rows, header=header_idx)
         if df is None:
             return ''
         if isinstance(df, dict):
-            # merge sheets if dict returned
-            dfs = [d for d in df.values() if isinstance(d, pd.DataFrame) and not d.empty]
+            dfs = [d.dropna(how='all') for d in df.values() if isinstance(d, pd.DataFrame) and not d.empty]
             if dfs:
                 df = pd.concat(dfs, ignore_index=True)
             else:
