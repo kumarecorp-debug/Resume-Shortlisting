@@ -22,7 +22,8 @@ function formatTimestamp(isoString) {
         hour: 'numeric', minute: '2-digit'
     });
 
-    return `🕒 ${dateStr}, ${timeStr}`;
+    const clockSvg = window.icon ? window.icon('clock', 12) : '';
+    return `<span style="display: inline-flex; align-items: center; gap: 4px;">${clockSvg} <span>${dateStr}, ${timeStr}</span></span>`;
 }
 
 // Client-side local timezone date range calculation
@@ -300,7 +301,7 @@ function fetchSummaryAndRender(mailboxFilter) {
 function formatHeaderTitle(count, mode, period, fromDateStr, toDateStr) {
     const formattedCount = (count || 0).toLocaleString('en-US');
     const isCopied = mode === 'copied';
-    const icon = isCopied ? '📋' : '🎯';
+    const iconSvg = isCopied ? (window.icon ? window.icon('copy', 16) : '') : (window.icon ? window.icon('target', 16) : '');
 
     const formatDateObj = (dateStr) => {
         if (!dateStr) return '';
@@ -313,37 +314,34 @@ function formatHeaderTitle(count, mode, period, fromDateStr, toDateStr) {
     const fromFormatted = formatDateObj(fromDateStr);
     const toFormatted = formatDateObj(toDateStr);
 
+    let text = '';
     if (period === 'today') {
         const pText = isCopied ? 'copied today' : 'seen but not copied today';
-        return `${icon} ${formattedCount} ${pText} (${toFormatted})`;
-    }
-    if (period === 'yesterday') {
+        text = `${formattedCount} ${pText} (${toFormatted})`;
+    } else if (period === 'yesterday') {
         const pText = isCopied ? 'copied yesterday' : 'seen but not copied yesterday';
-        return `${icon} ${formattedCount} ${pText} (${fromFormatted})`;
-    }
-    if (period === '7d') {
+        text = `${formattedCount} ${pText} (${fromFormatted})`;
+    } else if (period === '7d') {
         const pText = isCopied ? 'copied in the last 7 days' : 'seen but not copied in the last 7 days';
-        return `${icon} ${formattedCount} ${pText} (${fromFormatted} – ${toFormatted})`;
-    }
-    if (period === '14d') {
+        text = `${formattedCount} ${pText} (${fromFormatted} – ${toFormatted})`;
+    } else if (period === '14d') {
         const pText = isCopied ? 'copied in the last 14 days' : 'seen but not copied in the last 14 days';
-        return `${icon} ${formattedCount} ${pText} (${fromFormatted} – ${toFormatted})`;
-    }
-    if (period === '30d') {
+        text = `${formattedCount} ${pText} (${fromFormatted} – ${toFormatted})`;
+    } else if (period === '30d') {
         const pText = isCopied ? 'copied in the last 30 days' : 'seen but not copied in the last 30 days';
-        return `${icon} ${formattedCount} ${pText} (${fromFormatted} – ${toFormatted})`;
-    }
-    if (period === 'custom') {
+        text = `${formattedCount} ${pText} (${fromFormatted} – ${toFormatted})`;
+    } else if (period === 'custom') {
         const pText = isCopied ? 'copied in date range' : 'seen but not copied in date range';
-        return `${icon} ${formattedCount} ${pText} (${fromFormatted} – ${toFormatted})`;
+        text = `${formattedCount} ${pText} (${fromFormatted} – ${toFormatted})`;
+    } else if (period === 'used') {
+        text = `${formattedCount} already-used trainers`;
+    } else if (period === 'never_used' || period === 'never') {
+        text = `${formattedCount} seen but never copied`;
+    } else {
+        text = isCopied ? `${formattedCount} copied trainers` : `${formattedCount} uncopied trainers`;
     }
-    if (period === 'used') {
-        return `📋 ${formattedCount} already-used trainers`;
-    }
-    if (period === 'never_used' || period === 'never') {
-        return `🎯 ${formattedCount} seen but never copied`;
-    }
-    return isCopied ? `📋 ${formattedCount} copied trainers` : `🎯 ${formattedCount} uncopied trainers`;
+
+    return `<span style="display: inline-flex; align-items: center; gap: 6px;">${iconSvg} <span>${text}</span></span>`;
 }
 
 function renderCopiedHistoryContent(summary) {
@@ -362,29 +360,40 @@ function renderCopiedHistoryContent(summary) {
         const totalToday = (summary && summary.today) || 0;
         const totalWeek = (summary && summary.this_week) || 0;
 
-        // Stat cards HTML with active shortcut highlighting
+        // Stat cards HTML with active shortcut highlighting (Lucide SVG Icons)
         const isCard1Active = mode === 'copied' && period === '30d';
         const isCard2Active = mode === 'not_copied' && (period === '30d' || period === 'never_used');
         const isCard3Active = mode === 'copied' && period === 'today';
         const isCard4Active = mode === 'copied' && period === '7d';
 
+        const copyIcon = window.icon ? window.icon('copy', 16) : '';
+        const targetIcon = window.icon ? window.icon('target', 16) : '';
+        const calendarIcon = window.icon ? window.icon('calendar', 16) : '';
+        const clockIcon = window.icon ? window.icon('clock', 16) : '';
+        const downloadIcon = window.icon ? window.icon('download', 14) : '';
+        const userIcon = window.icon ? window.icon('user', 14) : '';
+        const mailIcon = window.icon ? window.icon('mail', 14) : '';
+        const phoneIcon = window.icon ? window.icon('phone', 14) : '';
+        const inboxIcon = window.icon ? window.icon('inbox', 14) : '';
+        const searchIcon = window.icon ? window.icon('search', 14) : '';
+
         let statCardsHtml = `
             <div class="copied-stat-grid">
                 <div onclick="setCopiedFilter('copied', '30d')" class="copied-stat-card ${isCard1Active ? 'active' : ''}">
-                    <div style="font-size: 1rem; font-weight: 700; color: var(--text-primary);">📋 ${totalCopied.toLocaleString()}</div>
-                    <div style="font-size: 0.7rem; color: var(--text-secondary); margin-top: 2px;">Copied (30d)</div>
+                    <div class="copied-stat-val" style="color: var(--text-primary);">${copyIcon} <span>${totalCopied.toLocaleString()}</span></div>
+                    <div class="copied-stat-label">Copied (30d)</div>
                 </div>
                 <div onclick="setCopiedFilter('not_copied', '30d')" class="copied-stat-card ${isCard2Active ? 'active' : ''}">
-                    <div style="font-size: 1rem; font-weight: 700; color: #4F46E5;">🎯 ${totalNeverUsed.toLocaleString()}</div>
-                    <div style="font-size: 0.7rem; color: var(--text-secondary); margin-top: 2px;">Seen, not copied</div>
+                    <div class="copied-stat-val" style="color: var(--accent);">${targetIcon} <span>${totalNeverUsed.toLocaleString()}</span></div>
+                    <div class="copied-stat-label">Seen, not copied</div>
                 </div>
                 <div onclick="setCopiedFilter('copied', 'today')" class="copied-stat-card ${isCard3Active ? 'active' : ''}">
-                    <div style="font-size: 1rem; font-weight: 700; color: #059669;">📅 ${totalToday.toLocaleString()}</div>
-                    <div style="font-size: 0.7rem; color: var(--text-secondary); margin-top: 2px;">Today</div>
+                    <div class="copied-stat-val" style="color: var(--success, #059669);">${calendarIcon} <span>${totalToday.toLocaleString()}</span></div>
+                    <div class="copied-stat-label">Today</div>
                 </div>
                 <div onclick="setCopiedFilter('copied', '7d')" class="copied-stat-card ${isCard4Active ? 'active' : ''}">
-                    <div style="font-size: 1rem; font-weight: 700; color: #D97706;">⏱️ ${totalWeek.toLocaleString()}</div>
-                    <div style="font-size: 0.7rem; color: var(--text-secondary); margin-top: 2px;">This week</div>
+                    <div class="copied-stat-val" style="color: var(--warning, #D97706);">${clockIcon} <span>${totalWeek.toLocaleString()}</span></div>
+                    <div class="copied-stat-label">This week</div>
                 </div>
             </div>
         `;
@@ -409,7 +418,7 @@ function renderCopiedHistoryContent(summary) {
         filtersList.forEach(f => {
             const isActive = period === f.key;
             pillsHtml += `
-                <button type="button" onclick="setCopiedPeriod('${f.key}')" style="padding: 4px 12px; border-radius: 9999px; font-size: 0.78rem; font-weight: 600; cursor: pointer; border: 1px solid ${isActive ? '#4F46E5' : 'var(--border)'}; ${isActive ? 'background: #4F46E5; color: white;' : 'background: var(--bg-card); color: var(--text-primary);'} transition: all 0.2s;">
+                <button type="button" onclick="setCopiedPeriod('${f.key}')" style="padding: 4px 12px; border-radius: 9999px; font-size: 0.78rem; font-weight: 600; cursor: pointer; border: 1px solid ${isActive ? 'var(--accent)' : 'var(--border)'}; ${isActive ? 'background: var(--accent); color: white;' : 'background: var(--bg-card); color: var(--text-primary);'} transition: all 0.2s;">
                     ${f.label}
                 </button>
             `;
@@ -435,7 +444,7 @@ function renderCopiedHistoryContent(summary) {
             const bounds = getDateBounds('custom', window._copiedCustomFrom, window._copiedCustomTo);
             customDateBoxHtml = `
                 <div class="custom-date-box">
-                    <div style="font-weight: 700; font-size: 0.85rem; color: var(--text-primary); margin-bottom: 8px;">📅 Custom date range</div>
+                    <div style="font-weight: 700; font-size: 0.85rem; color: var(--text-primary); margin-bottom: 8px; display: flex; align-items: center; gap: 6px;">${calendarIcon} Custom date range</div>
                     <div style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-bottom: 10px;">
                         <label style="font-size: 0.8rem; font-weight: 600; color: var(--text-secondary);">From:
                             <input type="date" id="custom-date-from" value="${escapeHtml(bounds.from)}" class="form-input" style="padding: 4px 8px; font-size: 0.82rem; margin-left: 4px;">
@@ -445,29 +454,29 @@ function renderCopiedHistoryContent(summary) {
                         </label>
                     </div>
                     <div style="display: flex; gap: 8px; align-items: center;">
-                        <button type="button" onclick="applyCustomDateRange()" style="padding: 4px 14px; font-size: 0.8rem; font-weight: 700; background: #4F46E5; color: white; border: none; border-radius: var(--radius-md); cursor: pointer;">Apply</button>
+                        <button type="button" onclick="applyCustomDateRange()" style="padding: 4px 14px; font-size: 0.8rem; font-weight: 700; background: var(--accent); color: white; border: none; border-radius: var(--radius-md); cursor: pointer;">Apply</button>
                         <button type="button" onclick="cancelCustomDateRange()" style="padding: 4px 12px; font-size: 0.8rem; font-weight: 600; background: var(--bg-card); color: var(--text-secondary); border: 1px solid var(--border); border-radius: var(--radius-md); cursor: pointer;">Cancel</button>
                     </div>
                 </div>
             `;
         }
 
-        // Empty state messaging per mode and filter (Part 13)
+        // Empty state messaging per mode and filter
         const emptyStateMessages = {
-            'copied_today': "📋 You haven't copied any trainers today.",
-            'not_copied_today': "🎯 All trainers seen today have been copied. Great work! 🎉",
-            'copied_yesterday': "📋 You didn't copy any trainers yesterday.",
-            'not_copied_yesterday': "🎯 No uncopied trainers from yesterday.",
-            'copied_7d': "📋 No trainers copied in the last 7 days.",
-            'not_copied_7d': "🎯 All trainers from the last 7 days have been copied. Great work! 🎉",
-            'copied_14d': "📋 No trainers copied in the last 14 days.",
-            'not_copied_14d': "🎯 All trainers from the last 14 days have been copied. Great work! 🎉",
-            'copied_30d': "📋 No trainers copied in the last 30 days.",
-            'not_copied_30d': "🎯 No uncopied trainers found in the last 30 days.",
-            'copied_custom': "📋 No trainers copied in this date range.",
-            'not_copied_custom': "🎯 No seen-but-not-copied trainers in this date range.",
+            'copied_today': "You haven't copied any trainers today.",
+            'not_copied_today': "All trainers seen today have been copied. Great work!",
+            'copied_yesterday': "You didn't copy any trainers yesterday.",
+            'not_copied_yesterday': "No uncopied trainers from yesterday.",
+            'copied_7d': "No trainers copied in the last 7 days.",
+            'not_copied_7d': "All trainers from the last 7 days have been copied. Great work!",
+            'copied_14d': "No trainers copied in the last 14 days.",
+            'not_copied_14d': "All trainers from the last 14 days have been copied. Great work!",
+            'copied_30d': "No trainers copied in the last 30 days.",
+            'not_copied_30d': "No uncopied trainers found in the last 30 days.",
+            'copied_custom': "No trainers copied in this date range.",
+            'not_copied_custom': "No seen-but-not-copied trainers in this date range.",
             'copied_used': "You haven't copied any candidates yet.",
-            'not_copied_never_used': "All candidates you've seen have been copied. 🎉",
+            'not_copied_never_used': "All candidates you've seen have been copied.",
             'copied_all': "No copied trainers yet."
         };
 
@@ -483,7 +492,7 @@ function renderCopiedHistoryContent(summary) {
                 </div>
                 ${customDateBoxHtml}
                 <div style="text-align: center; padding: 40px 16px;">
-                    <div style="font-size: 2.8rem; margin-bottom: 10px;">${mode === 'copied' ? '📋' : '🎯'}</div>
+                    <div style="font-size: 2.2rem; margin-bottom: 10px; color: var(--text-muted); display: flex; justify-content: center;">${mode === 'copied' ? copyIcon : targetIcon}</div>
                     <h4 style="font-weight: 700; color: var(--text-primary); margin: 0 0 6px 0;">${emptyMsg}</h4>
                     <p style="color: var(--text-muted); font-size: 0.85rem; margin: 0;">Try selecting a different time filter or mode above.</p>
                 </div>
@@ -536,7 +545,7 @@ function renderCopiedHistoryContent(summary) {
 
             <div style="margin-bottom: 12px; font-weight: 700; font-size: 0.88rem; color: var(--text-primary); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
                 <span>${headerTitle}</span>
-                <a href="/api/copied-history/export" class="btn-icon-subtle" style="text-decoration: none; font-size: 0.8rem;" download>📥 Export CSV</a>
+                <a href="/api/copied-history/export" class="btn-icon-subtle" style="text-decoration: none; font-size: 0.8rem; display: inline-flex; align-items: center; gap: 4px;" download>${downloadIcon} Export CSV</a>
             </div>
 
             ${mode === 'copied' ? `
@@ -577,25 +586,29 @@ function renderCopiedHistoryContent(summary) {
                             const others = c.all_timestamps.slice(1).map(ts => formatTimestamp(ts));
                             tooltip += `. Also copied: ${others.join('; ')}`;
                         }
-                        countBadge = `<span class="tag-copy-count" style="background: #e0e7ff; color: #3730a3; font-size: 0.75rem; font-weight: 700; padding: 2px 7px; border-radius: 10px; margin-left: 6px;" title="${escapeHtml(tooltip)}">[× ${c.copy_count}]</span>`;
+                        countBadge = `<span class="tag-copy-count" style="background: var(--accent-light, #e0e7ff); color: var(--accent); font-size: 0.75rem; font-weight: 700; padding: 2px 7px; border-radius: 10px; margin-left: 6px;" title="${escapeHtml(tooltip)}">[× ${c.copy_count}]</span>`;
                     }
 
                     if (mode === 'not_copied' || c.never_used) {
-                        countBadge = `<span style="background: #fef3c7; color: #92400e; font-size: 0.72rem; font-weight: 700; padding: 2px 7px; border-radius: 10px; margin-left: 6px;">[Uncopied]</span>`;
+                        countBadge = `<span style="background: var(--warning-bg, #fef3c7); color: var(--warning, #92400e); font-size: 0.72rem; font-weight: 700; padding: 2px 7px; border-radius: 10px; margin-left: 6px;">[Uncopied]</span>`;
                     }
 
                     html += `
-                        <div class="copied-card" data-search-text="${escapeHtml(c.candidate_name || '')} ${escapeHtml(c.candidate_email || '')} ${escapeHtml(c.candidate_phone || '')} ${escapeHtml(c.mailbox_account || '')} ${escapeHtml(c.job_description || '')}" style="background: var(--bg-primary); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 12px 14px; font-size: 0.88rem;">
+                        <div class="copied-card" data-search-text="${escapeHtml(c.candidate_name || '')} ${escapeHtml(c.candidate_email || '')} ${escapeHtml(c.candidate_phone || '')} ${escapeHtml(c.mailbox_account || '')} ${escapeHtml(c.job_description || '')}" style="background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 12px 14px; font-size: 0.88rem;">
                             <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 4px;">
-                                <strong style="color: var(--text-primary); font-size: 0.92rem; display: inline-flex; align-items: center;">
-                                    👤 ${escapeHtml(c.candidate_name || 'Candidate')} ${countBadge}
+                                <strong style="color: var(--text-primary); font-size: 0.92rem; display: inline-flex; align-items: center; gap: 6px;">
+                                    <span style="color: var(--text-muted); display: inline-flex;">${userIcon}</span> ${escapeHtml(c.candidate_name || 'Candidate')} ${countBadge}
                                 </strong>
                                 <span style="color: var(--text-muted); font-size: 0.78rem;">${timeStr}</span>
                             </div>
-                            <div style="color: var(--text-secondary); margin-bottom: 2px;">📧 ${escapeHtml(c.candidate_email || 'N/A')}</div>
-                            ${c.candidate_phone ? `<div style="color: var(--text-secondary); margin-bottom: 2px;">📞 ${escapeHtml(c.candidate_phone)}</div>` : ''}
-                            <div style="color: var(--text-muted); font-size: 0.8rem; margin-top: 4px;">📬 Mail: ${escapeHtml(c.mailbox_account || '')}</div>
-                            ${c.job_description ? `<div style="color: var(--accent); font-size: 0.8rem; font-weight: 600;">🔍 Search: "${escapeHtml(c.job_description)}"</div>` : ''}
+                            <div style="color: var(--text-secondary); margin-bottom: 2px; display: flex; align-items: center; gap: 6px;">
+                                <span style="color: var(--text-muted); display: inline-flex;">${mailIcon}</span> ${escapeHtml(c.candidate_email || 'N/A')}
+                            </div>
+                            ${c.candidate_phone ? `<div style="color: var(--text-secondary); margin-bottom: 2px; display: flex; align-items: center; gap: 6px;"><span style="color: var(--text-muted); display: inline-flex;">${phoneIcon}</span> ${escapeHtml(c.candidate_phone)}</div>` : ''}
+                            <div style="color: var(--text-muted); font-size: 0.8rem; margin-top: 4px; display: flex; align-items: center; gap: 6px;">
+                                <span style="color: var(--text-muted); display: inline-flex;">${inboxIcon}</span> Mail: ${escapeHtml(c.mailbox_account || '')}
+                            </div>
+                            ${c.job_description ? `<div style="color: var(--accent); font-size: 0.8rem; font-weight: 600; display: flex; align-items: center; gap: 6px; margin-top: 4px;"><span style="color: var(--accent); display: inline-flex;">${searchIcon}</span> Search: "${escapeHtml(c.job_description)}"</div>` : ''}
                         </div>
                     `;
                 });
@@ -614,7 +627,7 @@ function renderCopiedHistoryContent(summary) {
         const container = document.getElementById('copied-panel-content') || document.getElementById('copied-history-body');
         if (container) {
             container.innerHTML = `
-                <div style="padding: 24px; text-align: center; color: #64748B;">
+                <div style="padding: 24px; text-align: center; color: var(--text-muted);">
                     ⚠️ Failed to render entries. 
                     <button onclick="fetchCopiedHistoryPanel()" style="margin-left: 8px; padding: 4px 12px;">
                         Retry
