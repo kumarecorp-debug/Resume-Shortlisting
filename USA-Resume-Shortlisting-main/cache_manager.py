@@ -7,11 +7,35 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-EXCEL_CACHE_DIR = Path('cache/excel_candidates')
-PDF_CACHE_DIR = Path('cache/pdf_extractions')
+if os.environ.get("VERCEL") or os.environ.get("AWS_LAMBDA_FUNCTION_NAME"):
+    import tempfile
+    BASE_CACHE_DIR = Path(tempfile.gettempdir()) / 'cache'
+else:
+    BASE_CACHE_DIR = Path('cache')
 
-EXCEL_CACHE_DIR.mkdir(parents=True, exist_ok=True)
-PDF_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+EXCEL_CACHE_DIR = BASE_CACHE_DIR / 'excel_candidates'
+PDF_CACHE_DIR = BASE_CACHE_DIR / 'pdf_extractions'
+
+def ensure_cache_dirs():
+    global EXCEL_CACHE_DIR, PDF_CACHE_DIR
+    try:
+        EXCEL_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        PDF_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    except Exception:
+        import tempfile
+        BASE_CACHE_DIR = Path(tempfile.gettempdir()) / 'cache'
+        EXCEL_CACHE_DIR = BASE_CACHE_DIR / 'excel_candidates'
+        PDF_CACHE_DIR = BASE_CACHE_DIR / 'pdf_extractions'
+        try:
+            EXCEL_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+            PDF_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        except Exception as e:
+            logger.warning(f"[cache] Failed to create cache dir: {e}")
+
+try:
+    ensure_cache_dirs()
+except Exception as e:
+    logger.warning(f"[cache] Init warning: {e}")
 
 def get_file_cache_key(file_path: str) -> str:
     try:
@@ -77,4 +101,7 @@ def cleanup_stale_cache(max_age_days=30):
             except Exception:
                 pass
 
-cleanup_stale_cache()
+try:
+    cleanup_stale_cache()
+except Exception as ex:
+    logger.warning(f"[cache] Stale cache cleanup error: {ex}")

@@ -1907,7 +1907,9 @@ def verify_gemini_startup():
     logging.error("[startup] ❌ No working Gemini model found!")
     return None
 
-verify_gemini_startup()
-
 if __name__ == '__main__':
+    try:
+        verify_gemini_startup()
+    except Exception as ex:
+        logging.warning(f"[startup] verify_gemini_startup error: {ex}")
     app.run(debug=True)

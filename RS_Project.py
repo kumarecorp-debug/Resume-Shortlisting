@@ -76,7 +76,10 @@ else:
         import tempfile
         RESUME_FOLDER = os.path.join(tempfile.gettempdir(), "Resumes")
 
-os.makedirs(RESUME_FOLDER, exist_ok=True)
+try:
+    os.makedirs(RESUME_FOLDER, exist_ok=True)
+except Exception:
+    pass
 
 OUTPUT_CSV = os.path.join(RESUME_FOLDER, "resume_analysis.csv")
 CLIENT_SECRET_FILE = os.path.join(SCRIPT_DIR, "client.json")
