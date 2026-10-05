@@ -80,19 +80,22 @@
                     {% endif %}
                 {% endwith %}
 
-                <!-- Main Job Query Field -->
+                <!-- Main Job Query Field (Google Search UI/UX) -->
                 <div class="form-group-compact">
                     <label for="job_query" class="field-label">
                         <span data-icon="search" data-size="14"></span> Enter Job Role, Keywords, or Paste Full Job Description (supports <code>AND</code> / <code>OR</code>):
                     </label>
-                    <textarea 
-                        name="job_query" 
-                        id="job_query" 
-                        class="form-textarea" 
-                        rows="2"
-                        placeholder="e.g. Python AND SQL, SFDC agentic core workflows, or paste a full Job Description..." 
-                        required
-                    >{{ job_query if job_query else '' }}</textarea>
+                    <div class="textarea-wrapper">
+                        <span class="google-search-icon" data-icon="search" data-size="18"></span>
+                        <textarea 
+                            name="job_query" 
+                            id="job_query" 
+                            class="form-textarea google-search-input" 
+                            rows="2"
+                            placeholder="e.g. Python AND SQL, SFDC agentic core workflows, or paste a full Job Description..." 
+                            required
+                        >{{ job_query if job_query else '' }}</textarea>
+                    </div>
                 </div>
 
                 <!-- Form Options: Experience & Excel Checkbox -->
