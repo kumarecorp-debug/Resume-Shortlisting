@@ -2,6 +2,7 @@ import os
 import time
 import logging
 import pandas as pd
+import cache_manager
 
 logger = logging.getLogger(__name__)
 
@@ -223,6 +224,12 @@ def parse_excel_to_candidates(file_path, max_rows=500):
         logger.warning(f"[excel] file not found: {file_path}")
         return []
 
+    # 1. Check persistent disk cache
+    cached_disk = cache_manager.get_cached_excel(file_path)
+    if cached_disk is not None:
+        return cached_disk
+
+    # 2. Check in-memory cache
     try:
         mtime = os.path.getmtime(file_path)
         cache_key = (file_path, mtime)
@@ -230,7 +237,6 @@ def parse_excel_to_candidates(file_path, max_rows=500):
         if cache_key in _EXCEL_CACHE:
             ts, cached_cands = _EXCEL_CACHE[cache_key]
             if now - ts < 600:
-                logger.info(f"[excel] Returning cached {len(cached_cands)} candidates for {file_path}")
                 return cached_cands
     except Exception:
         pass
@@ -350,6 +356,7 @@ def parse_excel_to_candidates(file_path, max_rows=500):
 
     try:
         _EXCEL_CACHE[cache_key] = (time.time(), candidates)
+        cache_manager.set_cached_excel(file_path, candidates)
     except Exception:
         pass
 

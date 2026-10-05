@@ -5,6 +5,7 @@ import json
 import logging
 logger = logging.getLogger(__name__)
 import matcher
+import cache_manager
 
 # Silence oauth2client file_cache warning
 logging.getLogger('googleapiclient.discovery_cache').setLevel(logging.ERROR)
@@ -1917,16 +1918,22 @@ def main(job_query, account_email="recruiter@ecorptrainings.com", max_candidates
                         src_type = 'pdf' if fn_low.endswith('.pdf') else ('docx' if fn_low.endswith('.docx') else 'doc')
                         scan_summary[src_type if src_type in scan_summary else 'pdf'] += 1
 
-                        resume_text = extract_text_from_bytes(file_bytes, filename)
-                        candidate = extract_candidate_entities_with_ai(
-                            resume_text=resume_text,
-                            email_body=email_body,
-                            job_description=job_query,
-                            sender_header=sender_header,
-                            filename=filename,
-                            reply_to=reply_to_header,
-                            subject=subject
-                        )
+                        pdf_key = cache_manager.get_bytes_cache_key(file_bytes, filename)
+                        cached_cand = cache_manager.get_cached_pdf(pdf_key)
+                        if cached_cand is not None:
+                            candidate = dict(cached_cand)
+                        else:
+                            resume_text = extract_text_from_bytes(file_bytes, filename)
+                            candidate = extract_candidate_entities_with_ai(
+                                resume_text=resume_text,
+                                email_body=email_body,
+                                job_description=job_query,
+                                sender_header=sender_header,
+                                filename=filename,
+                                reply_to=reply_to_header,
+                                subject=subject
+                            )
+                            cache_manager.set_cached_pdf(pdf_key, candidate)
 
                         candidate['Source'] = src_type
                         candidate['source'] = src_type

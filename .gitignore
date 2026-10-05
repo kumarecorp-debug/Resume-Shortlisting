@@ -28,3 +28,5 @@ ENV/
 .kilo/
 .DS_Store
 Thumbs.db
+cache/
+scratch/
