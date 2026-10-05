@@ -61,6 +61,28 @@ supabase_client: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
+def verify_gemini_startup():
+    api_key = os.environ.get('GEMINI_API_KEY')
+    if not api_key:
+        logging.error("[startup] GEMINI_API_KEY missing")
+        return
+    try:
+        import google.generativeai as legacy_genai
+        legacy_genai.configure(api_key=api_key)
+        for name in ["gemini-3.8-flash", "gemini-3.6-flash"]:
+            try:
+                m = legacy_genai.GenerativeModel(name)
+                if m.generate_content("hi").text:
+                    logging.info(f"[startup] ✅ Gemini ready: {name}")
+                    return
+            except Exception as e:
+                logging.warning(f"[startup] {name} failed: {e}")
+        logging.error("[startup] ❌ No working Gemini model")
+    except Exception as ex:
+        logging.warning(f"[startup] Gemini verification note: {ex}")
+
+verify_gemini_startup()
+
 if not os.environ.get("VERCEL"):
     try:
         os.chdir(project_root)
@@ -314,7 +336,7 @@ def compute_date_display(preset, df_str, dt_str):
         pass
     return None
 
-def execute_full_candidate_search(job_query, selected_account, max_candidates=200, date_preset=None, date_from=None, date_to=None, include_excel=True):
+def execute_full_candidate_search(job_query, selected_account, max_candidates=25, date_preset=None, date_from=None, date_to=None, include_excel=False):
     resume_folder = RS_Project.RESUME_FOLDER
     try:
         if not os.path.exists(resume_folder):
@@ -505,7 +527,7 @@ def process():
         except (ValueError, TypeError):
             min_exp = None
 
-        max_candidates = int(request.form.get('max_candidates') or request.args.get('max_candidates') or 50)
+        max_candidates = int(request.form.get('max_candidates') or request.args.get('max_candidates') or 25)
         user_search_mode = request.form.get('search_mode') or request.args.get('search_mode') or ('history' if time_window != 'any' else 'live')
 
         # SHOW = COPIED MODE: Filter by copied_history.copied_at timestamp (No Gmail / Gemini API calls)
@@ -1502,9 +1524,9 @@ def api_search():
             logging.info("Search cache expired or missing; rerunning")
 
     try:
-        max_candidates = int(request.args.get('max_candidates') or request.form.get('max_candidates') or 50)
+        max_candidates = int(request.args.get('max_candidates') or request.form.get('max_candidates') or 25)
     except (ValueError, TypeError):
-        max_candidates = 50
+        max_candidates = 25
 
     df, scan_summary = execute_full_candidate_search(job_query, selected_account, max_candidates=max_candidates, date_preset=time_window, date_from=date_from, date_to=date_to)
     

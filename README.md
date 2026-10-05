@@ -4,9 +4,9 @@ An intelligent automated recruitment dashboard that integrates with Gmail to sea
 
 ## 🚀 Key Features
 
-- **Smart Gmail Search**: Boolean search (`AND`, `OR`), multi-word queries with natural search semantics, and automatic keyword extraction from full Job Descriptions.
+- **Smart Gmail Search**: `has:attachment` Boolean search (`AND`, `OR`), multi-word queries, disk query caching, and exponential backoff.
 - **Multi-Account Switching**: Seamlessly switch between configured Gmail mailboxes (`recruiter@ecorptrainings.com`, `jai.ecorp@gmail.com`, `kumar.ecorp@gmail.com`, `pushpa@ecorptrainings.com`, `mahi@ecorptrainings.com`, `contact@ecorptrainings.com`).
-- **AI-Powered Extraction**: Extracts candidate name, email, phone number, total experience, and technical skill set using Gemini AI.
+- **AI-Powered Extraction**: Uses working Gemini models (`gemini-3.8-flash`, `gemini-3.6-flash`, `gemini-3.5-flash`) for precise PDF/DOCX resume extraction.
 - **Match Scoring & Ranking**: Computes a 0–100 match score, identifies matched JD skills, provides a one-line justification, and ranks candidates in descending order.
 - **Candidate Status Tracking (Feature 3)**:
   - Persistent status per candidate (`🟢 New`, `🔵 Used`, `🟡 Skipped`).

@@ -568,12 +568,7 @@
                         <span style="color: #64748b; font-size: 0.84rem;">(Optional — leave blank to show all candidates)</span>
                     </div>
 
-                    <div style="margin-top: 4px; margin-bottom: 10px; display: flex; align-items: center; gap: 8px;">
-                        <input type="checkbox" name="include_excel" id="include_excel" value="1" {% if include_excel is not defined or include_excel %}checked{% endif %} style="cursor: pointer; transform: scale(1.15);">
-                        <label for="include_excel" style="font-weight: 600; color: #0f172a; font-size: 0.92rem; cursor: pointer;">
-                            📊 Include Excel attachments (.xlsx / .xls)
-                        </label>
-                    </div>
+
 
                     <!-- Time Window & Show Filter Section -->
                     <div class="time-window-section" style="margin-top: 14px; margin-bottom: 16px; background: #ffffff; padding: 14px 16px; border-radius: 10px; border: 1.5px solid #cbd5e1; box-shadow: 0 1px 3px rgba(0,0,0,0.03);">
@@ -668,7 +663,7 @@
 
             {% if scan_summary %}
                 <div style="background: #f0f9ff; border: 1px solid #bae6fd; color: #0369a1; padding: 10px 16px; border-radius: 8px; font-size: 0.9rem; font-weight: 600; margin-bottom: 14px;">
-                    📊 <strong>Scan Summary:</strong> Scanned {{ scan_summary.get('pdf', 0) }} PDFs, {{ scan_summary.get('docx', 0) }} DOCX, {{ scan_summary.get('xlsx', 0) + scan_summary.get('xls', 0) }} Excel files ({{ scan_summary.get('xlsx_candidates', 0) }} rows total) &nbsp;·&nbsp; Found {{ total_matches }} matching candidates
+                    Searched '{{ job_query or '' }}' &nbsp;·&nbsp; {{ scan_summary.get('pdf', 0) + scan_summary.get('docx', 0) }} resumes scanned &nbsp;·&nbsp; {{ total_matches }} matches
                 </div>
             {% endif %}
 
