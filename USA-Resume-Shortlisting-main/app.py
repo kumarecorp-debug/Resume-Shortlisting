@@ -1878,5 +1878,36 @@ def debug_search_limits():
         'requested_max': max_c,
     })
 
+def verify_gemini_startup():
+    # TODO: Note - google.generativeai package support has ended notice; migrate to google.genai in future refactor.
+    import google.generativeai as legacy_genai
+    api_key = os.environ.get('GEMINI_API_KEY')
+    if not api_key and hasattr(RS_Project, 'GEMINI_API_KEY'):
+        api_key = RS_Project.GEMINI_API_KEY
+    if not api_key:
+        logging.error("[startup] ❌ GEMINI_API_KEY not set")
+        return None
+    
+    try:
+        legacy_genai.configure(api_key=api_key)
+    except Exception as ex:
+        logging.warning(f"[startup] genai configure error: {ex}")
+    
+    # Try each model in priority order
+    for model_name in ["gemini-3.8-flash", "gemini-3.6-flash"]:
+        try:
+            model = legacy_genai.GenerativeModel(model_name)
+            response = model.generate_content("hi")
+            if response and getattr(response, 'text', None):
+                logging.info(f"[startup] ✅ Gemini ready: {model_name}")
+                return model_name
+        except Exception as e:
+            logging.warning(f"[startup] model {model_name} failed: {e}")
+    
+    logging.error("[startup] ❌ No working Gemini model found!")
+    return None
+
+verify_gemini_startup()
+
 if __name__ == '__main__':
     app.run(debug=True)

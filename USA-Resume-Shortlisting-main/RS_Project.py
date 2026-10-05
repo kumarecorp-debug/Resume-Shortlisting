@@ -567,7 +567,18 @@ def ai_extract_batch_from_excel(excel_text, source_file):
     try:
         raw_json = ""
         if genai_client:
-            models_to_try = [WORKING_GEMINI_MODEL] if WORKING_GEMINI_MODEL else ["gemini-1.5-flash-latest", "gemini-1.5-flash", "gemini-2.0-flash", "gemini-1.5-pro"]
+            # TODO: Note - google.generativeai package support has ended notice; migrate to google.genai in future refactor.
+            DEFAULT_GEMINI_MODELS = [
+                "gemini-3.8-flash",       # newest, primary
+                "gemini-3.6-flash",       # stable fallback
+                "gemini-3.5-flash",       # older fallback
+                "gemini-flash-latest",    # always-current fallback
+            ]
+            models_to_try = [WORKING_GEMINI_MODEL] if WORKING_GEMINI_MODEL and WORKING_GEMINI_MODEL in DEFAULT_GEMINI_MODELS else []
+            for m in DEFAULT_GEMINI_MODELS:
+                if m not in models_to_try:
+                    models_to_try.append(m)
+
             last_err = None
             for model_id in models_to_try:
                 if not model_id: continue
@@ -579,15 +590,19 @@ def ai_extract_batch_from_excel(excel_text, source_file):
                     )
                     if response and getattr(response, 'text', None):
                         raw_json = response.text
+                        WORKING_GEMINI_MODEL = model_id
                         break
                 except Exception as m_err:
                     last_err = m_err
+                    if WORKING_GEMINI_MODEL == model_id:
+                        WORKING_GEMINI_MODEL = None
                     logging.warning(f"[excel] Gemini batch model {model_id} failed: {m_err}")
             if not raw_json and last_err:
                 raise last_err
         else:
+            # TODO: Note - google.generativeai package support has ended notice; migrate to google.genai in future refactor.
             import google.generativeai as legacy_genai
-            model = legacy_genai.GenerativeModel('gemini-1.5-flash')
+            model = legacy_genai.GenerativeModel('gemini-3.8-flash')
             res = model.generate_content(prompt)
             raw_json = res.text
 
@@ -1598,7 +1613,18 @@ Content:
                     automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True)
                 )
                 response = None
-                models_to_try = [WORKING_GEMINI_MODEL] if WORKING_GEMINI_MODEL else ["gemini-1.5-flash-latest", "gemini-1.5-flash", "gemini-2.0-flash", "gemini-1.5-pro"]
+                # TODO: Note - google.generativeai package support has ended notice; migrate to google.genai in future refactor.
+                DEFAULT_GEMINI_MODELS = [
+                    "gemini-3.8-flash",       # newest, primary
+                    "gemini-3.6-flash",       # stable fallback
+                    "gemini-3.5-flash",       # older fallback
+                    "gemini-flash-latest",    # always-current fallback
+                ]
+                models_to_try = [WORKING_GEMINI_MODEL] if WORKING_GEMINI_MODEL and WORKING_GEMINI_MODEL in DEFAULT_GEMINI_MODELS else []
+                for m in DEFAULT_GEMINI_MODELS:
+                    if m not in models_to_try:
+                        models_to_try.append(m)
+
                 last_err = None
                 for model_id in models_to_try:
                     if not model_id: continue
@@ -1614,14 +1640,15 @@ Content:
                             break
                     except Exception as ex_m:
                         last_err = ex_m
-                        if "404" in str(ex_m) or "not found" in str(ex_m).lower():
+                        if WORKING_GEMINI_MODEL == model_id:
                             WORKING_GEMINI_MODEL = None
+                        logging.warning(f"[AI] Model {model_id} failed ({ex_m}). Trying next model...")
 
                 if not response or not getattr(response, 'text', None):
                     AI_FAILED_COUNT += 1
                     if AI_FAILED_COUNT >= 1:
                         AI_MODEL_DISABLED = True
-                        logging.warning("Gemini AI API endpoints unavailable. Switching to ultra-fast deterministic precision parsing.")
+                        logging.warning("[AI] All Gemini models failed. Falling back to regex parsing (degraded quality).")
                     if last_err: raise last_err
                     raise ValueError("No Gemini model response returned.")
 
