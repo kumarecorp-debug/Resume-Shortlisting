@@ -1705,11 +1705,34 @@ def gmail_count():
     })
 
 @app.route('/debug-parse-exp', methods=['GET'])
-
 def debug_parse_exp():
     text = request.args.get('text', '')
     parsed = parse_experience_years(text)
     return jsonify({"text": text, "parsed": parsed})
+
+@app.route('/debug/parse-excel-folder')
+def debug_parse_excel_folder():
+    import glob
+    import excel_parser
+    resume_folder = getattr(RS_Project, 'RESUME_FOLDER', 'Resumes')
+    files = glob.glob(os.path.join(resume_folder, '**/*.xlsx'), recursive=True)
+    if not files:
+        files = glob.glob(os.path.join(resume_folder, '**/*.xls'), recursive=True)
+    if not files:
+        files = glob.glob('Resumes/**/*.xlsx', recursive=True)
+    results = []
+    for f in files[:5]:
+        cands = excel_parser.parse_excel_to_candidates(f)
+        results.append({
+            'file': f,
+            'candidate_count': len(cands),
+            'first_candidate': cands[0] if cands else None,
+        })
+    return jsonify({
+        'total_files': len(files),
+        'sampled': len(results),
+        'results': results,
+    })
 
 @app.route('/debug-phone-match', methods=['GET'])
 def debug_phone_match():
