@@ -34,9 +34,11 @@ from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from base64 import urlsafe_b64decode
 try:
-    from gmail_search import build_gmail_search_query, extract_tech_keywords_from_jd
+    import gmail_search
+    from gmail_search import build_gmail_search_query, extract_tech_keywords_from_jd, detect_search_mode
 except ImportError:
-    from .gmail_search import build_gmail_search_query, extract_tech_keywords_from_jd
+    import gmail_search
+    from .gmail_search import build_gmail_search_query, extract_tech_keywords_from_jd, detect_search_mode
 
 try:
     from excel_parser import parse_excel_to_candidates, excel_to_text
@@ -1742,7 +1744,7 @@ def main(job_query, account_email="recruiter@ecorptrainings.com", max_candidates
         account_email = account_email.get("email", "recruiter@ecorptrainings.com")
     email_key = account_email.lower().strip() if account_email else "recruiter@ecorptrainings.com"
 
-    query_mode = gmail_search.detect_search_mode(job_query)
+    query_mode = detect_search_mode(job_query)
 
     _safe_log('info', f"[search-START] mailbox={email_key} jd={job_query} mode={query_mode} max_candidates={max_candidates}")
 
