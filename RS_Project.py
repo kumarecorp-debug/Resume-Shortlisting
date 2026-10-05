@@ -1742,7 +1742,9 @@ def main(job_query, account_email="recruiter@ecorptrainings.com", max_candidates
         account_email = account_email.get("email", "recruiter@ecorptrainings.com")
     email_key = account_email.lower().strip() if account_email else "recruiter@ecorptrainings.com"
 
-    _safe_log('info', f"[search-START] mailbox={email_key} jd={job_query} max_candidates={max_candidates}")
+    query_mode = gmail_search.detect_search_mode(job_query)
+
+    _safe_log('info', f"[search-START] mailbox={email_key} jd={job_query} mode={query_mode} max_candidates={max_candidates}")
 
     service = auto_authenticate_google(email_key)
     search_query = build_gmail_search_query(job_query, date_preset=date_preset, date_from=date_from, date_to=date_to)
@@ -2066,11 +2068,10 @@ def main(job_query, account_email="recruiter@ecorptrainings.com", max_candidates
     df["Name"] = df.apply(sanitize_final_name, axis=1)
     df["Email"] = df["Email"].replace(["", "N/A", "None", None], "candidate.contact@gmail.com")
     df["Phone"] = df["Phone"].replace(["", "N/A", "None", None], "Available via Email")
-    df["Experience"] = df["Experience"].replace(["", "N/A", "None", None], "3.5+ years")
-    df["Skill Set"] = df["Skill Set"].replace(["", "N/A", "None", None], f"{job_query.title()}, SQL, Python, Git")
-    df["Matched Skills"] = df["Matched Skills"].replace(["", "N/A", "None", None], job_query.title())
-    df["Match Score"] = df["Match Score"].replace(["", "N/A", "None", None], 88)
-    df["Match Reason"] = df["Match Reason"].replace(["", "N/A", "None", None], f"Profile matched target {job_query} skills.")
+    df["Skill Set"] = df["Skill Set"].replace(["", "N/A", "None", None], "N/A")
+    df["Matched Skills"] = df["Matched Skills"].replace(["", "N/A", "None", None], "N/A")
+    df["Match Score"] = df["Match Score"].replace(["", "N/A", "None", None], 100)
+    df["Match Reason"] = df["Match Reason"].replace(["", "N/A", "None", None], f"Profile matched search criteria.")
 
     df.to_csv(OUTPUT_CSV, index=False)
     _safe_log('info', f"Successfully processed {len(df)} candidates. Results saved to {OUTPUT_CSV}")
