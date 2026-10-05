@@ -1745,6 +1745,8 @@ def main(job_query, account_email="recruiter@ecorptrainings.com", max_candidates
     email_key = account_email.lower().strip() if account_email else "recruiter@ecorptrainings.com"
 
     query_mode = detect_search_mode(job_query)
+    query_terms = matcher.parse_terms(job_query)
+    t_search_start = time.time()
 
     _safe_log('info', f"[search-START] mailbox={email_key} jd={job_query} mode={query_mode} max_candidates={max_candidates}")
 
@@ -1861,20 +1863,25 @@ def main(job_query, account_email="recruiter@ecorptrainings.com", max_candidates
                     fn_low = filename.lower()
 
                     if fn_low.endswith(('.xlsx', '.xls')):
+                        if scan_summary['xlsx_candidates'] >= 5000:
+                            _safe_log('warning', f"[excel] Total Excel candidates cap (5000) reached. Skipping file {filename}.")
+                            continue
+
                         key = 'xlsx' if fn_low.endswith('.xlsx') else 'xls'
                         scan_summary[key] += 1
                         
-                        _safe_log('info', f"[excel] processing attachment {filename}")
                         excel_cands = parse_excel_to_candidates(saved_path)
 
                         if not excel_cands or all(not c.get('Name') and not c.get('Email') for c in excel_cands):
-                            _safe_log('info', f"[excel] fallback to Gemini for {filename}")
                             raw_text = excel_to_text(saved_path)
                             if raw_text:
                                 excel_cands = ai_extract_batch_from_excel(raw_text, filename)
 
                         extracted_excel_count = 0
                         for c_ex in excel_cands:
+                            if scan_summary['xlsx_candidates'] >= 5000:
+                                break
+
                             c_email = str(c_ex.get('Email', '')).strip().lower()
                             if not c_email or is_system_or_portal_email(c_email, email_key):
                                 continue
@@ -1883,14 +1890,10 @@ def main(job_query, account_email="recruiter@ecorptrainings.com", max_candidates
                             if dedup_k in seen_identifiers:
                                 continue
 
-                            c_skills = c_ex.get('Skill Set') or c_ex.get('skills') or ''
-                            c_name = c_ex.get('Name') or 'Candidate'
-
                             if query_mode not in ["email", "phone", "name"]:
-                                if not matcher.matches_query_strict(c_ex, job_query):
-                                    _safe_log('info', f"[match] Excel candidate {c_name} excluded — does not match query '{job_query}' strictly")
+                                if not matcher.matches_query_strict(c_ex, job_query, query_terms=query_terms):
                                     continue
-                                matched_str, score, reason = matcher.calculate_score(c_ex, job_query)
+                                matched_str, score, reason = matcher.calculate_score(c_ex, job_query, query_terms=query_terms)
                             else:
                                 matched_str, score, reason = "", 100, "Identifier match"
 
@@ -1909,9 +1912,6 @@ def main(job_query, account_email="recruiter@ecorptrainings.com", max_candidates
                             candidates.append(c_ex)
                             scan_summary['xlsx_candidates'] += 1
                             extracted_excel_count += 1
-
-                        _safe_log('info', f"[excel] {filename} → {extracted_excel_count} candidates")
-                        _safe_log('info', f"[search-EXTRACT] {filename} → {extracted_excel_count} candidates")
 
                     else:
                         src_type = 'pdf' if fn_low.endswith('.pdf') else ('docx' if fn_low.endswith('.docx') else 'doc')
@@ -1935,10 +1935,9 @@ def main(job_query, account_email="recruiter@ecorptrainings.com", max_candidates
                         candidate["received_at"] = candidate["ReceivedAt"]
 
                         if query_mode not in ["email", "phone", "name"]:
-                            if not matcher.matches_query_strict(candidate, job_query):
-                                _safe_log('info', f"[match] PDF candidate {candidate.get('Name')} excluded — does not match query '{job_query}' strictly")
+                            if not matcher.matches_query_strict(candidate, job_query, query_terms=query_terms):
                                 continue
-                            m_str, sc, reas = matcher.calculate_score(candidate, job_query)
+                            m_str, sc, reas = matcher.calculate_score(candidate, job_query, query_terms=query_terms)
                             candidate['Matched Skills'] = m_str
                             candidate['Match Score'] = sc
                             candidate['Match Reason'] = reas
@@ -2075,8 +2074,10 @@ def main(job_query, account_email="recruiter@ecorptrainings.com", max_candidates
     df["Match Score"] = df["Match Score"].replace(["", "N/A", "None", None], 100)
     df["Match Reason"] = df["Match Reason"].replace(["", "N/A", "None", None], f"Profile matched search criteria.")
 
+    t_total_elapsed = time.time() - t_search_start
+
     df.to_csv(OUTPUT_CSV, index=False)
-    _safe_log('info', f"Successfully processed {len(df)} candidates. Results saved to {OUTPUT_CSV}")
+    _safe_log('info', f"[perf] Search completed in {t_total_elapsed:.2f}s. Processed {len(df)} matching candidates. Saved to {OUTPUT_CSV}")
 
     _safe_log('info', "[search-DONE]")
     _safe_log('info', f"  Emails fetched:    {len(messages)}")

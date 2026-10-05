@@ -262,10 +262,11 @@ def filter_candidates(candidates, term):
             return matched, mode, len(matched), 0
 
     if mode == "keyword" and term_str:
+        q_terms = matcher.parse_terms(term_str)
         matched = []
         for c in candidates:
-            if matcher.matches_query_strict(c, term_str):
-                m_str, score, reason = matcher.calculate_score(c, term_str)
+            if matcher.matches_query_strict(c, term_str, query_terms=q_terms):
+                m_str, score, reason = matcher.calculate_score(c, term_str, query_terms=q_terms)
                 c["Matched Skills"] = m_str
                 c["Match Score"] = score
                 c["Match Reason"] = reason
