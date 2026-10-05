@@ -4,6 +4,7 @@ import time
 import json
 import logging
 logger = logging.getLogger(__name__)
+import matcher
 
 # Silence oauth2client file_cache warning
 logging.getLogger('googleapiclient.discovery_cache').setLevel(logging.ERROR)
@@ -1560,23 +1561,19 @@ Content:
         else:
             prompt = f"""
 You are an expert AI Resume Screening and Entity Extraction system.
-Target Job Description / Query Keywords: "{clean_jd}"
-
-Analyze the resume and email text below and extract:
+Extract ONLY what appears in the resume text below:
 1. name: Full Name of the candidate / trainer
 2. email: Direct contact email
 3. phone: Contact phone number
-4. skills: Top technical skills present in resume
+4. skills: Comma-separated top technical skills listed in the resume
 5. experience: Total professional work experience (e.g. "5.5 years")
-6. match_score: An integer score from 0 to 100 representing candidate match fit for "{clean_jd}"
-7. matched_skills: Comma-separated list of target JD keywords found
-8. match_reason: One concise sentence explaining the match score and skill fit
-9. gender: The candidate's gender (Male, Female, or Unknown) inferred from their name or explicitly stated in the resume
+6. gender: The candidate's gender (Male, Female, or Unknown) inferred from their name or explicitly stated in the resume
 
 IMPORTANT:
 - Do NOT invent or copy values from any external source.
 - Do NOT include phone numbers or emails from context, only from the resume text.
 - If a field is not present in the resume, return empty string.
+- Do NOT compute match scores or mention search queries.
 
 Return strictly valid JSON format without markdown code blocks:
 {{
@@ -1585,9 +1582,6 @@ Return strictly valid JSON format without markdown code blocks:
     "phone": "Candidate phone number",
     "skills": "Comma separated top technical skills",
     "experience": "Total experience e.g. 5.5 years",
-    "match_score": 88,
-    "matched_skills": "Skills matching query",
-    "match_reason": "One-line summary justification",
     "gender": "Male or Female or Unknown"
 }}
 
@@ -1887,7 +1881,14 @@ def main(job_query, account_email="recruiter@ecorptrainings.com", max_candidates
 
                             c_skills = c_ex.get('Skill Set') or c_ex.get('skills') or ''
                             c_name = c_ex.get('Name') or 'Candidate'
-                            matched_str, score, reason = compute_excel_candidate_score(c_skills, c_name, job_query)
+
+                            if query_mode not in ["email", "phone", "name"]:
+                                if not matcher.matches_query_strict(c_ex, job_query):
+                                    _safe_log('info', f"[match] Excel candidate {c_name} excluded — does not match query '{job_query}' strictly")
+                                    continue
+                                matched_str, score, reason = matcher.calculate_score(c_ex, job_query)
+                            else:
+                                matched_str, score, reason = "", 100, "Identifier match"
 
                             c_ex['Source'] = 'excel'
                             c_ex['source'] = 'excel'
@@ -1928,6 +1929,15 @@ def main(job_query, account_email="recruiter@ecorptrainings.com", max_candidates
                         candidate['source_file'] = filename
                         candidate["ReceivedAt"] = received_iso or datetime.now(timezone.utc).isoformat()
                         candidate["received_at"] = candidate["ReceivedAt"]
+
+                        if query_mode not in ["email", "phone", "name"]:
+                            if not matcher.matches_query_strict(candidate, job_query):
+                                _safe_log('info', f"[match] PDF candidate {candidate.get('Name')} excluded — does not match query '{job_query}' strictly")
+                                continue
+                            m_str, sc, reas = matcher.calculate_score(candidate, job_query)
+                            candidate['Matched Skills'] = m_str
+                            candidate['Match Score'] = sc
+                            candidate['Match Reason'] = reas
 
                         cand_email = str(candidate.get("Email", "")).lower().strip()
                         if is_system_or_portal_email(cand_email, email_key):

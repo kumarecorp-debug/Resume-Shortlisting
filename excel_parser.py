@@ -25,26 +25,34 @@ COLUMN_ALIASES = {
     'name': [
         'name', 'candidate name', 'full name', 'fullname',
         'candidate', 'trainer', 'trainer name', 'consultant name',
+        'name of candidate',
     ],
     'email': [
         'email', 'email id', 'e-mail', 'mail', 'mail id',
-        'email address', 'emailid',
+        'email address', 'emailid', 'e mail',
     ],
     'phone': [
         'phone', 'phone number', 'phone no', 'mobile', 
-        'mobile no', 'mobile number', 'contact', 
+        'mobile no', 'mobile no.', 'mobile number', 'contact', 
         'contact no', 'contact no.', 'contact number',
     ],
     'skills': [
         'skills', 'skill', 'skill set', 'skillset', 
         'primary skills', 'key skills', 'core skills',
-        'resume title',
+        'resume title', 'resume title ', 'title', 'summary',
+        'professional summary', 'profile', 'profile summary',
+        'candidate profile', 'resume summary', 'headline',
         'technologies', 'tech stack', 'expertise',
+    ],
+    'resume_title': [
+        'resume title', 'resume title ', 'title', 'summary',
+        'professional summary', 'profile', 'profile summary',
+        'candidate profile', 'resume summary', 'headline',
     ],
     'experience': [
         'experience', 'exp', 'work exp',
         'work experience', 'total experience', 'total exp',
-        'years of experience', 'yrs',
+        'years of experience', 'yrs', 'yrs of exp', 'year of exp',
     ],
     'designation': ['designation', 'role', 'current role'],
     'current_employer': ['current employer', 'employer', 'company'],
@@ -260,18 +268,43 @@ def parse_excel_to_candidates(file_path, max_rows=500):
         cand_email = get('email')
         cand_phone = get('phone')
         cand_skills = get('skills')
+        cand_title = get('resume_title')
         cand_exp = get('experience')
+        cand_desig = get('designation')
+        cand_emp = get('current_employer')
+        cand_ug = get('ug_course')
+        cand_pg = get('pg_course')
+
+        text_parts = []
+        if cand_title:
+            text_parts.append(cand_title)
+        if cand_skills and cand_skills != cand_title:
+            text_parts.append(cand_skills)
+        if cand_desig:
+            text_parts.append(cand_desig)
+        if cand_emp:
+            text_parts.append(cand_emp)
+        if cand_ug:
+            text_parts.append(cand_ug)
+        if cand_pg:
+            text_parts.append(cand_pg)
+
+        combined_skills = " ".join(filter(None, text_parts)).strip()
+        if not combined_skills:
+            combined_skills = cand_skills or cand_title or 'N/A'
 
         cand = {
             'Name': cand_name,
             'Email': cand_email,
             'Phone': cand_phone,
-            'Skill Set': cand_skills,
-            'skills': cand_skills,
+            'Skill Set': combined_skills,
+            'skills': combined_skills,
+            'resume_title': cand_title or cand_skills,
+            'Resume Title': cand_title or cand_skills,
             'Experience': f"{cand_exp} yrs" if cand_exp and 'yr' not in cand_exp.lower() else (cand_exp or 'N/A'),
             'experience': cand_exp,
-            'Designation': get('designation'),
-            'Employer': get('current_employer'),
+            'Designation': cand_desig,
+            'Employer': cand_emp,
             'Location': get('location'),
             'source': 'excel',
             'source_file': os.path.basename(file_path),

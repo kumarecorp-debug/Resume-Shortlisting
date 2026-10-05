@@ -9,6 +9,7 @@ from contextlib import redirect_stdout, redirect_stderr
 from functools import wraps
 import RS_Project
 import gmail_search
+import matcher
 import os
 import db
 import db_copied_history
@@ -259,6 +260,17 @@ def filter_candidates(candidates, term):
                 matched.append(c)
         if matched:
             return matched, mode, len(matched), 0
+
+    if mode == "keyword" and term_str:
+        matched = []
+        for c in candidates:
+            if matcher.matches_query_strict(c, term_str):
+                m_str, score, reason = matcher.calculate_score(c, term_str)
+                c["Matched Skills"] = m_str
+                c["Match Score"] = score
+                c["Match Reason"] = reason
+                matched.append(c)
+        return matched, mode, len(matched), 0
 
     return candidates, mode, len(candidates), 0
 
