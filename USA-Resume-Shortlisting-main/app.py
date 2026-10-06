@@ -358,7 +358,7 @@ def compute_date_display(preset, df_str, dt_str):
         pass
     return None
 
-def execute_full_candidate_search(job_query, selected_account, max_candidates=25, date_preset=None, date_from=None, date_to=None, include_excel=False):
+def execute_full_candidate_search(job_query, selected_account, max_candidates=25, date_preset=None, date_from=None, date_to=None, include_excel=False, search_id=None):
     resume_folder = RS_Project.RESUME_FOLDER
     try:
         if not os.path.exists(resume_folder):
@@ -380,7 +380,7 @@ def execute_full_candidate_search(job_query, selected_account, max_candidates=25
     stderr_buffer = StringIO()
     with redirect_stdout(stdout_buffer), redirect_stderr(stderr_buffer):
         try:
-            RS_Project.main(job_query, account_email=selected_account, max_candidates=max_candidates, date_preset=date_preset, date_from=date_from, date_to=date_to, include_excel=include_excel)
+            RS_Project.main(job_query, account_email=selected_account, max_candidates=max_candidates, date_preset=date_preset, date_from=date_from, date_to=date_to, include_excel=include_excel, search_id=search_id)
         except Exception as e:
             logging.error(f"Error in RS_Project.main: {e}")
 
@@ -603,6 +603,8 @@ def process():
     if request.method == 'POST' or is_get_search:
         import uuid
         job_query = (request.form.get('job_query') or request.args.get('jd') or request.args.get('job_query') or '').strip()
+        search_id = str(uuid.uuid4())
+        logging.info(f"[search-NEW] search_id={search_id} jd={job_query}")
         raw_acct = request.form.get('account_email') or request.form.get('mailbox') or request.args.get('account_email') or request.args.get('mailbox') or session.get('selected_account') or default_account
         if isinstance(raw_acct, dict):
             selected_account = raw_acct.get('email', default_account)
@@ -756,7 +758,8 @@ def process():
             date_preset=date_preset,
             date_from=date_from,
             date_to=date_to,
-            include_excel=include_excel
+            include_excel=include_excel,
+            search_id=search_id
         )
         
         date_display = compute_date_display(time_window, date_from, date_to)
