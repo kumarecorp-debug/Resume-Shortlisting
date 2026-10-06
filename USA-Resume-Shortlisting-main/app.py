@@ -61,6 +61,26 @@ supabase_client: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
+def verify_ai_startup():
+    groq_key = os.environ.get('GROQ_API_KEY')
+    if groq_key:
+        logging.info("[startup] ✅ Groq AI ready (Primary Provider)")
+    else:
+        logging.warning("[startup] ⚠️ GROQ_API_KEY missing. Get one free at console.groq.com")
+        
+    gemini_key = os.environ.get('GEMINI_API_KEY')
+    if gemini_key:
+        logging.info("[startup] ✅ Gemini API ready (Optional Fallback)")
+
+verify_ai_startup()
+
+search_progress_store = {}
+
+@app.route('/api/search/progress/<search_id>', methods=['GET'])
+def get_search_progress(search_id):
+    prog = search_progress_store.get(search_id, {"current": 0, "total": 0, "status": "completed"})
+    return jsonify(prog)
+
 if not os.environ.get("VERCEL"):
     try:
         os.chdir(project_root)
@@ -314,7 +334,7 @@ def compute_date_display(preset, df_str, dt_str):
         pass
     return None
 
-def execute_full_candidate_search(job_query, selected_account, max_candidates=200, date_preset=None, date_from=None, date_to=None, include_excel=True):
+def execute_full_candidate_search(job_query, selected_account, max_candidates=25, date_preset=None, date_from=None, date_to=None, include_excel=False):
     resume_folder = RS_Project.RESUME_FOLDER
     try:
         if not os.path.exists(resume_folder):
@@ -505,7 +525,7 @@ def process():
         except (ValueError, TypeError):
             min_exp = None
 
-        max_candidates = int(request.form.get('max_candidates') or request.args.get('max_candidates') or 50)
+        max_candidates = int(request.form.get('max_candidates') or request.args.get('max_candidates') or 25)
         user_search_mode = request.form.get('search_mode') or request.args.get('search_mode') or ('history' if time_window != 'any' else 'live')
 
         # SHOW = COPIED MODE: Filter by copied_history.copied_at timestamp (No Gmail / Gemini API calls)
@@ -878,6 +898,25 @@ def api_get_history_item(search_id):
     item = db.get_search_history_item(search_id)
     if not item:
         return jsonify({'success': False, 'error': 'Search history record not found'}), 404
+    
+    c_seen = item.get('candidates_seen') or []
+    normalized = []
+    if isinstance(c_seen, list):
+        for c in c_seen:
+            if isinstance(c, dict):
+                nm = c.get('Name') or c.get('name') or (c.get('Email') or c.get('email') or '').split('@')[0] or 'Candidate'
+                em = c.get('Email') or c.get('email') or 'N/A'
+                c['Name'] = nm
+                c['name'] = nm
+                c['Email'] = em
+                c['email'] = em
+                normalized.append(c)
+            elif isinstance(c, str):
+                em = c
+                nm = c.split('@')[0] if '@' in c else c
+                normalized.append({'Name': nm, 'name': nm, 'Email': em, 'email': em})
+    item['candidates_seen'] = normalized
+
     return jsonify({'success': True, 'data': item})
 
 @app.route('/api/history/latest', methods=['GET'])
@@ -1483,9 +1522,9 @@ def api_search():
             logging.info("Search cache expired or missing; rerunning")
 
     try:
-        max_candidates = int(request.args.get('max_candidates') or request.form.get('max_candidates') or 50)
+        max_candidates = int(request.args.get('max_candidates') or request.form.get('max_candidates') or 25)
     except (ValueError, TypeError):
-        max_candidates = 50
+        max_candidates = 25
 
     df, scan_summary = execute_full_candidate_search(job_query, selected_account, max_candidates=max_candidates, date_preset=time_window, date_from=date_from, date_to=date_to)
     
@@ -1685,6 +1724,29 @@ def debug_phone_match():
         "candidates_checked": len(candidates),
         "matches_found": matches_count,
         "matches": matches
+    })
+
+@app.route('/debug/extract-text/<path:filename>')
+@login_required
+def debug_extract_text(filename):
+    """Show what text is being sent to Gemini for a given resume file."""
+    import RS_Project
+    filepath = os.path.join(RS_Project.RESUME_FOLDER, filename)
+    if not os.path.exists(filepath):
+        return jsonify({'error': 'file not found'}), 404
+    
+    try:
+        with open(filepath, 'rb') as f:
+            file_bytes = f.read()
+        text = RS_Project.extract_text_from_bytes(file_bytes, filename)
+    except Exception as e:
+        return jsonify({'error': f'Failed to extract text: {e}'}), 500
+    
+    return jsonify({
+        'file': filename,
+        'text_length': len(text),
+        'first_1000_chars': text[:1000],
+        'extracted_name_fallback': RS_Project.extract_name_from_resume_text(text)
     })
 
 if __name__ == '__main__':

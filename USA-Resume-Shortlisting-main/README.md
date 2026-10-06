@@ -4,60 +4,64 @@ An intelligent automated recruitment dashboard that integrates with Gmail to sea
 
 ## 🚀 Key Features
 
-- **Smart Gmail Search**: Boolean search (`AND`, `OR`), multi-word queries with natural search semantics, and automatic keyword extraction from full Job Descriptions.
+- **Smart Gmail Search**: `has:attachment` Boolean search (`AND`, `OR`), multi-word queries, disk query caching, and exponential backoff.
 - **Multi-Account Switching**: Seamlessly switch between configured Gmail mailboxes (`recruiter@ecorptrainings.com`, `jai.ecorp@gmail.com`, `kumar.ecorp@gmail.com`, `pushpa@ecorptrainings.com`, `mahi@ecorptrainings.com`, `contact@ecorptrainings.com`).
-- **AI-Powered Extraction**: Extracts candidate name, email, phone number, total experience, and technical skill set using Gemini AI.
+- **AI-Powered Extraction**: Uses working Gemini models (`gemini-3.8-flash`, `gemini-3.6-flash`, `gemini-3.5-flash`) for precise PDF/DOCX resume extraction.
 - **Match Scoring & Ranking**: Computes a 0–100 match score, identifies matched JD skills, provides a one-line justification, and ranks candidates in descending order.
-- **Excel Batch Candidate Extraction**:
-  - Automatically downloads Excel (`.xlsx`, `.xls`) attachments in addition to PDF and DOCX files.
-  - `excel_parser.py`: Automatically normalizes column names (`Name`, `Email`, `Phone`, `Skills`, `Experience`), merges multi-sheet workbooks, caps rows at 500 per file, and caches results in-memory for 10 minutes.
-  - Gemini AI Fallback: Uses Gemini structured JSON extraction if column headers are unrecognizable or non-standard.
-  - Results Table Integration: Candidate rows from Excel appear seamlessly alongside PDF/DOCX candidates, complete with `📊 Excel` source badge and hover tooltip showing file name, sheet, and row number.
-  - Form Checkbox: Option to toggle `📊 Include Excel attachments (.xlsx / .xls)` (ON by default).
 - **Candidate Status Tracking (Feature 3)**:
-  - Persistent status per candidate (`🟢 New`, `🔵 Used`, `🟡 Not Used`).
-  - Copy = Auto-Mark Used: Copying candidate info (individual or bulk) automatically updates status to `used` with optimistic UI update and a 5-second Undo Toast.
-  - Interactive Status Badge: Clickable badge popup menu (`New`, `Used`, `Not Used`) for manual status overrides.
-  - Toolbar Filters: Status filter (`All`, `New`, `Used`, `Not Used`) and default-checked `☑ Hide candidates marked as Used`.
-- **Pagination via "Load More" (25 per page)**:
-  - Replaces batch limit dropdown with smooth 25-per-page pagination.
-  - Below table indicator: `Showing 25 of N matches [Load Next 25 →]`.
-  - Caches full search result list server-side (in-memory & Supabase `search_cache`) with 1-hour TTL.
-  - Continuous ranking (#26, #27...) on subsequent page loads.
-- **Search History Log (Feature 1)**:
-  - Stores all past searches persistently in Supabase (`search_history` table).
-  - Dedicated `/history` page with Calendar Date Range Picker (`From`, `To`, `Last 30 Days`) and one-click **Re-run Search 🔄**.
-- **Smart Search Popups & History Suggestions**:
-  - **Feature A ("You searched this before")**: Displays a debounced (500ms) smart panel under the search box when searching a JD searched over 24 hours ago. Gives options to search again or view last results.
-  - **Feature B ("New candidates since last search")**: Checks for new matching emails received since the last search date (within 30 days) and presents a modal to choose between searching new resumes only or searching everything.
-  - **Feature C (Autocomplete Suggestions)**: Displays top 10 recent unique searches on search box focus with relative timestamps, last result count, and new candidate count badges.
-- **Minimum Experience Filter (years)**:
-  - Input field right below the JD/keyword textarea (`Min Experience (years)`).
-  - Server-side experience parsing (handles formats like `"7 years"`, `"12.5 yrs"`, `"5 years 6 months"`, `"Over 10 years"`).
-  - Filters out candidates with parsed experience below the threshold, while keeping candidates with unknown/unparseable experience tagged with a warning badge (`⚠️ ? yrs`).
-  - Below table feedback showing exact count hidden (e.g. `Showing 25 of 100 matches · 12 hidden by experience`).
-  - Interactive Experience column header sorting (`Exp ▲/▼`).
-  - Persists `min_exp` across searches in `localStorage`.
-  - Debug route available at `/debug-parse-exp?text=5+years+6+months`.
-- **Copied History Panel**:
-  - Slide-in side panel from right (`📋 Copied History` button in top nav) showing all candidate copies grouped by date (`Today`, `Yesterday`, `This Week`, `Older`).
-  - Search box to filter copies by candidate name or email, date range buttons, mailbox filter, and CSV export (`📥 Export CSV`).
-  - Counter badge on top nav button showing weekly copy count.
-- **Skip Already-Copied Prompt on Re-Search**:
-  - Automatically checks if candidates were copied for the same `(mailbox, job_description)`.
-  - Prompts modal: `🆕 Skip already-copied` or `🔁 Show everything (including copies)`.
-  - Remembers user session choice per search query with `⚙️ Change preference` link.
+  - Persistent status per candidate (`🟢 New`, `🔵 Used`, `🟡 Skipped`).
+  - Action buttons: "Mark Used", "Mark Skipped", and "📋 Copy & Mark Used".
+  - Quick status filter (`Not Used`, `New Only`, `Used Only`, `Skipped Only`).
+  - Bulk actions bar for marking multiple selected candidates simultaneously.
+- **Repurposed Time Window Search History Filter**:
+  - Time Window pills (`Today`, `Yesterday`, `7d`, `14d`, `30d`, `Custom 📅`) query the `search_history` database directly.
+  - Super fast DB lookup with zero Gmail API calls and zero Gemini LLM extraction costs.
+  - Stores full candidate JSON schemas (`name`, `email`, `phone`, `skills`, `experience`, `gender`, `matched_skills`, `match_score`, `match_reason`) in `search_history.candidates_seen`.
+  - Toggle seamlessly between **⚡ Live Gmail Search** and **📅 From Search History**.
+- **Search History Log & API**:
+  - GET `/api/search/from-history` endpoint for querying candidate records filtered by time window, show mode (`Copied`, `Not Copied`), experience, and gender.
+  - Dedicated `/history` page with Calendar Date Range Picker (`From`, `To`, `Last 7 Days`, `Last 30 Days`).
+- **Cumulative Batch Search (Feature 2)**:
+  - "Skip already-seen candidates" toggle to filter out candidates returned in previous searches.
+  - Displays summary banner showing new vs hidden candidates with `[Show seen too]` toggle.
 - **Debug & Health Monitoring**:
-  - `/debug-status` route to verify Supabase table connectivity (`candidate_status`, `search_history`, `search_cache`).
-  - `/debug-copied` route to verify `copied_history` table connection and recent records.
+  - `/debug-status` route to verify Supabase table connectivity and row counts.
 
 ---
 
 ## 🗄️ Database Migrations (Supabase SQL)
 
-Before using persistent status tracking, search history, or copied history, run the SQL migrations in your **Supabase SQL Editor**:
+Before using persistent status tracking or search history, run the SQL migrations in your **Supabase SQL Editor**:
 
 1. `migrations/001_search_history.sql`: Creates `search_history` table & indexes.
 2. `migrations/002_seen_candidates.sql`: Creates `seen_candidates` table for cumulative batch search.
 3. `migrations/003_candidate_status.sql`: Creates `candidate_status` table for tracking candidate statuses.
-4. `migrations/004_copied_history.sql`: Creates `copied_history` table for tracking copied candidates.
+
+---
+
+## 🛠️ Setup & Installation
+
+1. **Clone the repository**:
+   ```bash
+   git clone https://github.com/kumarecorp-debug/Resume-Shortlisting.git
+   cd Resume-Shortlisting
+   ```
+
+2. **Install dependencies**:
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+3. **Configure Environment Variables**:
+   Copy `.env.example` to `.env` and set your API keys:
+   ```env
+   GEMINI_API_KEY=your_gemini_api_key_here
+   SUPABASE_URL=https://fvbctgxwjrctcssckggp.supabase.co
+   SUPABASE_ANON_KEY=your_supabase_anon_key_here
+   ```
+
+4. **Run the Application**:
+   ```bash
+   python app.py
+   ```
+   Open `http://127.0.0.1:5000` in your web browser.
