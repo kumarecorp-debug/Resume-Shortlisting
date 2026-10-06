@@ -998,10 +998,22 @@ def search_status(search_id):
     if search_id not in _searches:
         return jsonify({'status': 'not_found'}), 404
     s = _searches[search_id]
+    
+    try:
+        from ai_extractor import _groq_limiter
+        waiting_msg = getattr(_groq_limiter, 'last_wait_msg', None)
+        wait_sec = getattr(_groq_limiter, 'last_wait_sec', 0)
+    except Exception:
+        waiting_msg = None
+        wait_sec = 0
+
     return jsonify({
         'status': s['status'],
         'progress': s['progress'],
         'error': s.get('error'),
+        'waiting': bool(waiting_msg),
+        'waiting_message': waiting_msg,
+        'wait_seconds': wait_sec
     })
 
 @app.route('/search-results/<search_id>')
