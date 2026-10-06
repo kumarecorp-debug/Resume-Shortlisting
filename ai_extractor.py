@@ -264,13 +264,19 @@ Resumes:
     logger.info("[groq-BATCH] Fallback to individual resume extractions")
     return [extract_fields_cached(r) for r in resumes_batch]
 
-def extract_fields_cached(resume_text):
+def extract_fields_cached(resume_text, progress=None):
     if not resume_text or not resume_text.strip():
+        if progress and hasattr(progress, 'increment'):
+            progress.increment()
         return EMPTY
     key = hashlib.sha256(resume_text[:2000].encode('utf-8')).hexdigest()
     if key in _extraction_cache:
         logger.info("[ai] cache hit")
+        if progress and hasattr(progress, 'increment'):
+            progress.increment()
         return _extraction_cache[key]
     result = extract_fields(resume_text)
     _extraction_cache[key] = result
+    if progress and hasattr(progress, 'increment'):
+        progress.increment()
     return result

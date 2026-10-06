@@ -534,7 +534,15 @@ def api_search_start():
 
 @app.route('/api/search/progress/<search_id>')
 def api_search_progress(search_id):
-    return jsonify(_search_progress_store.get(search_id, {"status": "not_found"}))
+    if search_id in RS_Project._searches:
+        prog = RS_Project._searches[search_id]
+        return jsonify({
+            "status": prog.status,
+            "current": prog.current,
+            "total": prog.total,
+            "pct": int((prog.current / max(prog.total, 1)) * 100)
+        })
+    return jsonify(_search_progress_store.get(search_id, {"status": "not_found", "current": 0, "total": 0, "pct": 0}))
 
 @app.route('/api/search/result/<search_id>')
 def api_search_result(search_id):
