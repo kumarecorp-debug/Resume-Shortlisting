@@ -1000,6 +1000,9 @@ def search_until_relevant(mailbox="recruiter@ecorptrainings.com", jd="", target_
     service = auto_authenticate_google(email_key)
     query = build_gmail_search_query(jd)
 
+    SEARCH_TIMEOUT_SECONDS = 300  # 5 minutes max
+    start_time = time.time()
+
     relevant = []
     seen_emails = set()
     seen_hashes = set()
@@ -1009,6 +1012,14 @@ def search_until_relevant(mailbox="recruiter@ecorptrainings.com", jd="", target_
     max_iterations = max(1, max_emails // batch_size)
 
     while len(relevant) < target_relevant and iteration < max_iterations:
+        elapsed = time.time() - start_time
+        if elapsed > SEARCH_TIMEOUT_SECONDS:
+            logger.warning(
+                f'[search-TIMEOUT] aborting search after {elapsed:.0f}s '
+                f'(found {len(relevant)} of {target_relevant})'
+            )
+            break
+
         iteration += 1
         logger.info(f'[search-LOOP] iter {iteration}: emails={emails_scanned} relevant={len(relevant)}/{target_relevant}')
 
@@ -1164,6 +1175,7 @@ def search_until_relevant(mailbox="recruiter@ecorptrainings.com", jd="", target_
             logger.info('[search-LOOP] no more pages')
             break
 
+    elapsed_final = time.time() - start_time
     relevant = dedupe_by_name(relevant)
     meta = {
         'target': target_relevant,
@@ -1171,7 +1183,9 @@ def search_until_relevant(mailbox="recruiter@ecorptrainings.com", jd="", target_
         'shortage': max(0, target_relevant - len(relevant)),
         'emails_scanned': emails_scanned,
         'jd': jd,
-        'mailbox': email_key
+        'mailbox': email_key,
+        'timed_out': elapsed_final > SEARCH_TIMEOUT_SECONDS,
+        'elapsed_seconds': round(elapsed_final, 1)
     }
     logger.info(f'[search-DONE] {meta}')
     return relevant, meta

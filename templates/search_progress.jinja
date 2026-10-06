@@ -90,8 +90,11 @@
                     const p = data.progress || { current: 0, total: 25 };
                     const pct = p.total > 0 ? Math.min(100, Math.round((p.current / p.total) * 100)) : 0;
                     document.getElementById('progress-fill').style.width = `${pct}%`;
-                    document.getElementById('progress-text').innerText = 
-                        `Found ${p.current} of ${p.total} relevant candidates...`;
+                    let msg = `Found ${p.current} of ${p.total} relevant candidates...`;
+                    if (data.waiting && data.waiting_message) {
+                        msg += ` (${data.waiting_message})`;
+                    }
+                    document.getElementById('progress-text').innerText = msg;
                 } else if (data.status === 'done') {
                     clearInterval(interval);
                     document.getElementById('progress-fill').style.width = '100%';
