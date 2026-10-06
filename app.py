@@ -61,27 +61,25 @@ supabase_client: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
-def verify_gemini_startup():
-    api_key = os.environ.get('GEMINI_API_KEY')
-    if not api_key:
-        logging.error("[startup] GEMINI_API_KEY missing")
-        return
-    try:
-        import google.generativeai as legacy_genai
-        legacy_genai.configure(api_key=api_key)
-        for name in ["gemini-3.8-flash", "gemini-3.6-flash"]:
-            try:
-                m = legacy_genai.GenerativeModel(name)
-                if m.generate_content("hi").text:
-                    logging.info(f"[startup] ✅ Gemini ready: {name}")
-                    return
-            except Exception as e:
-                logging.warning(f"[startup] {name} failed: {e}")
-        logging.error("[startup] ❌ No working Gemini model")
-    except Exception as ex:
-        logging.warning(f"[startup] Gemini verification note: {ex}")
+def verify_ai_startup():
+    groq_key = os.environ.get('GROQ_API_KEY')
+    if groq_key:
+        logging.info("[startup] ✅ Groq AI ready (Primary Provider)")
+    else:
+        logging.warning("[startup] ⚠️ GROQ_API_KEY missing. Get one free at console.groq.com")
+        
+    gemini_key = os.environ.get('GEMINI_API_KEY')
+    if gemini_key:
+        logging.info("[startup] ✅ Gemini API ready (Optional Fallback)")
 
-verify_gemini_startup()
+verify_ai_startup()
+
+search_progress_store = {}
+
+@app.route('/api/search/progress/<search_id>', methods=['GET'])
+def get_search_progress(search_id):
+    prog = search_progress_store.get(search_id, {"current": 0, "total": 0, "status": "completed"})
+    return jsonify(prog)
 
 if not os.environ.get("VERCEL"):
     try:

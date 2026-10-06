@@ -24,6 +24,11 @@ from googleapiclient.discovery import build
 from base64 import urlsafe_b64decode
 
 try:
+    import ai_extractor
+except ImportError:
+    from . import ai_extractor
+
+try:
     from gmail_search import build_gmail_search_query, extract_tech_keywords_from_jd
 except ImportError:
     from .gmail_search import build_gmail_search_query, extract_tech_keywords_from_jd
@@ -36,6 +41,7 @@ except ImportError:
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+logger = logging.getLogger(__name__)
 
 # Paths and Config
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -62,32 +68,6 @@ try:
     load_dotenv(os.path.join(os.path.dirname(SCRIPT_DIR), ".env"))
 except ImportError:
     pass
-
-# Gemini API Configuration & Model list
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
-DEFAULT_GEMINI_MODELS = [
-    "gemini-3.8-flash",
-    "gemini-3.6-flash",
-    "gemini-3.5-flash",
-    "gemini-flash-latest",
-]
-WORKING_GEMINI_MODEL = None
-AI_MODEL_DISABLED = False
-AI_FAILED_COUNT = 0
-
-genai_client = None
-try:
-    from google import genai
-    from google.genai import types
-    USE_MODERN_GENAI = True
-    if GEMINI_API_KEY:
-        try:
-            genai_client = genai.Client(api_key=GEMINI_API_KEY)
-            logging.info("Initialized Google GenAI client.")
-        except Exception as e:
-            logging.warning(f"Failed to initialize GenAI client: {e}")
-except ImportError:
-    USE_MODERN_GENAI = False
 
 # Technical Skills Dictionary
 KNOWN_SKILLS = [
@@ -149,7 +129,7 @@ SUPPORTED_ACCOUNTS = {
     }
 }
 
-# Exponential Backoff Helper for Gmail API (FIX 8)
+# Exponential Backoff Helper for Gmail API
 def gmail_call_with_retry(func, retries=5, backoff_delays=[5, 15, 30, 60, 120]):
     for attempt in range(retries):
         try:
@@ -158,13 +138,13 @@ def gmail_call_with_retry(func, retries=5, backoff_delays=[5, 15, 30, 60, 120]):
             err_str = str(e)
             if any(term in err_str.lower() for term in ["ratelimitexceeded", "403", "429", "quotaexceeded"]):
                 delay = backoff_delays[min(attempt, len(backoff_delays) - 1)]
-                logging.warning(f"[gmail-retry] Rate limit hit. Retry {attempt + 1}/{retries} in {delay}s...")
+                logger.warning(f"[gmail-retry] Rate limit hit. Retry {attempt + 1}/{retries} in {delay}s...")
                 time.sleep(delay)
             else:
                 raise e
     raise RuntimeError("Gmail API request failed after maximum retries.")
 
-# Cached Gmail Messages Listing (FIX 8)
+# Cached Gmail Messages Listing
 def fetch_messages_cached(service, query, mailbox, max_results=25, ttl=3600):
     key = hashlib.md5(f"{mailbox}|{query}|{max_results}".encode('utf-8')).hexdigest()
     cache_file = os.path.join(GMAIL_CACHE_DIR, f"{key}.pkl")
@@ -225,10 +205,10 @@ def auto_authenticate_google(account_email="recruiter@ecorptrainings.com"):
                 if creds and creds.expired and creds.refresh_token:
                     creds.refresh(Request())
                 if creds and creds.valid:
-                    logging.info(f"Successfully authenticated {email_key} via {env_k}")
+                    logger.info(f"Successfully authenticated {email_key} via {env_k}")
                     return build('gmail', 'v1', credentials=creds)
             except Exception as e:
-                logging.warning(f"Failed to load token from environment variable {env_k}: {e}")
+                logger.warning(f"Failed to load token from environment variable {env_k}: {e}")
                 creds = None
 
     token_file = os.path.join(SCRIPT_DIR, token_fname)
@@ -247,7 +227,7 @@ def auto_authenticate_google(account_email="recruiter@ecorptrainings.com"):
             if creds and creds.valid:
                 return build('gmail', 'v1', credentials=creds)
         except Exception as e:
-            logging.warning(f"Existing token file for {email_key} invalid: {e}")
+            logger.warning(f"Existing token file for {email_key} invalid: {e}")
             creds = None
 
     client_file = os.path.join(SCRIPT_DIR, client_fname)
@@ -273,7 +253,7 @@ def auto_authenticate_google(account_email="recruiter@ecorptrainings.com"):
             with open(token_file, 'w', encoding='utf-8') as token:
                 token.write(creds.to_json())
         except Exception as e:
-            logging.error(f"Authentication failed for {email_key}: {e}")
+            logger.error(f"Authentication failed for {email_key}: {e}")
             raise
 
     return build('gmail', 'v1', credentials=creds)
@@ -300,7 +280,7 @@ def extract_email_body(payload):
     return ""
 
 def is_valid_resume_filename(filename):
-    """Filters for PDF and DOCX resume attachments only. (FIX 2 & FIX 3)"""
+    """Filters for PDF and DOCX resume attachments only."""
     EXCLUDED_EXT = [".jpg", ".jpeg", ".png", ".gif", ".bmp", ".zip", ".rar", ".exe", ".xlsx", ".xls"]
     EXCLUDED_TERMS = [
         "dl", "driver license", "passport", "visa", "i9", "w2", "paystub", 
@@ -315,7 +295,7 @@ def is_valid_resume_filename(filename):
     return lower.endswith((".pdf", ".docx"))
 
 def has_pdf_or_docx_attachment(msg):
-    """Return True if email has at least one PDF or DOCX attachment. (FIX 3)"""
+    """Return True if email has at least one PDF or DOCX attachment."""
     payload = msg.get("payload", {})
     parts = payload.get("parts", [])
     
@@ -331,7 +311,7 @@ def has_pdf_or_docx_attachment(msg):
     return walk_parts(parts) if parts else False
 
 def extract_text_from_bytes(file_bytes, filename):
-    """Extract text safely from PDF and DOCX file bytes with exception catching. (FIX 7)"""
+    """Extract text safely from PDF and DOCX file bytes with exception catching."""
     lower = filename.lower()
     text_chunks = []
     try:
@@ -347,7 +327,7 @@ def extract_text_from_bytes(file_bytes, filename):
                         if cells:
                             text_chunks.append(" | ".join(cells))
             except Exception as e:
-                logging.warning(f"[docx] parse failed {filename}: {e}")
+                logger.warning(f"[docx] parse failed {filename}: {e}")
                 return ""
                 
         elif lower.endswith(".pdf"):
@@ -370,13 +350,13 @@ def extract_text_from_bytes(file_bytes, filename):
                     if raw and raw.strip():
                         text_chunks.append(raw.strip())
                 except Exception as ex2:
-                    logging.warning(f"[pdf] parse failed {filename}: {ex2}")
+                    logger.warning(f"[pdf] parse failed {filename}: {ex2}")
                     return ""
 
         elif lower.endswith(".txt"):
             text_chunks.append(file_bytes.decode('utf-8', errors='ignore'))
     except Exception as e:
-        logging.warning(f"Could not parse text from {filename}: {e}")
+        logger.warning(f"Could not parse text from {filename}: {e}")
         return ""
 
     return "\n".join(text_chunks).strip()
@@ -662,9 +642,7 @@ def extract_candidate_name_smart(resume_text, email_body, sender_header="", file
     return "Verified Candidate"
 
 def extract_candidate_entities_with_ai(resume_text, email_body, job_description, sender_header="", filename="", reply_to="", subject=""):
-    """Extracts candidate details using Gemini AI (FIX 1: updated model list) with fallback."""
-    global genai_client, WORKING_GEMINI_MODEL, AI_MODEL_DISABLED, AI_FAILED_COUNT
-
+    """Extracts candidate details using Groq (primary) via ai_extractor with SHA256 caching and Gemini fallback."""
     extracted_email = extract_email_smart(resume_text, email_body, sender_header, reply_to, subject)
     extracted_phone = extract_phone_smart(resume_text, email_body, subject)
     deterministic_name = extract_candidate_name_smart(resume_text, email_body, sender_header, filename, extracted_email, subject)
@@ -684,75 +662,45 @@ def extract_candidate_entities_with_ai(resume_text, email_body, job_description,
         "Gender": "Unknown"
     }
 
-    combined_text = resume_text[:4000]
+    combined_text = resume_text if len(resume_text) > 50 else (resume_text + "\n" + email_body)
     if not combined_text.strip():
         return candidate_data
 
-    if genai_client and not AI_MODEL_DISABLED:
-        prompt = f"""
-You are an expert AI Resume Screening and Entity Extraction system.
-Target Job Description / Query Keywords: "{job_description}"
-
-Analyze the resume text below and extract:
-1. name: Full Name of the candidate
-2. email: Direct contact email
-3. phone: Contact phone number
-4. skills: Top technical skills present in resume
-5. experience: Total professional work experience (e.g. "5.5 years")
-6. match_score: An integer score from 0 to 100 representing candidate match fit
-7. matched_skills: Comma-separated list of target keywords found
-8. match_reason: One concise sentence explaining match score
-9. gender: Candidate's gender (Male, Female, or Unknown)
-
-Return strictly valid JSON format without markdown code blocks:
-{{
-    "name": "Candidate Full Name",
-    "email": "Candidate direct email",
-    "phone": "Candidate phone number",
-    "skills": "Comma separated top technical skills",
-    "experience": "Total experience e.g. 5.5 years",
-    "match_score": 88,
-    "matched_skills": "Skills matching query",
-    "match_reason": "One-line summary justification",
-    "gender": "Male or Female or Unknown"
-}}
-
-Content:
-{combined_text}
-"""
-        models_to_try = [WORKING_GEMINI_MODEL] if WORKING_GEMINI_MODEL and WORKING_GEMINI_MODEL in DEFAULT_GEMINI_MODELS else DEFAULT_GEMINI_MODELS
-        for model_id in models_to_try:
-            try:
-                response = genai_client.models.generate_content(
-                    model=model_id,
-                    contents=prompt
-                )
-                if response and getattr(response, 'text', None):
-                    WORKING_GEMINI_MODEL = model_id
-                    res_text = response.text.strip()
-                    res_text = re.sub(r'^```(?:json)?\s*|\s*```$', '', res_text, flags=re.MULTILINE).strip()
-                    parsed = json.loads(res_text)
-                    if isinstance(parsed, dict):
-                        if parsed.get("name"): candidate_data["Name"] = clean_candidate_name(parsed["name"])
-                        if parsed.get("email"): candidate_data["Email"] = clean_extracted_email(parsed["email"])
-                        if parsed.get("phone"): candidate_data["Phone"] = extract_phone_smart(parsed["phone"], "")
-                        if parsed.get("skills"): candidate_data["Skill Set"] = str(parsed["skills"]).strip()
-                        if parsed.get("experience"): candidate_data["Experience"] = str(parsed["experience"]).strip()
-                        if parsed.get("match_score"): candidate_data["Match Score"] = int(re.sub(r'[^\d]', '', str(parsed["match_score"])))
-                        if parsed.get("matched_skills"): candidate_data["Matched Skills"] = str(parsed["matched_skills"]).strip()
-                        if parsed.get("match_reason"): candidate_data["Match Reason"] = str(parsed["match_reason"]).strip()
-                    break
-            except Exception as e:
-                logging.warning(f"[ai] Model {model_id} failed: {e}")
+    # Groq Primary Extraction via ai_extractor module
+    try:
+        ai_fields = ai_extractor.extract_fields_cached(combined_text)
+        if ai_fields and isinstance(ai_fields, dict):
+            if ai_fields.get("name"):
+                c_name = clean_candidate_name(str(ai_fields["name"]).strip())
+                if c_name != "Candidate":
+                    candidate_data["Name"] = c_name
+            if ai_fields.get("email") and "@" in str(ai_fields["email"]):
+                c_email = clean_extracted_email(str(ai_fields["email"]).strip())
+                if c_email != "N/A":
+                    candidate_data["Email"] = c_email
+            if ai_fields.get("phone") and str(ai_fields["phone"]).strip():
+                c_phone = clean_phone(str(ai_fields["phone"]).strip())
+                if c_phone:
+                    candidate_data["Phone"] = c_phone
+            if ai_fields.get("skills") and str(ai_fields["skills"]).strip():
+                candidate_data["Skill Set"] = str(ai_fields["skills"]).strip()
+            if ai_fields.get("experience") and str(ai_fields["experience"]).strip():
+                exp_val = str(ai_fields["experience"]).strip()
+                exp_parsed = extract_experience_from_text(exp_val)
+                candidate_data["Experience"] = exp_parsed if exp_parsed != "2.0 years" else f"{exp_val} years"
+            if ai_fields.get("gender") and str(ai_fields["gender"]).lower() != "unknown":
+                candidate_data["Gender"] = str(ai_fields["gender"]).strip().capitalize()
+    except Exception as ex:
+        logger.warning(f"[ai] Extraction note: {ex}")
 
     return candidate_data
 
 def main(job_query, account_email="recruiter@ecorptrainings.com", max_candidates=25, date_preset=None, date_from=None, date_to=None, include_excel=False):
     """
     Main entrypoint called from app.py or CLI.
-    Processes ONLY PDF/DOCX attachments (FIX 2 & FIX 3).
-    Honors max_candidates limit (FIX 4).
-    Logs clean milestone progress (FIX 5).
+    Processes ONLY PDF/DOCX attachments.
+    Honors max_candidates limit strictly.
+    Uses Groq for ultra-fast candidate entity extraction with gentle sequential delays.
     """
     if not job_query or not job_query.strip():
         print("Job Query / Job Description cannot be empty.")
@@ -769,25 +717,25 @@ def main(job_query, account_email="recruiter@ecorptrainings.com", max_candidates
     email_key = account_email.lower().strip() if account_email else "recruiter@ecorptrainings.com"
     
     t_start = time.time()
-    logging.info(f"[search-CONFIG] jd={job_query} mailbox={email_key} limit={max_candidates}")
+    logger.info(f"[search-CONFIG] jd={job_query} mailbox={email_key} limit={max_candidates}")
 
     service = auto_authenticate_google(email_key)
     search_query = build_gmail_search_query(job_query, date_preset=date_preset, date_from=date_from, date_to=date_to)
     
-    logging.info(f'[search-FETCH] query="{search_query}"')
+    logger.info(f'[search-FETCH] query="{search_query}"')
     messages = fetch_messages_cached(service, search_query, email_key, max_results=max_candidates)
-    logging.info(f"[search-FETCH] Gmail returned {len(messages)} emails")
+    logger.info(f"[search-FETCH] Gmail returned {len(messages)} emails")
 
     default_cols = ["Rank", "Source", "source", "source_file", "Name", "Gender", "Email", "Phone", "Experience", "Skill Set", "Matched Skills", "Match Score", "Match Reason", "ReceivedAt"]
 
     if not messages:
-        logging.info("[search-DONE] 0 emails found.")
+        logger.info("[search-DONE] 0 emails found.")
         pd.DataFrame(columns=default_cols).to_csv(OUTPUT_CSV, index=False)
         with open(os.path.join(RESUME_FOLDER, "scan_summary.json"), "w") as f_sum:
             json.dump({'pdf': 0, 'docx': 0, 'total_scanned': 0, 'matched': 0}, f_sum)
         return
 
-    # Filter emails for PDF/DOCX attachments ONLY (FIX 3)
+    # Filter emails for PDF/DOCX attachments ONLY
     emails_with_resumes = []
     for msg_meta in messages:
         try:
@@ -797,15 +745,15 @@ def main(job_query, account_email="recruiter@ecorptrainings.com", max_candidates
             if full_msg and has_pdf_or_docx_attachment(full_msg):
                 emails_with_resumes.append(full_msg)
             else:
-                logging.info(f"[search] skip email {msg_meta['id']} — no PDF/DOCX attachment")
+                logger.info(f"[search] skip email {msg_meta['id']} — no PDF/DOCX attachment")
         except Exception as e:
-            logging.warning(f"[search] Error fetching message {msg_meta['id']}: {e}")
+            logger.warning(f"[search] Error fetching message {msg_meta['id']}: {e}")
 
     total_with_resumes = len(emails_with_resumes)
-    logging.info(f"[search-FILTER] {total_with_resumes} of {len(messages)} emails have PDF/DOCX attachments")
+    logger.info(f"[search-FILTER] {total_with_resumes} of {len(messages)} emails have PDF/DOCX attachments")
 
     if total_with_resumes > 0:
-        logging.info(f"[search-DOWNLOAD] downloading {total_with_resumes} attachments")
+        logger.info(f"[search-DOWNLOAD] downloading {total_with_resumes} attachments")
 
     candidates = []
     seen_identifiers = set()
@@ -815,10 +763,11 @@ def main(job_query, account_email="recruiter@ecorptrainings.com", max_candidates
 
     for idx, msg in enumerate(emails_with_resumes, start=1):
         if len(candidates) >= max_candidates:
+            logger.info(f"[search-LIMIT] Reached user candidate limit of {max_candidates}. Stopping extraction.")
             break
 
         pct = int((idx / total_with_resumes) * 100) if total_with_resumes > 0 else 100
-        logging.info(f"[search-PROGRESS] {idx}/{total_with_resumes} ({pct}%)")
+        logger.info(f"[search-PROGRESS] extracting {idx}/{total_with_resumes} ({pct}%)")
 
         message_id = msg["id"]
         payload = msg.get("payload", {})
@@ -907,13 +856,16 @@ def main(job_query, account_email="recruiter@ecorptrainings.com", max_candidates
                     candidates.append(candidate)
                     if candidate.get("Match Score", 0) >= 50:
                         matched_count += 1
+                        
+                # Gentle rate limit delay (~3 req/sec max) to keep AI API usage smooth
+                time.sleep(0.3)
 
             except Exception as e_file:
-                logging.warning(f"[file] Error downloading/parsing attachment {filename}: {e_file}")
+                logger.warning(f"[file] Error downloading/parsing attachment {filename}: {e_file}")
 
     elapsed = round(time.time() - t_start, 1)
-    logging.info(f"[search-MATCH] {len(candidates)} candidates scanned, {matched_count} matched")
-    logging.info(
+    logger.info(f"[search-MATCH] {len(candidates)} candidates scanned, {matched_count} matched")
+    logger.info(
         f"[search-DONE]\n"
         f"  Emails fetched:        {len(messages)}\n"
         f"  Emails with PDF/DOCX:  {total_with_resumes}\n"
