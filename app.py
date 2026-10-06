@@ -674,6 +674,23 @@ def _do_process(available_accounts, default_account, is_get_search):
             scan_summary=None
         )
 
+    if request.method == 'POST' and job_query:
+        try:
+            target = int(request.form.get('max_candidates') or 25)
+        except Exception:
+            target = 25
+        _searches[search_id] = {
+            'status': 'starting',
+            'progress': {'current': 0, 'total': target},
+            'results': None, 'meta': None, 'error': None,
+        }
+        threading.Thread(
+            target=_run_search_async,
+            args=(search_id, selected_account, job_query, target),
+            daemon=True
+        ).start()
+        return redirect(f'/search-progress/{search_id}')
+
     min_exp_raw = request.form.get('min_exp') or request.args.get('min_exp') or request.args.get('exp')
     try:
         min_exp = float(min_exp_raw) if min_exp_raw is not None and str(min_exp_raw).strip() != '' else None
@@ -949,6 +966,74 @@ def _do_process(available_accounts, default_account, is_get_search):
         date_from='',
         date_to='',
         date_display=None
+    )
+
+_searches = {}
+
+def _run_search_async(search_id, mailbox, jd, target):
+    try:
+        _searches[search_id]['status'] = 'searching'
+        from RS_Project import search_until_relevant
+        candidates, meta = search_until_relevant(
+            mailbox=mailbox, jd=jd, target_relevant=target,
+            progress_callback=lambda cur, tot: _searches[search_id].update(
+                progress={'current': cur, 'total': tot}
+            )
+        )
+        _searches[search_id]['results'] = candidates
+        _searches[search_id]['meta'] = meta
+        _searches[search_id]['status'] = 'done'
+    except Exception as e:
+        import traceback
+        logging.exception(f'[search-{search_id}] failed')
+        _searches[search_id]['status'] = 'error'
+        _searches[search_id]['error'] = str(e)
+
+@app.route('/search-progress/<search_id>')
+def search_progress_page(search_id):
+    return render_template('search_progress.jinja', search_id=search_id)
+
+@app.route('/api/search-status/<search_id>')
+def search_status(search_id):
+    if search_id not in _searches:
+        return jsonify({'status': 'not_found'}), 404
+    s = _searches[search_id]
+    return jsonify({
+        'status': s['status'],
+        'progress': s['progress'],
+        'error': s.get('error'),
+    })
+
+@app.route('/search-results/<search_id>')
+def search_results(search_id):
+    if search_id not in _searches:
+        return redirect('/')
+    s = _searches[search_id]
+    if s['status'] != 'done':
+        return redirect(f'/search-progress/{search_id}')
+    
+    available_accounts = get_available_accounts()
+    default_account = available_accounts[0]['email'] if available_accounts else 'recruiter@ecorptrainings.com'
+    candidates = s.get('results') or []
+    meta = s.get('meta') or {}
+    
+    table_data = []
+    for idx, c in enumerate(candidates, 1):
+        row = dict(c)
+        row['Rank'] = idx
+        table_data.append(row)
+
+    return render_template(
+        'process.jinja',
+        job_query=meta.get('jd', ''),
+        job_role=meta.get('jd', ''),
+        selected_account=meta.get('mailbox', default_account),
+        available_accounts=available_accounts,
+        table_data=table_data,
+        columns=["Rank", "Name", "Gender", "Email", "Phone", "Experience", "Skill Set", "Matched Skills", "Match Score", "Match Reason"],
+        search_id=search_id,
+        total_matches=len(table_data),
+        scan_summary={'pdf': len([c for c in table_data if c.get('Source') == 'pdf']), 'docx': len([c for c in table_data if c.get('Source') == 'docx']), 'total_scanned': meta.get('emails_scanned', len(table_data)), 'matched': len(table_data), 'hidden_below_score': 0}
     )
 
 @app.route('/debug-status')

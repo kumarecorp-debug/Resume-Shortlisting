@@ -217,7 +217,7 @@ def build_gmail_search_query(job_description, days_back=None, date_preset=None, 
         start_date = (datetime.now() - timedelta(days=days_back)).strftime('%Y/%m/%d')
         date_clause = f"after:{start_date}"
 
-    GMAIL_ATTACHMENT_FILTER = "(filename:pdf OR filename:docx OR filename:xlsx OR filename:xls)"
+    GMAIL_ATTACHMENT_FILTER = "(filename:pdf OR filename:docx)"
 
     if date_clause:
         full_query = f"has:attachment {GMAIL_ATTACHMENT_FILTER} {date_clause} {kw_query}".strip() if kw_query else f"has:attachment {GMAIL_ATTACHMENT_FILTER} {date_clause}"
