@@ -647,7 +647,16 @@
                         <button type="button" class="chip-btn" onclick="setQuery('SAP GRC OR Security')">SAP GRC OR Security</button>
                         <button type="button" class="chip-btn" onclick="setQuery('AWS OR Azure')">AWS OR Azure</button>
                     </div>
-                    <button type="submit" class="btn-submit">🔍 Search Mailbox & Extract Resumes</button>
+
+                    <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; margin-top: 10px;">
+                        <div style="display: flex; align-items: center; gap: 8px; background: #f8fafc; border: 1.5px solid #cbd5e1; padding: 8px 14px; border-radius: 8px;">
+                            <input type="checkbox" id="fast_mode" name="fast_mode" value="true" checked style="transform: scale(1.2); cursor: pointer;">
+                            <label for="fast_mode" style="font-weight: 700; font-size: 0.88rem; color: #1e293b; cursor: pointer;">
+                                ⚡ Fast mode (Cap AI extractions at 30 for max speed & Vercel safety)
+                            </label>
+                        </div>
+                        <button type="submit" class="btn-submit">🔍 Search Mailbox & Extract Resumes</button>
+                    </div>
                 </div>
             </form>
 

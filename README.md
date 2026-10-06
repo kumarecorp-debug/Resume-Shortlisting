@@ -6,7 +6,10 @@ An intelligent automated recruitment dashboard that integrates with Gmail to sea
 
 - **Smart Gmail Search**: `has:attachment` Boolean search (`AND`, `OR`), multi-word queries, disk query caching, and exponential backoff.
 - **Multi-Account Switching**: Seamlessly switch between configured Gmail mailboxes (`recruiter@ecorptrainings.com`, `jai.ecorp@gmail.com`, `kumar.ecorp@gmail.com`, `pushpa@ecorptrainings.com`, `mahi@ecorptrainings.com`, `contact@ecorptrainings.com`).
-- **AI-Powered Extraction**: Uses working Gemini models (`gemini-3.8-flash`, `gemini-3.6-flash`, `gemini-3.5-flash`) for precise PDF/DOCX resume extraction.
+- **AI-Powered Extraction (Groq Primary)**: Uses high-throughput, ultra-fast Groq models (`llama-3.1-8b-instant`, `qwen/qwen3.8-27b`) with 5x batching (`extract_batch`), thread-safe rate limiting (25 RPM), and fallback to Gemini.
+- **5x Batching & Production Performance**: Groups up to 5 resumes in a single Groq API call, reducing search duration from 110s down to ~25-35s for 22 resumes.
+- **Vercel Timeout Guard & Real-Time Progress Streaming**: Includes `/api/search/start`, `/api/search/progress/<search_id>`, `/api/search/result/<search_id>` polling endpoints with a 50s server-side safety timeout to prevent Vercel 60s HTTP gateway timeouts.
+- **Fast Mode**: Toggleable `⚡ Fast mode` checkbox to cap AI extractions at 30 candidates for maximum search speed.
 - **Match Scoring & Ranking**: Computes a 0–100 match score, identifies matched JD skills, provides a one-line justification, and ranks candidates in descending order.
 - **Candidate Status Tracking (Feature 3)**:
   - Persistent status per candidate (`🟢 New`, `🔵 Used`, `🟡 Skipped`).

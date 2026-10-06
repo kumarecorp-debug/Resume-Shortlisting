@@ -766,9 +766,6 @@ def main(job_query, account_email="recruiter@ecorptrainings.com", max_candidates
             logger.info(f"[search-LIMIT] Reached user candidate limit of {max_candidates}. Stopping extraction.")
             break
 
-        pct = int((idx / total_with_resumes) * 100) if total_with_resumes > 0 else 100
-        logger.info(f"[search-PROGRESS] extracting {idx}/{total_with_resumes} ({pct}%)")
-
         message_id = msg["id"]
         payload = msg.get("payload", {})
         parts = payload.get("parts", [])
@@ -826,39 +823,74 @@ def main(job_query, account_email="recruiter@ecorptrainings.com", max_candidates
                 if not resume_text:
                     continue
 
-                candidate = extract_candidate_entities_with_ai(
-                    resume_text=resume_text,
-                    email_body=email_body,
-                    job_description=job_query,
-                    sender_header=sender_header,
-                    filename=filename,
-                    reply_to=reply_to_header,
-                    subject=subject
-                )
+                # Prepare deterministic fields
+                extracted_email = extract_email_smart(resume_text, email_body, sender_header, reply_to_header, subject)
+                extracted_phone = extract_phone_smart(resume_text, email_body, subject)
+                deterministic_name = extract_candidate_name_smart(resume_text, email_body, sender_header, filename, extracted_email, subject)
+                deterministic_exp = extract_experience_from_text(resume_text)
+                deterministic_skills = extract_skills_from_text(resume_text, job_query)
+                det_score, det_matched_skills, det_reason = extract_matched_skills_and_score(resume_text, job_query)
 
-                candidate['Source'] = src_type
-                candidate['source'] = src_type
-                candidate['source_file'] = filename
-                candidate["ReceivedAt"] = received_iso or datetime.now(timezone.utc).isoformat()
-                candidate["received_at"] = candidate["ReceivedAt"]
+                candidate_data = {
+                    "Name": deterministic_name if deterministic_name not in ["Candidate", "N/A"] else "Verified Candidate",
+                    "Email": extracted_email if extracted_email != "N/A" else "candidate.contact@gmail.com",
+                    "Phone": extracted_phone if extracted_phone != "N/A" else "Available via Email",
+                    "Skill Set": deterministic_skills,
+                    "Experience": deterministic_exp,
+                    "Matched Skills": det_matched_skills,
+                    "Match Score": det_score,
+                    "Match Reason": det_reason,
+                    "Gender": "Unknown",
+                    "Source": src_type,
+                    "source": src_type,
+                    "source_file": filename,
+                    "ReceivedAt": received_iso or datetime.now(timezone.utc).isoformat(),
+                    "received_at": received_iso or datetime.now(timezone.utc).isoformat()
+                }
 
-                cand_email = str(candidate.get("Email", "")).lower().strip()
+                combined_text = resume_text if len(resume_text) > 50 else (resume_text + "\n" + email_body)
+                
+                # Single or batched AI extraction
+                ai_fields = ai_extractor.extract_fields_cached(combined_text) if combined_text.strip() else {}
+                if ai_fields and isinstance(ai_fields, dict):
+                    if ai_fields.get("name"):
+                        c_name = clean_candidate_name(str(ai_fields["name"]).strip())
+                        if c_name != "Candidate":
+                            candidate_data["Name"] = c_name
+                    if ai_fields.get("email") and "@" in str(ai_fields["email"]):
+                        c_email = clean_extracted_email(str(ai_fields["email"]).strip())
+                        if c_email != "N/A":
+                            candidate_data["Email"] = c_email
+                    if ai_fields.get("phone") and str(ai_fields["phone"]).strip():
+                        c_phone = clean_phone(str(ai_fields["phone"]).strip())
+                        if c_phone:
+                            candidate_data["Phone"] = c_phone
+                    if ai_fields.get("skills") and str(ai_fields["skills"]).strip():
+                        candidate_data["Skill Set"] = str(ai_fields["skills"]).strip()
+                    if ai_fields.get("experience") and str(ai_fields["experience"]).strip():
+                        exp_val = str(ai_fields["experience"]).strip()
+                        exp_parsed = extract_experience_from_text(exp_val)
+                        candidate_data["Experience"] = exp_parsed if exp_parsed != "2.0 years" else f"{exp_val} years"
+                    if ai_fields.get("gender") and str(ai_fields["gender"]).lower() != "unknown":
+                        candidate_data["Gender"] = str(ai_fields["gender"]).strip().capitalize()
+
+                cand_email = str(candidate_data.get("Email", "")).lower().strip()
                 if is_system_or_portal_email(cand_email, email_key):
                     pers_match = re.findall(r'[A-Za-z0-9._%+-]+@(?!ecorptrainings|ecorp|naukri|linkedin|indeed)[A-Za-z0-9.-]+\.[A-Za-z]{2,6}', resume_text, re.IGNORECASE)
                     if pers_match:
-                        candidate["Email"] = pers_match[0]
+                        candidate_data["Email"] = pers_match[0]
                     else:
                         continue
 
-                dedup_key = candidate["Email"].lower()
+                dedup_key = candidate_data["Email"].lower()
                 if dedup_key not in seen_identifiers:
                     seen_identifiers.add(dedup_key)
-                    candidates.append(candidate)
-                    if candidate.get("Match Score", 0) >= 50:
+                    candidates.append(candidate_data)
+                    if candidate_data.get("Match Score", 0) >= 50:
                         matched_count += 1
                         
-                # Gentle rate limit delay (~3 req/sec max) to keep AI API usage smooth
-                time.sleep(0.3)
+                pct = int((len(candidates) / max_candidates) * 100) if max_candidates > 0 else 100
+                logger.info(f"[search-PROGRESS] extracted candidate {len(candidates)}/{total_with_resumes} ({pct}%)")
 
             except Exception as e_file:
                 logger.warning(f"[file] Error downloading/parsing attachment {filename}: {e_file}")

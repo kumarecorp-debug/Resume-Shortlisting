@@ -568,12 +568,7 @@
                         <span style="color: #64748b; font-size: 0.84rem;">(Optional — leave blank to show all candidates)</span>
                     </div>
 
-                    <div style="margin-top: 4px; margin-bottom: 10px; display: flex; align-items: center; gap: 8px;">
-                        <input type="checkbox" name="include_excel" id="include_excel" value="1" {% if include_excel is not defined or include_excel %}checked{% endif %} style="cursor: pointer; transform: scale(1.15);">
-                        <label for="include_excel" style="font-weight: 600; color: #0f172a; font-size: 0.92rem; cursor: pointer;">
-                            📊 Include Excel attachments (.xlsx / .xls)
-                        </label>
-                    </div>
+
 
                     <!-- Time Window & Show Filter Section -->
                     <div class="time-window-section" style="margin-top: 14px; margin-bottom: 16px; background: #ffffff; padding: 14px 16px; border-radius: 10px; border: 1.5px solid #cbd5e1; box-shadow: 0 1px 3px rgba(0,0,0,0.03);">
@@ -652,7 +647,16 @@
                         <button type="button" class="chip-btn" onclick="setQuery('SAP GRC OR Security')">SAP GRC OR Security</button>
                         <button type="button" class="chip-btn" onclick="setQuery('AWS OR Azure')">AWS OR Azure</button>
                     </div>
-                    <button type="submit" class="btn-submit">🔍 Search Mailbox & Extract Resumes</button>
+
+                    <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; margin-top: 10px;">
+                        <div style="display: flex; align-items: center; gap: 8px; background: #f8fafc; border: 1.5px solid #cbd5e1; padding: 8px 14px; border-radius: 8px;">
+                            <input type="checkbox" id="fast_mode" name="fast_mode" value="true" checked style="transform: scale(1.2); cursor: pointer;">
+                            <label for="fast_mode" style="font-weight: 700; font-size: 0.88rem; color: #1e293b; cursor: pointer;">
+                                ⚡ Fast mode (Cap AI extractions at 30 for max speed & Vercel safety)
+                            </label>
+                        </div>
+                        <button type="submit" class="btn-submit">🔍 Search Mailbox & Extract Resumes</button>
+                    </div>
                 </div>
             </form>
 
@@ -668,7 +672,7 @@
 
             {% if scan_summary %}
                 <div style="background: #f0f9ff; border: 1px solid #bae6fd; color: #0369a1; padding: 10px 16px; border-radius: 8px; font-size: 0.9rem; font-weight: 600; margin-bottom: 14px;">
-                    📊 <strong>Scan Summary:</strong> Scanned {{ scan_summary.get('pdf', 0) }} PDFs, {{ scan_summary.get('docx', 0) }} DOCX, {{ scan_summary.get('xlsx', 0) + scan_summary.get('xls', 0) }} Excel files ({{ scan_summary.get('xlsx_candidates', 0) }} rows total) &nbsp;·&nbsp; Found {{ total_matches }} matching candidates
+                    Searched '{{ job_query or '' }}' &nbsp;·&nbsp; {{ scan_summary.get('pdf', 0) + scan_summary.get('docx', 0) }} resumes scanned &nbsp;·&nbsp; {{ total_matches }} matches
                 </div>
             {% endif %}
 

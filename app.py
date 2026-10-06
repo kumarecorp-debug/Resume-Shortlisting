@@ -464,6 +464,78 @@ def execute_full_candidate_search(job_query, selected_account, max_candidates=25
 
     return df, scan_summary
 
+_search_progress_store = defaultdict(dict)
+_search_result_store = {}
+
+def run_async_search(search_id, params):
+    t_start = time.time()
+    _search_progress_store[search_id] = {
+        "status": "processing",
+        "current": 0,
+        "total": 0,
+        "message": "Connecting to mailbox..."
+    }
+    try:
+        job_query = params.get('job_query')
+        selected_account = params.get('selected_account', 'recruiter@ecorptrainings.com')
+        max_candidates = int(params.get('max_candidates', 25))
+        date_preset = params.get('date_preset', 'any')
+        date_from = params.get('date_from', '')
+        date_to = params.get('date_to', '')
+        fast_mode = params.get('fast_mode', False)
+
+        if fast_mode and max_candidates > 30:
+            max_candidates = 30
+
+        df, scan_summary = execute_full_candidate_search(
+            job_query,
+            selected_account,
+            max_candidates=max_candidates,
+            date_preset=date_preset,
+            date_from=date_from,
+            date_to=date_to,
+            include_excel=False
+        )
+
+        all_records = df.fillna("N/A").to_dict(orient='records') if not df.empty else []
+        elapsed = round(time.time() - t_start, 1)
+        logging.info(f"[search-STATS] search_id={search_id} total_time={elapsed}s candidates={len(all_records)}")
+
+        _search_result_store[search_id] = {
+            "status": "done",
+            "candidates": all_records,
+            "scan_summary": scan_summary,
+            "elapsed": elapsed
+        }
+        _search_progress_store[search_id] = {
+            "status": "done",
+            "current": len(all_records),
+            "total": len(all_records),
+            "message": "Search complete"
+        }
+    except Exception as e:
+        logging.error(f"[search-ERROR] {e}")
+        _search_progress_store[search_id] = {
+            "status": "error",
+            "message": str(e)
+        }
+
+@app.route('/api/search/start', methods=['POST'])
+def api_search_start():
+    params = request.get_json(force=True) or {}
+    search_id = str(uuid.uuid4())
+    t = threading.Thread(target=run_async_search, args=(search_id, params), daemon=True)
+    t.start()
+    return jsonify({"search_id": search_id})
+
+@app.route('/api/search/progress/<search_id>')
+def api_search_progress(search_id):
+    return jsonify(_search_progress_store.get(search_id, {"status": "not_found"}))
+
+@app.route('/api/search/result/<search_id>')
+def api_search_result(search_id):
+    return jsonify(_search_result_store.get(search_id, {"status": "not_found", "candidates": []}))
+
 @app.route('/', methods=['GET', 'POST'])
 @app.route('/process', methods=['GET', 'POST'])
 @login_required
