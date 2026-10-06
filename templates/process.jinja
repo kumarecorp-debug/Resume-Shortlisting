@@ -1335,6 +1335,12 @@
 
                     if (searchForm) {
                         searchForm.addEventListener('submit', function() {
+                            const submitBtn = searchForm.querySelector('button[type="submit"]');
+                            if (submitBtn) {
+                                submitBtn.disabled = true;
+                                submitBtn.style.opacity = '0.75';
+                                submitBtn.innerHTML = '⌛ Searching Mailbox & Extracting...';
+                            }
                             const loadingBox = document.getElementById('loading-indicator');
                             const progressFill = document.getElementById('progress-fill');
                             const targetCount = document.getElementById('target-count');
