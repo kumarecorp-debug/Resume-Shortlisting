@@ -4,6 +4,7 @@ import logging
 import time
 import hashlib
 import threading
+from collections import deque
 
 logger = logging.getLogger(__name__)
 
@@ -12,39 +13,26 @@ GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "gsk_fHwxlgXlFacnDaBcwDh9WGdyb3FYm
 PRIMARY_MODEL = os.environ.get("GROQ_MODEL", "llama-3.1-8b-instant")
 RPM_LIMIT = int(os.environ.get("GROQ_REQUESTS_PER_MINUTE", 25))
 MAX_RESUME_CHARS = int(os.environ.get("MAX_RESUME_CHARS", 4000))
+BATCH_SIZE = int(os.environ.get("GROQ_BATCH_SIZE", 5))
 
-# FIX 1: Trim GROQ_MODELS to fast, high-quota models confirmed working
-GROQ_MODELS = [
-    "llama-3.1-8b-instant",  # fastest, high ITPM
-    "qwen/qwen3.8-27b",      # confirmed working
+PREFERRED_MODELS = [
+    'llama-3.1-8b-instant',
+    'llama-3.3-70b-versatile',
+    'llama-3.3-70b-specdec',
+    'llama3-70b-8192',
+    'llama3-8b-8192',
+    'gemma2-9b-it',
+    'qwen/qwen3.8-27b',
 ]
 
-if PRIMARY_MODEL and PRIMARY_MODEL not in GROQ_MODELS:
-    GROQ_MODELS.insert(0, PRIMARY_MODEL)
-
-WORKING_GROQ_MODEL = None
-
-# Thread-safe RateLimiter class
-class RateLimiter:
-    def __init__(self, requests_per_minute=25):
-        self.min_interval = 60.0 / float(requests_per_minute)
-        self.last_request_time = 0.0
-        self.lock = threading.Lock()
-
-    def wait(self, multiplier=1.0):
-        with self.lock:
-            now = time.time()
-            interval = self.min_interval * multiplier
-            elapsed = now - self.last_request_time
-            if elapsed < interval:
-                sleep_time = interval - elapsed
-                logger.info(f"[groq] rate limiter waited {sleep_time:.1f}s")
-                time.sleep(sleep_time)
-            self.last_request_time = time.time()
-
-_rate_limiter = RateLimiter(requests_per_minute=RPM_LIMIT)
+FALLBACK_MODELS = [
+    'llama-3.1-8b-instant',
+    'llama-3.3-70b-versatile',
+    'gemma2-9b-it',
+]
 
 groq_client = None
+
 def get_groq_client():
     global groq_client
     api_k = os.environ.get("GROQ_API_KEY", GROQ_API_KEY)
@@ -53,216 +41,221 @@ def get_groq_client():
             from groq import Groq
             groq_client = Groq(
                 api_key=api_k,
-                max_retries=0,   # Disable SDK retries
+                max_retries=0,
                 timeout=20.0
             )
         except Exception as e:
             logger.warning(f"[groq] Client init error: {e}")
     return groq_client
 
-def verify_working_model():
-    """Startup probe: test models once and select first working model (FIX 1)."""
-    global WORKING_GROQ_MODEL
+def init_groq_models():
+    client = get_groq_client()
+    available = []
+    if client:
+        try:
+            models = client.models.list()
+            available = [m.id for m in models.data]
+            logger.info(f'[groq-startup] Available models: {available}')
+        except Exception as e:
+            logger.warning(f'[groq-startup] Could not list models: {e}')
+
+    active = None
+    for model in PREFERRED_MODELS:
+        if available and model in available:
+            active = model
+            break
+    if not active:
+        active = available[0] if available else 'qwen/qwen3.8-27b'
+
+    logger.info(f'[groq-startup] Using model: {active}')
+    return active, available
+
+ACTIVE_GROQ_MODEL, AVAILABLE_MODELS = init_groq_models()
+
+class RateLimiter:
+    def __init__(self, max_per_min=25):
+        self.max = max_per_min
+        self.timestamps = deque()
+        self.lock = threading.Lock()
+        self.last_wait_msg = None
+        self.last_wait_sec = 0
+
+    def acquire(self):
+        while True:
+            with self.lock:
+                now = time.time()
+                while self.timestamps and now - self.timestamps[0] > 60:
+                    self.timestamps.popleft()
+
+                if len(self.timestamps) < self.max:
+                    self.timestamps.append(now)
+                    self.last_wait_msg = None
+                    self.last_wait_sec = 0
+                    return
+
+                oldest = self.timestamps[0]
+                wait = 60 - (now - oldest) + 0.5
+                self.last_wait_sec = round(wait)
+                self.last_wait_msg = f"AI rate limit — waiting {round(wait)}s"
+
+            if wait > 15:
+                logger.info(f'[groq-rate] waiting {wait:.1f}s (long)')
+                time.sleep(wait)
+            elif wait > 3:
+                logger.info(f'[groq-rate] waiting {wait:.1f}s')
+                time.sleep(wait)
+            else:
+                time.sleep(max(wait, 1.0))
+
+_groq_limiter = RateLimiter(max_per_min=25)
+
+def call_with_timeout(fn, timeout_sec=30):
+    result = {'value': None, 'error': None}
+    def target():
+        try:
+            result['value'] = fn()
+        except Exception as e:
+            result['error'] = e
+
+    t = threading.Thread(target=target, daemon=True)
+    t.start()
+    t.join(timeout_sec)
+
+    if t.is_alive():
+        raise TimeoutError(f'Call timed out after {timeout_sec}s')
+    if result['error']:
+        raise result['error']
+    return result['value']
+
+def call_groq_with_fallback(messages, max_tokens=1500):
     client = get_groq_client()
     if not client:
-        return
-    for model in GROQ_MODELS:
-        try:
-            resp = client.chat.completions.create(
-                model=model,
-                messages=[{"role": "user", "content": "hi"}],
-                max_tokens=5,
-                timeout=5.0
-            )
-            if resp:
-                WORKING_GROQ_MODEL = model
-                logger.info(f"[groq] selected working model: {model}")
-                return
-        except Exception as e:
-            logger.info(f"[groq] model {model} probe skipped ({e})")
+        raise Exception("Groq client not initialized")
 
-# Run startup probe on import
-try:
-    verify_working_model()
-except Exception:
-    pass
+    candidate_models = []
+    if ACTIVE_GROQ_MODEL:
+        candidate_models.append(ACTIVE_GROQ_MODEL)
+    for m in FALLBACK_MODELS:
+        if m not in candidate_models:
+            candidate_models.append(m)
+
+    for model in candidate_models:
+        try:
+            _groq_limiter.acquire()
+            def _api_call(mod=model):
+                return client.chat.completions.create(
+                    model=mod,
+                    messages=messages,
+                    temperature=0,
+                    response_format={'type': 'json_object'},
+                    max_tokens=max_tokens
+                )
+
+            response = call_with_timeout(_api_call, timeout_sec=30)
+            return response, model
+        except Exception as e:
+            err_str = str(e)
+            if '429' in err_str or 'rate' in err_str.lower() or 'too many requests' in err_str.lower():
+                logger.warning(f'[groq] {model} rate-limited, trying next model: {e}')
+                continue
+            else:
+                logger.error(f'[groq] {model} failed: {e}')
+                continue
+    raise Exception('All Groq models failed or rate-limited')
+
+BATCH_SYSTEM_PROMPT = """You extract candidate data from resumes.
+Return ONLY compact JSON. No explanations.
+
+For each resume, return:
+{"n":"name","e":"email","p":"phone","s":"skills","x":"exp","g":"gender","sc":score,"ms":"matched","mr":"reason"}
+
+Return: {"c":[{"n":"...",...}, ...]}"""
+
+def extract_batch(resume_texts, jd):
+    if not resume_texts:
+        return []
+
+    combined = '\n\n---RESUME-BREAK---\n\n'.join(
+        (t or '')[:MAX_RESUME_CHARS] for t in resume_texts
+    )
+    prompt = f"""Target JD: {jd}
+
+Resumes:
+{combined}
+"""
+    messages = [
+        {'role': 'system', 'content': BATCH_SYSTEM_PROMPT},
+        {'role': 'user', 'content': prompt}
+    ]
+
+    try:
+        t_start = time.time()
+        response, used_model = call_groq_with_fallback(messages, max_tokens=1500)
+        elapsed = time.time() - t_start
+        content = response.choices[0].message.content
+        data = json.loads(content)
+        raw_candidates = data.get('c', []) or data.get('candidates', [])
+
+        candidates = []
+        for item in raw_candidates:
+            if not isinstance(item, dict):
+                continue
+            name = item.get('n') or item.get('name') or ''
+            email = item.get('e') or item.get('email') or ''
+            phone = item.get('p') or item.get('phone') or ''
+            skills = str(item.get('s') or item.get('skills') or '')[:200]
+            exp = str(item.get('x') or item.get('experience') or '')[:50]
+            gender = item.get('g') or item.get('gender') or 'Unknown'
+            score = item.get('sc') if item.get('sc') is not None else item.get('match_score', 0)
+            ms = str(item.get('ms') or item.get('matched_skills') or '')[:200]
+            mr = str(item.get('mr') or item.get('match_reason') or '')[:300]
+
+            candidates.append({
+                "name": name,
+                "email": email,
+                "phone": phone,
+                "skills": skills,
+                "experience": exp,
+                "gender": gender,
+                "match_score": score,
+                "matched_skills": ms,
+                "match_reason": mr
+            })
+
+        logger.info(f"[groq-BATCH] Extracted {len(candidates)} candidates via {used_model} in {elapsed:.2f}s")
+        return candidates
+    except Exception as e:
+        logger.warning(f"[groq-BATCH] batch failed: {e}")
+        return []
 
 SYSTEM_PROMPT = """Extract resume fields as JSON:
-{"name":"","email":"","phone":"","skills":"","experience":"","gender":""}
+{"name":"","email":"","phone":"","skills":"","experience":"","gender":"","match_score":75,"matched_skills":"","match_reason":""}
 Rules: Empty string if missing. Return JSON only."""
 
 EMPTY = {
     "name": "", "email": "", "phone": "", "skills": "",
-    "experience": "", "gender": "Unknown"
+    "experience": "", "gender": "Unknown", "match_score": 0,
+    "matched_skills": "", "match_reason": ""
 }
 
-_extraction_cache = {}  # {sha256_of_text: candidate_dict}
-
-def _extract_with_gemini(resume_text):
-    gemini_key = os.environ.get("GEMINI_API_KEY")
-    if not gemini_key:
-        return EMPTY
-    try:
-        from google import genai
-        from google.genai import types
-        g_client = genai.Client(api_key=gemini_key)
-        resp = g_client.models.generate_content(
-            model="gemini-2.5-flash",
-            contents=[SYSTEM_PROMPT, resume_text[:MAX_RESUME_CHARS]],
-            config=types.GenerateContentConfig(
-                temperature=0,
-                response_mime_type="application/json"
-            )
-        )
-        if resp and getattr(resp, 'text', None):
-            data = json.loads(resp.text)
-            logger.info("[gemini] extracted via gemini-2.5-flash")
-            if isinstance(data.get("skills"), list):
-                data["skills"] = ", ".join(str(s) for s in data["skills"])
-            return {**EMPTY, **data}
-    except Exception as e:
-        logger.error(f"[gemini] fallback failed: {e}")
-    return EMPTY
+_extraction_cache = {}
 
 def extract_fields(resume_text):
-    """
-    Extract candidate fields from single resume text.
-    """
-    global WORKING_GROQ_MODEL
+    """Single resume extraction fallback."""
     if not resume_text or not resume_text.strip():
         return EMPTY
-
-    truncated_text = resume_text[:MAX_RESUME_CHARS]
-    client = get_groq_client()
-    if not client:
-        return _extract_with_gemini(truncated_text)
-
-    models_to_try = [WORKING_GROQ_MODEL] if WORKING_GROQ_MODEL else GROQ_MODELS
-
-    for model in models_to_try:
-        if not model:
-            continue
-        try:
-            _rate_limiter.wait()
-            t_start = time.time()
-            response = client.chat.completions.create(
-                model=model,
-                messages=[
-                    {"role": "system", "content": SYSTEM_PROMPT},
-                    {"role": "user", "content": truncated_text}
-                ],
-                temperature=0,
-                response_format={"type": "json_object"},
-                max_tokens=400
-            )
-            elapsed = time.time() - t_start
-
-            if response and response.choices and response.choices[0].message.content:
-                content = response.choices[0].message.content.strip()
-                data = json.loads(content)
-                WORKING_GROQ_MODEL = model
-                logger.info(f"[groq] extracted via {model} in {elapsed:.2f}s")
-                if isinstance(data.get("skills"), list):
-                    data["skills"] = ", ".join(str(s) for s in data["skills"])
-                return {**EMPTY, **data}
-
-        except Exception as e:
-            err_str = str(e).lower()
-            if "not found" in err_str or "404" in err_str:
-                logger.info(f"[groq] model {model} not available, trying next")
-                if WORKING_GROQ_MODEL == model:
-                    WORKING_GROQ_MODEL = None
-                continue
-            elif "rate limit" in err_str or "429" in err_str:
-                logger.info(f"[groq] rate limited on {model}, waiting 3s and retrying once")
-                time.sleep(3.0)
-                try:
-                    _rate_limiter.wait()
-                    response = client.chat.completions.create(
-                        model=model,
-                        messages=[
-                            {"role": "system", "content": SYSTEM_PROMPT},
-                            {"role": "user", "content": truncated_text}
-                        ],
-                        temperature=0,
-                        response_format={"type": "json_object"},
-                        max_tokens=400
-                    )
-                    if response and response.choices and response.choices[0].message.content:
-                        data = json.loads(response.choices[0].message.content.strip())
-                        WORKING_GROQ_MODEL = model
-                        return {**EMPTY, **data}
-                except Exception:
-                    pass
-                continue
-            else:
-                logger.warning(f"[groq] error on {model}: {e}")
-                continue
-
-    return _extract_with_gemini(truncated_text)
-
-# FIX 3: Batch Extraction function (up to 5 resumes in 1 API call)
-def extract_batch(resumes_batch):
-    """
-    Send up to 5 resumes in one Groq call (FIX 3).
-    Returns list of candidate dicts in exact order.
-    """
-    global WORKING_GROQ_MODEL
-    if not resumes_batch:
-        return []
-
-    client = get_groq_client()
-    if not client:
-        return [extract_fields(r) for r in resumes_batch]
-
-    combined = "\n\n---RESUME-BREAK---\n\n".join(
-        r[:MAX_RESUME_CHARS] for r in resumes_batch
-    )
-
-    batch_prompt = f"""Extract each resume below as a JSON object.
-Return a JSON object with key "candidates" containing an array of candidate objects in exact order.
-Each candidate object must have keys: name, email, phone, skills, experience, gender.
-
-Resumes:
-{combined}"""
-
-    models_to_try = [WORKING_GROQ_MODEL] if WORKING_GROQ_MODEL else GROQ_MODELS
-
-    for model in models_to_try:
-        if not model:
-            continue
-        try:
-            _rate_limiter.wait(multiplier=1.2)
-            t_start = time.time()
-            response = client.chat.completions.create(
-                model=model,
-                messages=[{"role": "user", "content": batch_prompt}],
-                temperature=0,
-                response_format={"type": "json_object"},
-                max_tokens=2000
-            )
-            elapsed = time.time() - t_start
-
-            if response and response.choices and response.choices[0].message.content:
-                raw_json = response.choices[0].message.content.strip()
-                data = json.loads(raw_json)
-                cand_list = data.get("candidates", []) if isinstance(data, dict) else []
-                if isinstance(cand_list, list) and len(cand_list) == len(resumes_batch):
-                    WORKING_GROQ_MODEL = model
-                    logger.info(f"[groq-BATCH] Extracted {len(cand_list)} resumes via {model} in {elapsed:.2f}s")
-                    results = []
-                    for c in cand_list:
-                        if isinstance(c.get("skills"), list):
-                            c["skills"] = ", ".join(str(s) for s in c["skills"])
-                        results.append({**EMPTY, **c})
-                    return results
-        except Exception as e:
-            logger.warning(f"[groq-BATCH] batch failed on {model}: {e}")
-            continue
-
-    # Fallback to individual single extractions if batching fails
-    logger.info("[groq-BATCH] Fallback to individual resume extractions")
-    return [extract_fields_cached(r) for r in resumes_batch]
+    try:
+        messages = [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": resume_text[:MAX_RESUME_CHARS]}
+        ]
+        response, used_model = call_groq_with_fallback(messages, max_tokens=500)
+        if response and response.choices and response.choices[0].message.content:
+            data = json.loads(response.choices[0].message.content.strip())
+            return {**EMPTY, **data}
+    except Exception as e:
+        logger.warning(f"[groq] single extraction failed: {e}")
+    return EMPTY
 
 def extract_fields_cached(resume_text, progress=None):
     if not resume_text or not resume_text.strip():
