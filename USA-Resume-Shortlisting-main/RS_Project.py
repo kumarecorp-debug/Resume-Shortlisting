@@ -717,14 +717,85 @@ def main(job_query, account_email="recruiter@ecorptrainings.com", max_candidates
     email_key = account_email.lower().strip() if account_email else "recruiter@ecorptrainings.com"
     
     t_start = time.time()
-    logger.info(f"[search-CONFIG] jd={job_query} mailbox={email_key} limit={max_candidates}")
+class SearchProgress:
+    def __init__(self, total, search_id=""):
+        self.total = max(total, 1)
+        self.current = 0
+        self.lock = threading.Lock()
+        self.status = "processing"
+        self.search_id = search_id
 
+    def increment(self, step=1):
+        with self.lock:
+            self.current = min(self.current + step, self.total)
+            pct = int((self.current / self.total) * 100)
+            logger.info(f"[search-PROGRESS] {self.current}/{self.total} ({pct}%)")
+
+    def done(self):
+        with self.lock:
+            self.current = self.total
+            self.status = "done"
+
+_searches = {}
+_attachment_cache = {}
+
+def download_attachment_cached(service, message_id, attachment_id):
+    cache_key = f"{message_id}:{attachment_id}"
+    if cache_key in _attachment_cache:
+        logger.info(f"[attachment] cache hit for message {message_id}")
+        return _attachment_cache[cache_key]
+
+    time.sleep(0.05)  # 50ms delay between attachment downloads (20 req/sec max)
+
+    def _call():
+        return service.users().messages().attachments().get(
+            userId="me", messageId=message_id, id=attachment_id
+        ).execute()
+
+    try:
+        att_res = _call()
+    except Exception as e:
+        err_str = str(e).lower()
+        if "403" in err_str or "ratelimitexceeded" in err_str or "quota" in err_str:
+            logger.warning(f"[gmail] rate limited, waiting 2s for message {message_id}")
+            time.sleep(2.0)
+            att_res = _call()
+        else:
+            raise
+
+    if att_res and att_res.get('data'):
+        file_bytes = urlsafe_b64decode(att_res.get('data'))
+        _attachment_cache[cache_key] = file_bytes
+        return file_bytes
+    return None
+
+def main(job_query, account_email="recruiter@ecorptrainings.com", max_candidates=25, date_preset=None, date_from=None, date_to=None, include_excel=False, search_id=None):
+    """
+    Main entrypoint called from app.py or CLI.
+    Processes ONLY PDF/DOCX attachments.
+    Honors max_candidates limit strictly.
+    Uses Groq for ultra-fast candidate entity extraction with gentle sequential delays.
+    """
+    if not job_query or not job_query.strip():
+        print("Job Query / Job Description cannot be empty.")
+        return
+
+    try:
+        max_candidates = int(max_candidates or 25)
+    except (ValueError, TypeError):
+        max_candidates = 25
+
+    os.makedirs(RESUME_FOLDER, exist_ok=True)
+    if isinstance(account_email, dict):
+        account_email = account_email.get("email", "recruiter@ecorptrainings.com")
+    email_key = account_email.lower().strip() if account_email else "recruiter@ecorptrainings.com"
+    
+    t_start = time.time()
     service = auto_authenticate_google(email_key)
     search_query = build_gmail_search_query(job_query, date_preset=date_preset, date_from=date_from, date_to=date_to)
     
-    logger.info(f'[search-FETCH] query="{search_query}"')
     messages = fetch_messages_cached(service, search_query, email_key, max_results=max_candidates)
-    logger.info(f"[search-FETCH] Gmail returned {len(messages)} emails")
+    logger.info(f"[search-START] mailbox={email_key} jd={job_query} total_emails={len(messages)}")
 
     default_cols = ["Rank", "Source", "source", "source_file", "Name", "Gender", "Email", "Phone", "Experience", "Skill Set", "Matched Skills", "Match Score", "Match Reason", "ReceivedAt"]
 
@@ -744,16 +815,15 @@ def main(job_query, account_email="recruiter@ecorptrainings.com", max_candidates
             ).execute())
             if full_msg and has_pdf_or_docx_attachment(full_msg):
                 emails_with_resumes.append(full_msg)
-            else:
-                logger.info(f"[search] skip email {msg_meta['id']} — no PDF/DOCX attachment")
         except Exception as e:
             logger.warning(f"[search] Error fetching message {msg_meta['id']}: {e}")
 
     total_with_resumes = len(emails_with_resumes)
-    logger.info(f"[search-FILTER] {total_with_resumes} of {len(messages)} emails have PDF/DOCX attachments")
+    progress = SearchProgress(total=total_with_resumes, search_id=search_id or "")
+    if search_id:
+        _searches[search_id] = progress
 
-    if total_with_resumes > 0:
-        logger.info(f"[search-DOWNLOAD] downloading {total_with_resumes} attachments")
+    logger.info(f"[search-FILTER] {total_with_resumes} of {len(messages)} emails have PDF/DOCX attachments")
 
     candidates = []
     seen_identifiers = set()
@@ -774,7 +844,6 @@ def main(job_query, account_email="recruiter@ecorptrainings.com", max_candidates
         subject = next((h["value"] for h in headers if h["name"].lower() == "subject"), "")
         sender_header = next((h["value"] for h in headers if h["name"].lower() == "from"), "")
         reply_to_header = next((h["value"] for h in headers if h["name"].lower() == "reply-to"), "")
-        date_header = next((h["value"] for h in headers if h["name"].lower() == "date"), "")
         internal_date_ms = msg.get("internalDate")
         received_iso = None
 
@@ -805,15 +874,13 @@ def main(job_query, account_email="recruiter@ecorptrainings.com", max_candidates
                 break
 
             try:
-                att_res = gmail_call_with_retry(lambda: service.users().messages().attachments().get(
-                    userId="me", messageId=message_id, id=attachment_id
-                ).execute())
-                
-                if not att_res or not att_res.get('data'):
+                file_bytes = download_attachment_cached(service, message_id, attachment_id)
+                if not file_bytes:
                     continue
-
-                file_bytes = urlsafe_b64decode(att_res.get('data'))
                 attachments_downloaded += 1
+
+                pct_dl = int((attachments_downloaded / total_with_resumes) * 100) if total_with_resumes > 0 else 100
+                logger.info(f"[search-DOWNLOAD] {attachments_downloaded}/{total_with_resumes} ({pct_dl}%)")
 
                 fn_low = filename.lower()
                 src_type = 'pdf' if fn_low.endswith('.pdf') else 'docx'
@@ -821,6 +888,7 @@ def main(job_query, account_email="recruiter@ecorptrainings.com", max_candidates
 
                 resume_text = extract_text_from_bytes(file_bytes, filename)
                 if not resume_text:
+                    progress.increment()
                     continue
 
                 # Prepare deterministic fields
@@ -850,8 +918,8 @@ def main(job_query, account_email="recruiter@ecorptrainings.com", max_candidates
 
                 combined_text = resume_text if len(resume_text) > 50 else (resume_text + "\n" + email_body)
                 
-                # Single or batched AI extraction
-                ai_fields = ai_extractor.extract_fields_cached(combined_text) if combined_text.strip() else {}
+                # Single AI extraction with progress tracking
+                ai_fields = ai_extractor.extract_fields_cached(combined_text, progress=progress) if combined_text.strip() else {}
                 if ai_fields and isinstance(ai_fields, dict):
                     if ai_fields.get("name"):
                         c_name = clean_candidate_name(str(ai_fields["name"]).strip())
@@ -888,24 +956,14 @@ def main(job_query, account_email="recruiter@ecorptrainings.com", max_candidates
                     candidates.append(candidate_data)
                     if candidate_data.get("Match Score", 0) >= 50:
                         matched_count += 1
-                        
-                pct = int((len(candidates) / max_candidates) * 100) if max_candidates > 0 else 100
-                logger.info(f"[search-PROGRESS] extracted candidate {len(candidates)}/{total_with_resumes} ({pct}%)")
 
             except Exception as e_file:
                 logger.warning(f"[file] Error downloading/parsing attachment {filename}: {e_file}")
+                progress.increment()
 
+    progress.done()
     elapsed = round(time.time() - t_start, 1)
-    logger.info(f"[search-MATCH] {len(candidates)} candidates scanned, {matched_count} matched")
-    logger.info(
-        f"[search-DONE]\n"
-        f"  Emails fetched:        {len(messages)}\n"
-        f"  Emails with PDF/DOCX:  {total_with_resumes}\n"
-        f"  Attachments downloaded: {attachments_downloaded}\n"
-        f"  Candidates extracted:  {len(candidates)}\n"
-        f"  Matched:               {matched_count}\n"
-        f"  Total time:            {elapsed}s"
-    )
+    logger.info(f"[search-DONE] total_time={elapsed}s resumes={len(candidates)}")
 
     summary_data = {
         'pdf': scan_summary.get('pdf', 0),

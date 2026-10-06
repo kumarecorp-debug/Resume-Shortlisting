@@ -660,10 +660,16 @@
                 </div>
             </form>
 
-            <div id="loading-indicator" class="loader-box" style="display: none;">
+            <div id="loading-indicator" class="loader-box" style="display: none; background: #ffffff; border: 1.5px solid #cbd5e1; border-radius: 12px; padding: 24px; box-shadow: 0 4px 12px rgba(0,0,0,0.06); margin-top: 20px;">
                 <div class="spinner"></div>
-                <h4 id="loading-message" style="margin: 0; color: #1e293b;">Connecting to mailbox...</h4>
-                <p style="color: #64748b; font-size: 0.88rem; margin-top: 6px;">Please wait while we search emails, download attachments, and extract candidate details with AI.</p>
+                <h4 id="loading-message" style="margin: 0; color: #1e293b; font-size: 1.1rem; font-weight: 700;">Connecting to mailbox...</h4>
+                
+                <!-- Real-time Progress Bar -->
+                <div style="width: 100%; max-width: 480px; height: 10px; background: #e2e8f0; border-radius: 6px; overflow: hidden; margin: 14px auto 8px auto;">
+                    <div id="progress-fill" style="width: 0%; height: 100%; background: #2563eb; transition: width 0.3s ease;"></div>
+                </div>
+                <div id="progress-text" style="color: #2563eb; font-weight: 700; font-size: 0.9rem;">Processing 0/0 candidates...</div>
+                <p style="color: #64748b; font-size: 0.84rem; margin-top: 6px;">Searching Gmail mailbox, downloading attachments sequentially, and extracting candidate details with AI.</p>
             </div>
         </div>
 
@@ -1306,6 +1312,37 @@
             const refreshBtn = document.getElementById('btn-refresh-counts');
             if (refreshBtn) {
                 refreshBtn.addEventListener('click', refreshAllCounts);
+            }
+
+            const searchForm = document.getElementById('search-form');
+            if (searchForm) {
+                searchForm.addEventListener('submit', function() {
+                    const loadingBox = document.getElementById('loading-indicator');
+                    const progressFill = document.getElementById('progress-fill');
+                    const progressText = document.getElementById('progress-text');
+                    const searchMeta = document.getElementById('pagination-meta');
+                    const searchId = searchMeta ? searchMeta.getAttribute('data-search-id') : '';
+
+                    if (loadingBox) loadingBox.style.display = 'block';
+
+                    if (searchId) {
+                        const pollInterval = setInterval(async () => {
+                            try {
+                                const res = await fetch(`/api/search/progress/${searchId}`).then(r => r.json());
+                                if (res && res.total > 0) {
+                                    const pct = Math.min(Math.round((res.current / res.total) * 100), 100);
+                                    if (progressFill) progressFill.style.width = pct + '%';
+                                    if (progressText) progressText.innerText = `Processing ${res.current}/${res.total} candidates... (${pct}%)`;
+                                }
+                                if (res && res.status === 'done') {
+                                    clearInterval(pollInterval);
+                                }
+                            } catch (e) {
+                                console.error('[progress] poll error:', e);
+                            }
+                        }, 800);
+                    }
+                });
             }
         });
 
