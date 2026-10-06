@@ -672,12 +672,13 @@
                     <div id="progress-fill" style="width: 0%; height: 100%; background: #2563eb; transition: width 0.3s ease;"></div>
                 </div>
                 
-                <div class="progress-stats" style="font-size: 0.9rem; font-weight: 600; color: #1e293b; margin-top: 8px;">
-                    📧 <span id="emails-scanned">0</span> emails scanned &nbsp;·&nbsp; 
-                    📄 <span id="resumes-found">0</span> resumes found &nbsp;·&nbsp; 
-                    🔄 <span id="extract-progress">0/100</span> extracting
+                <div class="progress-stats" style="font-size: 0.9rem; font-weight: 600; color: #1e293b; margin-top: 8px; line-height: 1.6;">
+                    🎯 Target: <strong id="target-count">25</strong> relevant candidates &nbsp;·&nbsp; 
+                    ✅ Found: <strong id="found-relevant">0</strong> relevant &nbsp;·&nbsp; 
+                    📄 Extracted: <strong id="resumes-extracted">0</strong> resumes &nbsp;·&nbsp; 
+                    📧 Scanned: <strong id="emails-scanned">0</strong> emails
                 </div>
-                <div id="progress-eta" style="color: #64748b; font-size: 0.84rem; font-weight: 600; margin-top: 4px;">~0 seconds remaining</div>
+                <div id="progress-eta" style="color: #64748b; font-size: 0.84rem; font-weight: 600; margin-top: 4px;">⏳ <span id="progress-pct">0</span>% · ~0s remaining</div>
             </div>
         </div>
 
@@ -685,8 +686,18 @@
             <div id="pagination-meta" data-search-id="{{ search_id or '' }}" data-job-query="{{ job_query or '' }}" data-mailbox="{{ selected_account or '' }}" data-total="{{ total_matches or table_data|length }}" data-offset="{{ table_data|length }}" data-limit="{{ page_size or 25 }}" data-min-exp="{{ min_exp if min_exp is not none else '' }}" data-hidden-exp="{{ hidden_by_experience or 0 }}"></div>
 
             {% if scan_summary %}
-                <div style="background: #f0f9ff; border: 1px solid #bae6fd; color: #0369a1; padding: 10px 16px; border-radius: 8px; font-size: 0.9rem; font-weight: 600; margin-bottom: 14px;">
-                    Searched '{{ job_query or '' }}' &nbsp;·&nbsp; {{ scan_summary.get('pdf', 0) + scan_summary.get('docx', 0) }} resumes scanned &nbsp;·&nbsp; {{ total_matches }} matches
+                <div style="background: #f0f9ff; border: 1px solid #bae6fd; color: #0369a1; padding: 10px 16px; border-radius: 8px; font-size: 0.9rem; font-weight: 600; margin-bottom: 14px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px;">
+                    <span>
+                        📊 {{ scan_summary.get('pdf', 0) + scan_summary.get('docx', 0) }} resumes scanned &nbsp;·&nbsp; {{ total_matches }} relevant
+                        {% if scan_summary.get('hidden_below_score', 0) > 0 %}
+                            ({{ scan_summary.get('hidden_below_score') }} hidden below score 40)
+                        {% endif %}
+                    </span>
+                    {% if scan_summary.get('hidden_below_score', 0) > 0 %}
+                        <a href="#" onclick="if (document.getElementById('score-slider')) { document.getElementById('score-slider').value = 0; document.getElementById('score-slider-val').textContent = '0%'; applyTableFilters(); } return false;" style="color: #2563eb; font-weight: 700; text-decoration: underline;">
+                            [Show hidden {{ scan_summary.get('hidden_below_score') }}]
+                        </a>
+                    {% endif %}
                 </div>
             {% endif %}
 
@@ -1322,44 +1333,53 @@
                 refreshBtn.addEventListener('click', refreshAllCounts);
             }
 
-            const searchForm = document.getElementById('search-form');
-            if (searchForm) {
-                searchForm.addEventListener('submit', function() {
-                    const loadingBox = document.getElementById('loading-indicator');
-                    const progressFill = document.getElementById('progress-fill');
-                    const emailsScannedSpan = document.getElementById('emails-scanned');
-                    const resumesFoundSpan = document.getElementById('resumes-found');
-                    const extractProgressSpan = document.getElementById('extract-progress');
-                    const progressEtaDiv = document.getElementById('progress-eta');
-                    const loadingMessage = document.getElementById('loading-message');
-                    const searchMeta = document.getElementById('pagination-meta');
-                    const searchId = searchMeta ? searchMeta.getAttribute('data-search-id') : '';
-
-                    if (loadingBox) loadingBox.style.display = 'block';
-
-                    if (searchId) {
-                        const pollInterval = setInterval(async () => {
-                            try {
-                                const res = await fetch(`/api/search/progress/${searchId}`).then(r => r.json());
-                                if (res) {
-                                    const pct = res.percentage || 0;
-                                    if (progressFill) progressFill.style.width = pct + '%';
-                                    if (emailsScannedSpan) emailsScannedSpan.innerText = res.emails_scanned || 0;
-                                    if (resumesFoundSpan) resumesFoundSpan.innerText = res.resumes_found || 0;
-                                    if (extractProgressSpan) extractProgressSpan.innerText = `${res.extracted || 0}/${res.target || 100}`;
-                                    if (progressEtaDiv) progressEtaDiv.innerText = `~${res.eta_seconds || 0} seconds remaining`;
-                                    if (loadingMessage && res.message) loadingMessage.innerText = res.message;
-                                }
-                                if (res && res.status === 'done') {
-                                    clearInterval(pollInterval);
-                                }
-                            } catch (e) {
-                                console.error('[progress] poll error:', e);
+                    if (searchForm) {
+                        searchForm.addEventListener('submit', function() {
+                            const submitBtn = searchForm.querySelector('button[type="submit"]');
+                            if (submitBtn) {
+                                submitBtn.disabled = true;
+                                submitBtn.style.opacity = '0.75';
+                                submitBtn.innerHTML = '⌛ Searching Mailbox & Extracting...';
                             }
-                        }, 800);
+                            const loadingBox = document.getElementById('loading-indicator');
+                            const progressFill = document.getElementById('progress-fill');
+                            const targetCount = document.getElementById('target-count');
+                            const foundRelevant = document.getElementById('found-relevant');
+                            const resumesExtracted = document.getElementById('resumes-extracted');
+                            const emailsScanned = document.getElementById('emails-scanned');
+                            const progressPct = document.getElementById('progress-pct');
+                            const progressEtaDiv = document.getElementById('progress-eta');
+                            const loadingMessage = document.getElementById('loading-message');
+                            const searchMeta = document.getElementById('pagination-meta');
+                            const searchId = searchMeta ? searchMeta.getAttribute('data-search-id') : '';
+
+                            if (loadingBox) loadingBox.style.display = 'block';
+
+                            if (searchId) {
+                                const pollInterval = setInterval(async () => {
+                                    try {
+                                        const res = await fetch(`/api/search/progress/${searchId}`).then(r => r.json());
+                                        if (res) {
+                                            const pct = res.percentage || 0;
+                                            if (progressFill) progressFill.style.width = pct + '%';
+                                            if (targetCount) targetCount.innerText = res.target || 25;
+                                            if (foundRelevant) foundRelevant.innerText = res.found_relevant || 0;
+                                            if (resumesExtracted) resumesExtracted.innerText = res.resumes_extracted || 0;
+                                            if (emailsScanned) emailsScanned.innerText = res.emails_scanned || 0;
+                                            if (progressPct) progressPct.innerText = pct;
+                                            if (progressEtaDiv) progressEtaDiv.innerHTML = `⏳ <span>${pct}</span>% · ~${res.eta_seconds || 0}s remaining`;
+                                            if (loadingMessage && res.message) loadingMessage.innerText = res.message;
+                                        }
+                                        if (res && res.status === 'done') {
+                                            clearInterval(pollInterval);
+                                        }
+                                    } catch (e) {
+                                        console.error('[progress] poll error:', e);
+                                    }
+                                }, 800);
+                            }
+                        });
                     }
-                });
-            }
         });
 
         document.addEventListener('visibilitychange', () => {

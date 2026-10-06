@@ -624,18 +624,7 @@ def process():
     is_get_search = request.method == 'GET' and (request.args.get('jd') or request.args.get('job_query'))
 
     if request.method == 'POST' or is_get_search:
-        session_id = request.cookies.get('session', session.get('user', {}).get('id') if isinstance(session.get('user'), dict) else 'default')
-        with _search_lock:
-            if session_id in _active_searches:
-                logging.warning(f'[search] duplicate request ignored for session {session_id}')
-                return redirect(url_for('process'))
-            _active_searches[session_id] = True
-
-        try:
-            return _do_process(available_accounts, default_account, is_get_search)
-        finally:
-            with _search_lock:
-                _active_searches.pop(session_id, None)
+        return _do_process(available_accounts, default_account, is_get_search)
 
     raw_acct = request.args.get('account_email') or request.args.get('mailbox') or session.get('selected_account') or default_account
     if isinstance(raw_acct, dict):
