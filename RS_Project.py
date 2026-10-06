@@ -976,6 +976,206 @@ def search_gmail_until_target(mailbox=None, jd=None, target_attachments=50, batc
     logger.info(f"[search-LOOP-DONE] scanned={emails_scanned} attachments={len(downloaded_files)}")
     return downloaded_files
 
+def search_until_relevant(mailbox="recruiter@ecorptrainings.com", jd="", target_relevant=25,
+                           score_threshold=40, batch_size=50,
+                           max_emails=1000, progress_callback=None):
+    """
+    Loop Gmail search until target_relevant candidates meeting score_threshold are collected.
+    """
+    if isinstance(mailbox, dict):
+        email_key = mailbox.get("email", "recruiter@ecorptrainings.com")
+    else:
+        email_key = str(mailbox).lower().strip() if mailbox else "recruiter@ecorptrainings.com"
+
+    try:
+        target_relevant = int(target_relevant or 25)
+    except Exception:
+        target_relevant = 25
+
+    try:
+        score_threshold = float(score_threshold or 40)
+    except Exception:
+        score_threshold = 40.0
+
+    service = auto_authenticate_google(email_key)
+    query = build_gmail_search_query(jd)
+
+    relevant = []
+    seen_emails = set()
+    seen_hashes = set()
+    page_token = None
+    emails_scanned = 0
+    iteration = 0
+    max_iterations = max(1, max_emails // batch_size)
+
+    while len(relevant) < target_relevant and iteration < max_iterations:
+        iteration += 1
+        logger.info(f'[search-LOOP] iter {iteration}: emails={emails_scanned} relevant={len(relevant)}/{target_relevant}')
+
+        try:
+            kwargs = {'userId': 'me', 'q': query, 'maxResults': batch_size}
+            if page_token:
+                kwargs['pageToken'] = page_token
+            res = gmail_call_with_retry(lambda: service.users().messages().list(**kwargs).execute())
+        except Exception as e:
+            if 'rateLimitExceeded' in str(e):
+                logger.warning('[gmail] rate limited, waiting 10s')
+                time.sleep(10)
+                continue
+            logger.warning(f'[search-LOOP] list error: {e}')
+            break
+
+        messages = res.get('messages', [])
+        if not messages:
+            logger.info('[search-LOOP] no more emails')
+            break
+
+        for msg_meta in messages:
+            if len(relevant) >= target_relevant:
+                break
+
+            msg_id = msg_meta['id']
+            if msg_id in seen_emails:
+                continue
+            seen_emails.add(msg_id)
+            emails_scanned += 1
+
+            try:
+                time.sleep(ATTACHMENT_DOWNLOAD_DELAY)
+                full_msg = gmail_call_with_backoff(lambda: service.users().messages().get(
+                    userId='me', id=msg_id, format='full'
+                ).execute())
+                if not full_msg or not has_pdf_or_docx_attachment(full_msg):
+                    continue
+
+                payload = full_msg.get("payload", {})
+                parts = payload.get("parts", [])
+                headers = payload.get("headers", [])
+                subject = next((h["value"] for h in headers if h["name"].lower() == "subject"), "")
+                sender_header = next((h["value"] for h in headers if h["name"].lower() == "from"), "")
+                reply_to_header = next((h["value"] for h in headers if h["name"].lower() == "reply-to"), "")
+
+                attachments = []
+                def walk_parts(part_list):
+                    for part in part_list:
+                        fn = part.get("filename")
+                        att_id = part.get("body", {}).get("attachmentId")
+                        if fn and att_id:
+                            attachments.append((fn, att_id))
+                        if "parts" in part:
+                            walk_parts(part["parts"])
+                walk_parts(parts)
+
+                valid_files = [(f, a_id) for f, a_id in attachments if is_valid_resume_filename(f)]
+                for filename, attachment_id in valid_files:
+                    if len(relevant) >= target_relevant:
+                        break
+
+                    file_bytes = download_attachment_cached(service, msg_id, attachment_id)
+                    if not file_bytes:
+                        continue
+
+                    h = hashlib.md5(file_bytes[:4096]).hexdigest()
+                    if h in seen_hashes:
+                        continue
+                    seen_hashes.add(h)
+
+                    txt = extract_text_from_bytes(file_bytes, filename)
+                    if not txt:
+                        continue
+
+                    ai_results = ai_extractor.extract_batch([txt], jd)
+                    ai_data = ai_results[0] if ai_results and isinstance(ai_results[0], dict) else {}
+
+                    email_body = extract_email_body(payload)
+                    extracted_email = extract_email_smart(txt, email_body, sender_header, reply_to_header, subject)
+                    extracted_phone = extract_phone_smart(txt, email_body, subject)
+                    deterministic_name = extract_candidate_name_smart(txt, email_body, sender_header, filename, extracted_email, subject)
+                    deterministic_exp = extract_experience_from_text(txt)
+                    deterministic_skills = extract_skills_from_text(txt, jd)
+                    det_score, det_matched_skills, det_reason = extract_matched_skills_and_score(txt, jd)
+
+                    cand_name = ai_data.get("name") or deterministic_name
+                    if not is_valid_name(cand_name):
+                        cand_name = extracted_email.split('@')[0] if '@' in extracted_email else 'Unknown'
+
+                    cand_email = clean_extracted_email(ai_data.get("email")) if ai_data.get("email") else extracted_email
+                    if cand_email == "N/A":
+                        cand_email = extracted_email if extracted_email != "N/A" else "candidate.contact@gmail.com"
+
+                    cand_phone = clean_phone(ai_data.get("phone")) if ai_data.get("phone") else extracted_phone
+                    if not cand_phone:
+                        cand_phone = extracted_phone if extracted_phone != "N/A" else "Available via Email"
+
+                    cand_skills = ai_data.get("skills") or deterministic_skills
+                    if isinstance(cand_skills, list):
+                        cand_skills = ", ".join(str(s) for s in cand_skills)
+
+                    cand_exp = ai_data.get("experience") or deterministic_exp
+                    raw_score = ai_data.get("match_score") if ai_data.get("match_score") is not None else det_score
+                    try:
+                        cand_score = float(str(raw_score).replace('%', '') or det_score)
+                    except Exception:
+                        cand_score = float(det_score)
+
+                    cand_matched_skills = ai_data.get("matched_skills") or det_matched_skills
+                    cand_reason = ai_data.get("match_reason") or det_reason
+                    cand_gender = ai_data.get("gender") or "Unknown"
+
+                    candidate = {
+                        "name": cand_name,
+                        "Name": cand_name,
+                        "email": cand_email,
+                        "Email": cand_email,
+                        "phone": cand_phone,
+                        "Phone": cand_phone,
+                        "skills": str(cand_skills),
+                        "Skill Set": str(cand_skills),
+                        "experience": str(cand_exp),
+                        "Experience": str(cand_exp),
+                        "matched_skills": str(cand_matched_skills),
+                        "Matched Skills": str(cand_matched_skills),
+                        "match_score": int(cand_score),
+                        "Match Score": int(cand_score),
+                        "match_reason": str(cand_reason),
+                        "Match Reason": str(cand_reason),
+                        "gender": str(cand_gender).capitalize(),
+                        "Gender": str(cand_gender).capitalize(),
+                        "source": 'pdf' if filename.lower().endswith('.pdf') else 'docx',
+                        "Source": 'pdf' if filename.lower().endswith('.pdf') else 'docx',
+                        "source_file": filename,
+                        "ReceivedAt": datetime.now(timezone.utc).isoformat()
+                    }
+
+                    if cand_score >= score_threshold:
+                        relevant.append(candidate)
+                        logger.info(f'[search-LOOP] ✓ kept #{len(relevant)}: {cand_name} ({cand_score})')
+
+                    if progress_callback:
+                        try:
+                            progress_callback(len(relevant), target_relevant)
+                        except Exception:
+                            pass
+            except Exception as e_msg:
+                logger.warning(f'[search-LOOP] message item error: {e_msg}')
+
+        page_token = res.get('nextPageToken')
+        if not page_token:
+            logger.info('[search-LOOP] no more pages')
+            break
+
+    relevant = dedupe_by_name(relevant)
+    meta = {
+        'target': target_relevant,
+        'found': len(relevant),
+        'shortage': max(0, target_relevant - len(relevant)),
+        'emails_scanned': emails_scanned,
+        'jd': jd,
+        'mailbox': email_key
+    }
+    logger.info(f'[search-DONE] {meta}')
+    return relevant, meta
+
 def main(job_query, account_email="recruiter@ecorptrainings.com", max_candidates=25, date_preset=None, date_from=None, date_to=None, include_excel=False, search_id=None, fast_mode=False):
     """
     Main entrypoint called from app.py or CLI.
