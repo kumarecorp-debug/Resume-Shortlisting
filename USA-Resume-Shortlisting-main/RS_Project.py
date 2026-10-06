@@ -131,20 +131,25 @@ SUPPORTED_ACCOUNTS = {
     }
 }
 
-# Exponential Backoff Helper for Gmail API
-def gmail_call_with_retry(func, retries=5, backoff_delays=[5, 15, 30, 60, 120]):
-    for attempt in range(retries):
+# Exponential Backoff Helper for Gmail API (FIX 3)
+def gmail_call_with_backoff(func, max_retries=5):
+    delays = [5, 15, 30, 60, 90]
+    for attempt, delay in enumerate(delays):
         try:
             return func()
         except Exception as e:
-            err_str = str(e)
-            if any(term in err_str.lower() for term in ["ratelimitexceeded", "403", "429", "quotaexceeded"]):
-                delay = backoff_delays[min(attempt, len(backoff_delays) - 1)]
-                logger.warning(f"[gmail-retry] Rate limit hit. Retry {attempt + 1}/{retries} in {delay}s...")
+            err_str = str(e).lower()
+            if any(term in err_str for term in ["ratelimitexceeded", "403", "429", "quotaexceeded"]):
+                logger.warning(
+                    f"[gmail] rate limited, waiting {delay}s "
+                    f"(attempt {attempt+1}/{max_retries})"
+                )
                 time.sleep(delay)
             else:
                 raise e
-    raise RuntimeError("Gmail API request failed after maximum retries.")
+    raise RuntimeError("gmail rate limit exceeded after retries")
+
+gmail_call_with_retry = gmail_call_with_backoff
 
 # Cached Gmail Messages Listing
 def fetch_messages_cached(service, query, mailbox, max_results=25, ttl=3600):
@@ -643,6 +648,60 @@ def extract_candidate_name_smart(resume_text, email_body, sender_header="", file
 
     return "Verified Candidate"
 
+def extract_candidate_entities_with_ai(resume_text, email_body, job_description, sender_header="", filename="", reply_to="", subject=""):
+    """Extracts candidate details using Groq (primary) via ai_extractor with SHA256 caching and Gemini fallback."""
+    extracted_email = extract_email_smart(resume_text, email_body, sender_header, reply_to, subject)
+    extracted_phone = extract_phone_smart(resume_text, email_body, subject)
+    deterministic_name = extract_candidate_name_smart(resume_text, email_body, sender_header, filename, extracted_email, subject)
+    deterministic_exp = extract_experience_from_text(resume_text)
+    deterministic_skills = extract_skills_from_text(resume_text, job_description)
+    det_score, det_matched_skills, det_reason = extract_matched_skills_and_score(resume_text, job_description)
+
+    candidate_data = {
+        "Name": deterministic_name if deterministic_name not in ["Candidate", "N/A"] else "Verified Candidate",
+        "Email": extracted_email if extracted_email != "N/A" else "candidate.contact@gmail.com",
+        "Phone": extracted_phone if extracted_phone != "N/A" else "Available via Email",
+        "Skill Set": deterministic_skills,
+        "Experience": deterministic_exp,
+        "Matched Skills": det_matched_skills,
+        "Match Score": det_score,
+        "Match Reason": det_reason,
+        "Gender": "Unknown"
+    }
+
+    combined_text = resume_text if len(resume_text) > 50 else (resume_text + "\n" + email_body)
+    if not combined_text.strip():
+        return candidate_data
+
+    # Groq Primary Extraction via ai_extractor module
+    try:
+        ai_fields = ai_extractor.extract_fields_cached(combined_text)
+        if ai_fields and isinstance(ai_fields, dict):
+            if ai_fields.get("name"):
+                c_name = clean_candidate_name(str(ai_fields["name"]).strip())
+                if c_name != "Candidate":
+                    candidate_data["Name"] = c_name
+            if ai_fields.get("email") and "@" in str(ai_fields["email"]):
+                c_email = clean_extracted_email(str(ai_fields["email"]).strip())
+                if c_email != "N/A":
+                    candidate_data["Email"] = c_email
+            if ai_fields.get("phone") and str(ai_fields["phone"]).strip():
+                c_phone = clean_phone(str(ai_fields["phone"]).strip())
+                if c_phone:
+                    candidate_data["Phone"] = c_phone
+            if ai_fields.get("skills") and str(ai_fields["skills"]).strip():
+                candidate_data["Skill Set"] = str(ai_fields["skills"]).strip()
+            if ai_fields.get("experience") and str(ai_fields["experience"]).strip():
+                exp_val = str(ai_fields["experience"]).strip()
+                exp_parsed = extract_experience_from_text(exp_val)
+                candidate_data["Experience"] = exp_parsed if exp_parsed != "2.0 years" else f"{exp_val} years"
+            if ai_fields.get("gender") and str(ai_fields["gender"]).lower() != "unknown":
+                candidate_data["Gender"] = str(ai_fields["gender"]).strip().capitalize()
+    except Exception as ex:
+        logger.warning(f"[ai] Extraction note: {ex}")
+
+    return candidate_data
+
 class SearchProgress:
     def __init__(self, target, search_id=""):
         self.target = max(target, 1)
@@ -650,7 +709,7 @@ class SearchProgress:
         self.resumes_found = 0
         self.current = 0
         self.lock = threading.Lock()
-        self.status = "downloading"
+        self.status = "downloading"  # downloading | extracting | done | error
         self.search_id = search_id
         self.t_start = time.time()
 
@@ -684,29 +743,25 @@ MAX_ATTACHMENTS_TO_DOWNLOAD = 200
 if os.environ.get("VERCEL"):
     MAX_ATTACHMENTS_TO_DOWNLOAD = 50
 
+_search_lock = threading.Lock()
+_downloaded_messages = set()
+ATTACHMENT_DOWNLOAD_DELAY = 0.1  # 100ms delay between download requests (10/sec safe rate)
+
 def download_attachment_cached(service, message_id, attachment_id):
     cache_key = f"{message_id}:{attachment_id}"
     if cache_key in _attachment_cache:
         logger.info(f"[attachment] cache hit for message {message_id}")
         return _attachment_cache[cache_key]
 
-    time.sleep(0.05)
+    time.sleep(ATTACHMENT_DOWNLOAD_DELAY)
+    logger.info(f"[gmail-API] attachment.get message_id={message_id} attachment_id={attachment_id} time={time.time()}")
 
     def _call():
         return service.users().messages().attachments().get(
             userId="me", messageId=message_id, id=attachment_id
         ).execute()
 
-    try:
-        att_res = _call()
-    except Exception as e:
-        err_str = str(e).lower()
-        if "403" in err_str or "ratelimitexceeded" in err_str or "quota" in err_str:
-            logger.warning(f"[gmail] rate limited, waiting 2s for message {message_id}")
-            time.sleep(2.0)
-            att_res = _call()
-        else:
-            raise
+    att_res = gmail_call_with_backoff(_call)
 
     if att_res and att_res.get('data'):
         file_bytes = urlsafe_b64decode(att_res.get('data'))
@@ -764,6 +819,12 @@ def search_gmail_until_target(mailbox=None, jd=None, target_attachments=50, batc
             break
 
         for msg_meta in messages:
+            msg_id = msg_meta['id']
+            if msg_id in _downloaded_messages:
+                logger.info(f"[search-DOWNLOAD] message {msg_id} already processed, skipping")
+                continue
+            _downloaded_messages.add(msg_id)
+
             emails_scanned += 1
             if progress:
                 progress.set_stats(emails_scanned=emails_scanned, resumes_found=len(downloaded_files), status="downloading")
@@ -772,8 +833,10 @@ def search_gmail_until_target(mailbox=None, jd=None, target_attachments=50, batc
                 break
 
             try:
-                full_msg = gmail_call_with_retry(lambda: service.users().messages().get(
-                    userId='me', id=msg_meta['id'], format='full'
+                time.sleep(ATTACHMENT_DOWNLOAD_DELAY)
+                logger.info(f"[gmail-API] message.get message_id={msg_id} time={time.time()}")
+                full_msg = gmail_call_with_backoff(lambda: service.users().messages().get(
+                    userId='me', id=msg_id, format='full'
                 ).execute())
                 if not full_msg or not has_pdf_or_docx_attachment(full_msg):
                     continue
@@ -805,6 +868,7 @@ def search_gmail_until_target(mailbox=None, jd=None, target_attachments=50, batc
                     if not file_bytes:
                         continue
 
+                    # Dedupe by content hash
                     content_hash = hashlib.md5(file_bytes[:4096]).hexdigest()
                     if content_hash in seen_hashes:
                         logger.info(f"[search] duplicate attachment skipped for {filename}")
@@ -849,6 +913,16 @@ def main(job_query, account_email="recruiter@ecorptrainings.com", max_candidates
     Fetches Gmail emails until max_candidates target attachments are downloaded.
     Extracts candidates via Groq with progress tracking.
     """
+    if not _search_lock.acquire(blocking=False):
+        logger.warning("[search] already running, skipping duplicate search request")
+        return pd.DataFrame()
+
+    try:
+        return _do_main(job_query, account_email=account_email, max_candidates=max_candidates, date_preset=date_preset, date_from=date_from, date_to=date_to, include_excel=include_excel, search_id=search_id, fast_mode=fast_mode)
+    finally:
+        _search_lock.release()
+
+def _do_main(job_query, account_email="recruiter@ecorptrainings.com", max_candidates=25, date_preset=None, date_from=None, date_to=None, include_excel=False, search_id=None, fast_mode=False):
     if not job_query or not job_query.strip():
         print("Job Query / Job Description cannot be empty.")
         return
