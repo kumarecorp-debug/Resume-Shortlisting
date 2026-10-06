@@ -425,35 +425,63 @@ def execute_full_candidate_search(job_query, selected_account, max_candidates=25
             pass
 
         def guess_gender(name):
-            name_parts = str(name).strip().split()
-            if not name_parts or name.lower() in ['verified candidate', 'candidate', 'n/a']:
+            name_str = str(name).strip()
+            if not name_str or name_str.lower() in ['verified candidate', 'candidate', 'n/a', 'unknown']:
                 return 'Male'
-            first_name = name_parts[0].capitalize()
+                
+            words = [w.strip() for w in re.split(r'[\s._-]+', name_str) if w.strip()]
+            if not words:
+                return 'Male'
+                
+            first_name = words[0].capitalize()
             first_name_lower = first_name.lower()
+            
             female_names = {
                 'pooja', 'priya', 'neha', 'anjali', 'swati', 'divya', 'kavita', 'deepa', 'megha', 'shweta',
                 'sunita', 'anita', 'kiran', 'rekha', 'rashmi', 'sneha', 'jyoti', 'monika', 'payal', 'richa',
                 'sonam', 'smita', 'bhavna', 'sapna', 'archana', 'simran', 'preeti', 'renu', 'seema', 'tanvi',
-                'radha', 'sheetal', 'harshita', 'apoorva', 'srishti', 'kriti', 'nisha', 'sakshi', 'shikha',
-                'shipra', 'garima', 'pallavi', 'surabhi', 'saloni', 'sonia', 'vandana', 'komal', 'namrata'
+                'radha', 'sheetal', 'apoorva', 'srishti', 'kriti', 'nisha', 'sakshi', 'shikha',
+                'shipra', 'garima', 'pallavi', 'surabhi', 'saloni', 'sonia', 'vandana', 'komal', 'namrata',
+                'ruchika', 'jyothi', 'shruthi', 'shruti', 'sowmya', 'soumya', 'lakshmi', 'laxmi', 'ananya',
+                'bhavya', 'kavya', 'ramya', 'priyanka', 'chaitra', 'supriya', 'shreya', 'vidya'
             }
-            male_exceptions = {
+            
+            male_names = {
                 'karan', 'bhavin', 'gulab', 'sudhakar', 'nagarjuna', 'krishna', 'rama', 'aditya', 'surya',
                 'shiva', 'pavan', 'vijay', 'ajay', 'sanjay', 'jay', 'rahul', 'amit', 'sumit', 'vince',
                 'anil', 'sunil', 'rajesh', 'suresh', 'ramesh', 'dinesh', 'manish', 'mukesh', 'nilesh',
-                'harshita', 'gopal', 'mohan', 'sohan', 'rohan', 'varun', 'tarun', 'arun', 'alok', 'ashok'
+                'harshita', 'gopal', 'mohan', 'sohan', 'rohan', 'varun', 'tarun', 'arun', 'alok', 'ashok',
+                'balu', 'prashant', 'doresh', 'hana', 'balakrishna', 'suraj', 'devendar', 'devender', 'shrikanth',
+                'rajakrishnan', 'kishan', 'samir', 'sagar', 'rajashekhar', 'digvijay', 'chandra', 'debanjan',
+                'hemanth', 'sukhbir', 'ssm', 'sudharshan', 'cnsureshbabu', 'mahammad', 'mohammed', 'amarendra',
+                'kavin', 'phani', 'chinmaya', 'ravikumar', 'ravi', 'sandeep', 'ananda', 'sanket', 'shaffiq',
+                'divy', 'sripathi', 'sony', 'makesh', 'gourab', 'swaroop', 'prashanth', 'amitrider', 'jyothichintha'
             }
-            if first_name_lower in female_names:
+            
+            if any(w.lower() in female_names for w in words):
                 return 'Female'
-            if first_name_lower in male_exceptions:
+            if any(w.lower() in male_names for w in words):
                 return 'Male'
+                
             if gender_detector:
                 gen = gender_detector.get_gender(first_name)
                 if gen in ['male', 'mostly_male']: return 'Male'
                 if gen in ['female', 'mostly_female']: return 'Female'
-            if first_name_lower.endswith(('a', 'i')) and len(first_name_lower) > 3: 
-                return 'Female'
+                
             return 'Male'
+
+        def parse_exp_num(exp_val):
+            if not exp_val:
+                return 2.0
+            nums = re.findall(r'(\d+(?:\.\d+)?)', str(exp_val))
+            if nums:
+                try:
+                    val = float(nums[0])
+                    if 0.5 <= val <= 45:
+                        return val
+                except Exception:
+                    pass
+            return 2.0
 
         if 'Name' in df.columns:
             if 'Gender' not in df.columns:
@@ -465,6 +493,10 @@ def execute_full_candidate_search(job_query, selected_account, max_candidates=25
                     else row['Gender'], 
                     axis=1
                 )
+
+        if 'Experience' in df.columns:
+            df['experience_years'] = df['Experience'].apply(parse_exp_num)
+            df['Experience'] = df['experience_years'].apply(lambda y: f"{y:.1f} years")
 
     return df, scan_summary
 
@@ -674,22 +706,7 @@ def _do_process(available_accounts, default_account, is_get_search):
             scan_summary=None
         )
 
-    if request.method == 'POST' and job_query:
-        try:
-            target = int(request.form.get('max_candidates') or 25)
-        except Exception:
-            target = 25
-        _searches[search_id] = {
-            'status': 'starting',
-            'progress': {'current': 0, 'total': target},
-            'results': None, 'meta': None, 'error': None,
-        }
-        threading.Thread(
-            target=_run_search_async,
-            args=(search_id, selected_account, job_query, target),
-            daemon=True
-        ).start()
-        return redirect(f'/search-progress/{search_id}')
+
 
     min_exp_raw = request.form.get('min_exp') or request.args.get('min_exp') or request.args.get('exp')
     try:
