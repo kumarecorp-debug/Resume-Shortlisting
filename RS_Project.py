@@ -508,12 +508,25 @@ def extract_phone_smart(resume_text, email_body, subject=""):
     return "Available via Email"
 
 def extract_experience_from_text(text):
+    if not text:
+        return "N/A"
+    text_str = str(text).strip()
+    
+    try:
+        val = float(re.sub(r'[^\d.]', '', text_str))
+        if val >= 1900 or val > 40:
+            return "N/A"
+        if 0.5 <= val <= 40:
+            return f"{val:.1f} years"
+    except Exception:
+        pass
+
     overall_patterns = [
         r'(\d+(?:\.\d+)?)\+?\s*(?:years?|yrs?)(?:\s*of\s*)?(?:[\w\s/-]{0,35})?(?:overall|total|cumulative)',
         r'(?:overall|total|cumulative)\s*(?:[\w\s/-]{0,35})?(?:experience|expertise|work|career)?\s*(?:of|is|:)?\s*(\d+(?:\.\d+)?)\s*(?:years?|yrs?)'
     ]
     for pattern in overall_patterns:
-        match = re.search(pattern, text, re.IGNORECASE)
+        match = re.search(pattern, text_str, re.IGNORECASE)
         if match:
             try:
                 val = float(match.group(1))
@@ -524,7 +537,7 @@ def extract_experience_from_text(text):
 
     general_pattern = r'(\d+(?:\.\d+)?)\+?\s*(?:years?|yrs?)(?:\s*of\s*)?(?:[\w\s/-]{0,35})?(?:experience|expertise|track record|background|career|tenure|work\s*history)'
     
-    top_matches = re.findall(general_pattern, text[:2500], re.IGNORECASE)
+    top_matches = re.findall(general_pattern, text_str[:2500], re.IGNORECASE)
     if top_matches:
         try:
             valid_years = [float(y) for y in top_matches if 0.5 <= float(y) <= 40]
@@ -534,7 +547,7 @@ def extract_experience_from_text(text):
         except Exception:
             pass
 
-    return "2.0 years"
+    return "N/A"
 
 def extract_skills_from_text(text, job_description=""):
     text_lower = text.lower()
@@ -687,7 +700,11 @@ def extract_candidate_entities_with_ai(resume_text, email_body, job_description,
             if ai_fields.get("experience") and str(ai_fields["experience"]).strip():
                 exp_val = str(ai_fields["experience"]).strip()
                 exp_parsed = extract_experience_from_text(exp_val)
-                candidate_data["Experience"] = exp_parsed if exp_parsed != "2.0 years" else f"{exp_val} years"
+                if exp_parsed != "N/A":
+                    candidate_data["Experience"] = exp_parsed
+                else:
+                    det_exp = extract_experience_from_text(resume_text)
+                    candidate_data["Experience"] = det_exp
             if ai_fields.get("gender") and str(ai_fields["gender"]).lower() != "unknown":
                 candidate_data["Gender"] = str(ai_fields["gender"]).strip().capitalize()
     except Exception as ex:
@@ -1047,7 +1064,11 @@ def main(job_query, account_email="recruiter@ecorptrainings.com", max_candidates
             if ai_fields.get("experience") and str(ai_fields["experience"]).strip():
                 exp_val = str(ai_fields["experience"]).strip()
                 exp_parsed = extract_experience_from_text(exp_val)
-                candidate_data["Experience"] = exp_parsed if exp_parsed != "2.0 years" else f"{exp_val} years"
+                if exp_parsed != "N/A":
+                    candidate_data["Experience"] = exp_parsed
+                else:
+                    det_exp = extract_experience_from_text(resume_text)
+                    candidate_data["Experience"] = det_exp
             if ai_fields.get("gender") and str(ai_fields["gender"]).lower() != "unknown":
                 candidate_data["Gender"] = str(ai_fields["gender"]).strip().capitalize()
 

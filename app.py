@@ -190,7 +190,7 @@ def matches_name(candidate, search_term):
 def parse_experience_years(text):
     """
     Parse "X years" / "X yrs" / "X years Y months" into a float.
-    Returns None if unparseable.
+    Returns None if unparseable or if it's a calendar year (>= 1900 or > 40).
     """
     if not text:
         return None
@@ -200,42 +200,62 @@ def parse_experience_years(text):
     if t in ("", "n/a", "na", "none", "null", "not mentioned", "unknown"):
         return None
     
-    # Pattern: "X years", "X+ years", "X.Y years", "X yrs"
     years_match = re.search(r'(\d+(?:\.\d+)?)\s*\+?\s*(?:years?|yrs?|y)\b', t)
     months_match = re.search(r'(\d+(?:\.\d+)?)\s*(?:months?|mos?)\b', t)
     
     years = float(years_match.group(1)) if years_match else 0.0
     months = float(months_match.group(1)) if months_match else 0.0
     
+    if years >= 1900 or years > 40:
+        years = 0.0
+
     total = years + (months / 12.0)
     
     # If we found only months, that's OK
     if years == 0 and months > 0:
         return round(months / 12.0, 1)
     
-    # If we found nothing, try to grab a bare number or number within text
+    # If we found nothing, try to grab a bare number within text (must be reasonable exp <= 40)
     if not years_match and not months_match:
-        bare = re.search(r'(\d+(?:\.\d+)?)', t)
+        bare = re.search(r'\b(\d+(?:\.\d+)?)\b', t)
         if bare:
-            return float(bare.group(1))
+            val = float(bare.group(1))
+            if 0.5 <= val <= 40:
+                return val
         return None
     
-    return round(total, 1)
+    if 0.0 < total <= 40.0:
+        return round(total, 1)
+    return None
+
+def recalculate_matched_skills_for_records(records, job_query):
+    if not job_query or not records:
+        return records
+    for r in records:
+        if not isinstance(r, dict):
+            continue
+        searchable_text = f"{r.get('Skill Set', '')} {r.get('SkillSet', '')} {r.get('skills', '')} {r.get('resume_text', '')} {r.get('Name', '')} {r.get('Experience', '')}"
+        score, matched_str, reason = RS_Project.extract_matched_skills_and_score(searchable_text, job_query)
+        r["Matched Skills"] = matched_str
+        r["Match Score"] = f"{score}%" if isinstance(score, int) else str(score)
+        r["Match Reason"] = reason
+    return records
 
 def filter_candidates(candidates, term):
     """
     Filters candidates depending on search mode (email, phone, name, or keyword).
-    For identifier modes (email, phone, name): returns matching candidates,
-    falling back to all extracted candidates if strict matching yields empty results.
+    Dynamically recalculates Matched Skills and Match Score for all candidates against active query.
     """
     mode = gmail_search.detect_search_mode(term)
     term_str = term.strip()
     
+    candidates = recalculate_matched_skills_for_records(candidates, term_str)
+
     if mode == "email":
         matched = []
         for c in candidates:
             if matches_email(c, term_str):
-                c["Match Score"] = 100
+                c["Match Score"] = "100%"
                 c["Match Reason"] = f"Exact Email match for {term_str}."
                 matched.append(c)
         if matched:
@@ -245,7 +265,7 @@ def filter_candidates(candidates, term):
         matched = []
         for c in candidates:
             if matches_phone(c, term_str):
-                c["Match Score"] = 100
+                c["Match Score"] = "100%"
                 c["Match Reason"] = f"Exact Phone match for {term_str}."
                 matched.append(c)
         if matched:
@@ -255,7 +275,7 @@ def filter_candidates(candidates, term):
         matched = []
         for c in candidates:
             if matches_name(c, term_str):
-                c["Match Score"] = 100
+                c["Match Score"] = "100%"
                 c["Match Reason"] = f"Exact Name match for {term_str}."
                 matched.append(c)
         if matched:
