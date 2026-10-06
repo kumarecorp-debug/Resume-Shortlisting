@@ -848,13 +848,14 @@ def search_gmail_until_target(mailbox=None, jd=None, target_attachments=50, batc
         service = auto_authenticate_google(email_key)
     if query is None:
         if jd:
-            GMAIL_ATTACHMENT_FILTER = "(filename:pdf OR filename:docx OR filename:xlsx OR filename:xls)"
+            GMAIL_ATTACHMENT_FILTER = "(filename:pdf OR filename:docx)"
             query = f"has:attachment {GMAIL_ATTACHMENT_FILTER} {jd}"
         else:
             query = "has:attachment"
 
     # Search caching disabled (FIX 3) to prevent serving stale results
     target_attachments = min(int(target_attachments or 50), MAX_ATTACHMENTS_TO_DOWNLOAD if 'MAX_ATTACHMENTS_TO_DOWNLOAD' in globals() else 200)
+    seen_messages = set()
     downloaded_files = []
     seen_hashes = set()
     page_token = None
@@ -889,10 +890,10 @@ def search_gmail_until_target(mailbox=None, jd=None, target_attachments=50, batc
 
         for msg_meta in messages:
             msg_id = msg_meta['id']
-            if msg_id in _downloaded_messages:
+            if msg_id in seen_messages:
                 logger.info(f"[search-DOWNLOAD] message {msg_id} already processed, skipping")
                 continue
-            _downloaded_messages.add(msg_id)
+            seen_messages.add(msg_id)
 
             emails_scanned += 1
             if progress:
