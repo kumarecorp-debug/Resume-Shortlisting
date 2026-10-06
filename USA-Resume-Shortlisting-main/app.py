@@ -1024,7 +1024,7 @@ def search_results(search_id):
     if s['status'] != 'done':
         return redirect(f'/search-progress/{search_id}')
     
-    available_accounts = get_available_accounts()
+    available_accounts = list(RS_Project.SUPPORTED_ACCOUNTS.values())
     default_account = available_accounts[0]['email'] if available_accounts else 'recruiter@ecorptrainings.com'
     candidates = s.get('results') or []
     meta = s.get('meta') or {}
