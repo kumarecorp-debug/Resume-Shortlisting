@@ -619,6 +619,52 @@ def clean_candidate_name(name_str):
         return "Candidate"
     return " ".join(valid_tokens)
 
+BAD_NAMES = {
+    'curriculum vitae', 'resume', 'cv', 'new', 'final',
+    'updated', 'latest', 'years automation testing',
+    'candidate', 'unknown', 'n/a', 'na'
+}
+
+def is_valid_name(name):
+    if not name: return False
+    n = str(name).lower().strip()
+    if n in BAD_NAMES: return False
+    if len(n) < 3: return False
+    if n.replace(' ', '').isdigit(): return False
+    return True
+
+def normalize_name(name):
+    if not name: return ''
+    n = str(name).lower().strip()
+    n = re.sub(r'\s+', ' ', n)
+    n = re.sub(r'\b(mr|mrs|ms|dr|prof)\.?\s+', '', n)
+    return n
+
+def dedupe_by_name(candidates):
+    seen = {}
+    result = []
+    for c in candidates:
+        name_val = c.get('Name') or c.get('name') or ''
+        key = normalize_name(name_val)
+        if not key:
+            result.append(c)
+            continue
+        score_c = float(str(c.get('Match Score', c.get('match_score', 0))).replace('%', '') or 0)
+        if key in seen:
+            existing = seen[key]
+            score_ex = float(str(existing.get('Match Score', existing.get('match_score', 0))).replace('%', '') or 0)
+            if score_c > score_ex:
+                if existing in result:
+                    result.remove(existing)
+                result.append(c)
+                seen[key] = c
+            else:
+                logger.info(f'[search-DEDUP] removed dup: {name_val}')
+        else:
+            seen[key] = c
+            result.append(c)
+    return result
+
 def derive_clean_name_from_email_username(email_str):
     if not email_str or '@' not in email_str:
         return "Verified Candidate"
@@ -1020,128 +1066,154 @@ def _do_main(job_query, account_email="recruiter@ecorptrainings.com", max_candid
         items_to_extract = downloaded_attachments[:30]
         logger.info(f"[search-FASTMODE] Fast mode active: extracting 30 of {total_downloaded} downloaded attachments")
 
-    logger.info(f"[search-STEP] extracting via Groq")
-    logger.info(f"[search-EXTRACT] extracting {len(items_to_extract)} resumes")
+    logger.info(f"[search-START] search_id={search_id} target={target_candidates} jd={job_query}")
 
     progress.set_stats(status="extracting")
-    candidates = []
+    all_candidates = []
     seen_identifiers = set()
     scan_summary = {'pdf': 0, 'docx': 0}
-    matched_count = 0
 
-    for idx, item in enumerate(items_to_extract, start=1):
-        filename = item['filename']
-        file_bytes = item['file_bytes']
-        email_body = extract_email_body(item['payload'])
-        sender_header = item['sender_header']
-        reply_to_header = item['reply_to_header']
-        subject = item['subject']
-        internal_date_ms = item['internal_date_ms']
-        received_iso = None
+    BATCH_SIZE = getattr(ai_extractor, 'BATCH_SIZE', 5)
+    total_batches = (len(items_to_extract) + BATCH_SIZE - 1) // BATCH_SIZE
 
-        if internal_date_ms:
-            try:
-                ts_sec = float(internal_date_ms) / 1000.0
-                received_iso = datetime.fromtimestamp(ts_sec, tz=timezone.utc).isoformat()
-            except Exception:
-                pass
+    for batch_idx in range(total_batches):
+        batch_items = items_to_extract[batch_idx * BATCH_SIZE : (batch_idx + 1) * BATCH_SIZE]
+        batch_texts = []
 
-        fn_low = filename.lower()
-        src_type = 'pdf' if fn_low.endswith('.pdf') else 'docx'
-        scan_summary[src_type] = scan_summary.get(src_type, 0) + 1
+        for item in batch_items:
+            fn_low = item['filename'].lower()
+            src_type = 'pdf' if fn_low.endswith('.pdf') else 'docx'
+            scan_summary[src_type] = scan_summary.get(src_type, 0) + 1
+            txt = extract_text_from_bytes(item['file_bytes'], item['filename'])
+            batch_texts.append(txt)
 
-        resume_text = extract_text_from_bytes(file_bytes, filename)
-        if not resume_text:
-            progress.increment()
-            continue
+        # Batch AI Extraction via Groq
+        batch_ai_results = ai_extractor.extract_batch(batch_texts, job_query)
+        logger.info(f"[search-EXTRACT] batch {batch_idx + 1}/{total_batches} ({len(batch_ai_results)} candidates)")
 
-        extracted_email = extract_email_smart(resume_text, email_body, sender_header, reply_to_header, subject)
-        extracted_phone = extract_phone_smart(resume_text, email_body, subject)
-        deterministic_name = extract_candidate_name_smart(resume_text, email_body, sender_header, filename, extracted_email, subject)
-        deterministic_exp = extract_experience_from_text(resume_text)
-        deterministic_skills = extract_skills_from_text(resume_text, job_query)
-        det_score, det_matched_skills, det_reason = extract_matched_skills_and_score(resume_text, job_query)
-
-        candidate_data = {
-            "Name": deterministic_name if deterministic_name not in ["Candidate", "N/A"] else "Verified Candidate",
-            "Email": extracted_email if extracted_email != "N/A" else "candidate.contact@gmail.com",
-            "Phone": extracted_phone if extracted_phone != "N/A" else "Available via Email",
-            "Skill Set": deterministic_skills,
-            "Experience": deterministic_exp,
-            "Matched Skills": det_matched_skills,
-            "Match Score": det_score,
-            "Match Reason": det_reason,
-            "Gender": "Unknown",
-            "Source": src_type,
-            "source": src_type,
-            "source_file": filename,
-            "ReceivedAt": received_iso or datetime.now(timezone.utc).isoformat(),
-            "received_at": received_iso or datetime.now(timezone.utc).isoformat()
-        }
-
-        combined_text = resume_text if len(resume_text) > 50 else (resume_text + "\n" + email_body)
-        
-        ai_fields = ai_extractor.extract_fields_cached(combined_text, progress=progress) if combined_text.strip() else {}
-        if ai_fields and isinstance(ai_fields, dict):
-            if ai_fields.get("name"):
-                c_name = clean_candidate_name(str(ai_fields["name"]).strip())
-                if c_name != "Candidate":
-                    candidate_data["Name"] = c_name
-            if ai_fields.get("email") and "@" in str(ai_fields["email"]):
-                c_email = clean_extracted_email(str(ai_fields["email"]).strip())
-                if c_email != "N/A":
-                    candidate_data["Email"] = c_email
-            if ai_fields.get("phone") and str(ai_fields["phone"]).strip():
-                c_phone = clean_phone(str(ai_fields["phone"]).strip())
-                if c_phone:
-                    candidate_data["Phone"] = c_phone
-            if ai_fields.get("skills") and str(ai_fields["skills"]).strip():
-                candidate_data["Skill Set"] = str(ai_fields["skills"]).strip()
-            if ai_fields.get("experience") and str(ai_fields["experience"]).strip():
-                exp_val = str(ai_fields["experience"]).strip()
-                exp_parsed = extract_experience_from_text(exp_val)
-                candidate_data["Experience"] = exp_parsed if exp_parsed != "2.0 years" else f"{exp_val} years"
-            if ai_fields.get("gender") and str(ai_fields["gender"]).lower() != "unknown":
-                candidate_data["Gender"] = str(ai_fields["gender"]).strip().capitalize()
-
-        cand_email = str(candidate_data.get("Email", "")).lower().strip()
-        if is_system_or_portal_email(cand_email, email_key):
-            pers_match = re.findall(r'[A-Za-z0-9._%+-]+@(?!ecorptrainings|ecorp|naukri|linkedin|indeed)[A-Za-z0-9.-]+\.[A-Za-z]{2,6}', resume_text, re.IGNORECASE)
-            if pers_match:
-                candidate_data["Email"] = pers_match[0]
-            else:
+        for idx, item in enumerate(batch_items):
+            resume_text = batch_texts[idx]
+            if not resume_text:
+                progress.increment()
                 continue
 
-        dedup_key = candidate_data["Email"].lower()
-        if dedup_key not in seen_identifiers:
-            seen_identifiers.add(dedup_key)
-            candidates.append(candidate_data)
-            if candidate_data.get("Match Score", 0) >= 50:
-                matched_count += 1
+            filename = item['filename']
+            email_body = extract_email_body(item['payload'])
+            sender_header = item['sender_header']
+            reply_to_header = item['reply_to_header']
+            subject = item['subject']
+            internal_date_ms = item['internal_date_ms']
+            received_iso = None
 
-    # FIX 4: MIN_MATCH_SCORE filter (score >= MIN_MATCH_SCORE)
+            if internal_date_ms:
+                try:
+                    ts_sec = float(internal_date_ms) / 1000.0
+                    received_iso = datetime.fromtimestamp(ts_sec, tz=timezone.utc).isoformat()
+                except Exception:
+                    pass
+
+            fn_low = filename.lower()
+            src_type = 'pdf' if fn_low.endswith('.pdf') else 'docx'
+
+            # Deterministic extraction
+            extracted_email = extract_email_smart(resume_text, email_body, sender_header, reply_to_header, subject)
+            extracted_phone = extract_phone_smart(resume_text, email_body, subject)
+            deterministic_name = extract_candidate_name_smart(resume_text, email_body, sender_header, filename, extracted_email, subject)
+            deterministic_exp = extract_experience_from_text(resume_text)
+            deterministic_skills = extract_skills_from_text(resume_text, job_query)
+            det_score, det_matched_skills, det_reason = extract_matched_skills_and_score(resume_text, job_query)
+
+            ai_data = batch_ai_results[idx] if idx < len(batch_ai_results) and isinstance(batch_ai_results[idx], dict) else {}
+
+            cand_name = ai_data.get("name") or deterministic_name
+            if not is_valid_name(cand_name):
+                fallback_user = extracted_email.split('@')[0] if '@' in extracted_email else 'Unknown'
+                cand_name = fallback_user or 'Unknown'
+
+            cand_email = clean_extracted_email(ai_data.get("email")) if ai_data.get("email") else extracted_email
+            if cand_email == "N/A":
+                cand_email = extracted_email if extracted_email != "N/A" else "candidate.contact@gmail.com"
+
+            cand_phone = clean_phone(ai_data.get("phone")) if ai_data.get("phone") else extracted_phone
+            if not cand_phone:
+                cand_phone = extracted_phone if extracted_phone != "N/A" else "Available via Email"
+
+            cand_skills = ai_data.get("skills") or deterministic_skills
+            if isinstance(cand_skills, list):
+                cand_skills = ", ".join(str(s) for s in cand_skills)
+
+            cand_exp = ai_data.get("experience") or deterministic_exp
+            raw_score = ai_data.get("match_score") if ai_data.get("match_score") is not None else det_score
+            try:
+                cand_score = float(str(raw_score).replace('%', '') or det_score)
+            except Exception:
+                cand_score = float(det_score)
+
+            cand_matched_skills = ai_data.get("matched_skills") or det_matched_skills
+            cand_reason = ai_data.get("match_reason") or det_reason
+            cand_gender = ai_data.get("gender") or "Unknown"
+
+            candidate_data = {
+                "Name": cand_name,
+                "Email": cand_email,
+                "Phone": cand_phone,
+                "Skill Set": str(cand_skills),
+                "Experience": str(cand_exp),
+                "Matched Skills": str(cand_matched_skills),
+                "Match Score": int(cand_score),
+                "Match Reason": str(cand_reason),
+                "Gender": str(cand_gender).capitalize(),
+                "Source": src_type,
+                "source": src_type,
+                "source_file": filename,
+                "ReceivedAt": received_iso or datetime.now(timezone.utc).isoformat(),
+                "received_at": received_iso or datetime.now(timezone.utc).isoformat()
+            }
+
+            cand_email_low = cand_email.lower().strip()
+            if is_system_or_portal_email(cand_email_low, email_key):
+                pers_match = re.findall(r'[A-Za-z0-9._%+-]+@(?!ecorptrainings|ecorp|naukri|linkedin|indeed)[A-Za-z0-9.-]+\.[A-Za-z]{2,6}', resume_text, re.IGNORECASE)
+                if pers_match:
+                    candidate_data["Email"] = pers_match[0]
+                else:
+                    progress.increment()
+                    continue
+
+            dedup_key = candidate_data["Email"].lower()
+            if dedup_key not in seen_identifiers:
+                seen_identifiers.add(dedup_key)
+                all_candidates.append(candidate_data)
+
+            progress.increment()
+
+    # PART 4 — Filter candidates by score BEFORE counting toward target
     MIN_MATCH_SCORE = int(os.environ.get("MIN_MATCH_SCORE", 40))
-    def parse_cand_score(c):
-        s = c.get('Match Score') if 'Match Score' in c else c.get('match_score', 0)
-        try:
-            return int(re.sub(r'[^\d]', '', str(s)) or 0)
-        except Exception:
-            return 0
+    relevant = []
+    for candidate in all_candidates:
+        score = float(str(candidate.get("Match Score", 0)).replace('%', ''))
+        if score >= MIN_MATCH_SCORE:
+            relevant.append(candidate)
+        else:
+            logger.info(f'[search-SCORE] skipped {candidate.get("Name")} (score={score})')
 
-    scored = [c for c in candidates if parse_cand_score(c) >= MIN_MATCH_SCORE]
-    hidden = len(candidates) - len(scored)
-    logger.info(f"[search-FILTER] {len(scored)} kept, {hidden} hidden below score {MIN_MATCH_SCORE}")
-    candidates = scored
+    hidden_count = len(all_candidates) - len(relevant)
+    logger.info(f'[search-SCORE] {len(relevant)} relevant, {hidden_count} below score {MIN_MATCH_SCORE}')
+
+    # PART 5 — Name deduplication
+    candidates = dedupe_by_name(relevant)
+    removed_dups = len(relevant) - len(candidates)
+    logger.info(f'[search-DEDUP] {removed_dups} duplicates removed')
 
     progress.done()
     elapsed = round(time.time() - t_start, 1)
-    logger.info(f"[search-DONE] total_time={elapsed}s returned={len(candidates)}")
+    logger.info(f'[search-DONE] target={target_candidates} found={len(candidates)} emails={progress.emails_scanned} duration={elapsed}s')
 
     summary_data = {
         'pdf': scan_summary.get('pdf', 0),
         'docx': scan_summary.get('docx', 0),
         'total_scanned': len(candidates),
-        'matched': matched_count
+        'matched': len([c for c in candidates if c.get('Match Score', 0) >= 50]),
+        'hidden_below_score': hidden_count
     }
     with open(summary_file_path, "w") as f_sum:
         json.dump(summary_data, f_sum)
