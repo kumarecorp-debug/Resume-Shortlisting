@@ -218,10 +218,14 @@ def build_gmail_search_query(job_description, days_back=None, date_preset=None, 
         date_clause = f"after:{start_date}"
 
     date_clause = date_clause.strip()
-    if date_clause:
-        full_query = f"has:attachment {date_clause} {kw_query}".strip() if kw_query else f"has:attachment {date_clause}"
+    if date_clause and kw_query:
+        full_query = f"has:attachment {date_clause} {kw_query}".strip()
+    elif date_clause:
+        full_query = f"has:attachment {date_clause}".strip()
+    elif kw_query:
+        full_query = f"has:attachment {kw_query}".strip()
     else:
-        full_query = f"{kw_query}" if kw_query else "has:attachment"
+        full_query = "has:attachment"
 
     logging.info(f"Generated Gmail search query: {full_query}")
     return full_query

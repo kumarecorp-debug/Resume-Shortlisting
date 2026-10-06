@@ -9,7 +9,6 @@ from contextlib import redirect_stdout, redirect_stderr
 from functools import wraps
 import RS_Project
 import gmail_search
-import matcher
 import os
 import db
 import db_copied_history
@@ -62,28 +61,25 @@ supabase_client: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
-def check_dependencies():
-    try:
-        import openpyxl
-        import xlrd
-        import pandas
-        logging.info("[startup] openpyxl, xlrd, pandas — all OK")
-    except ImportError as e:
-        logging.error(f"[startup] MISSING DEPENDENCY: {e}")
-        logging.error("Run: pip install openpyxl xlrd pandas")
+def verify_ai_startup():
+    groq_key = os.environ.get('GROQ_API_KEY')
+    if groq_key:
+        logging.info("[startup] ✅ Groq AI ready (Primary Provider)")
+    else:
+        logging.warning("[startup] ⚠️ GROQ_API_KEY missing. Get one free at console.groq.com")
+        
+    gemini_key = os.environ.get('GEMINI_API_KEY')
+    if gemini_key:
+        logging.info("[startup] ✅ Gemini API ready (Optional Fallback)")
 
-    try:
-        import RS_Project
-        required = ['STOP_WORDS', 'logger', 'SUPPORTED_ACCOUNTS', 'RESUME_FOLDER', 'OUTPUT_CSV']
-        missing = [name for name in required if not hasattr(RS_Project, name)]
-        if missing:
-            logging.error(f"[startup] MISSING MODULE GLOBALS in RS_Project: {missing}")
-        else:
-            logging.info("[startup] All required RS_Project module globals present OK")
-    except Exception as e_glob:
-        logging.warning(f"[startup] Unable to verify RS_Project globals: {e_glob}")
+verify_ai_startup()
 
-check_dependencies()
+search_progress_store = {}
+
+@app.route('/api/search/progress/<search_id>', methods=['GET'])
+def get_search_progress(search_id):
+    prog = search_progress_store.get(search_id, {"current": 0, "total": 0, "status": "completed"})
+    return jsonify(prog)
 
 if not os.environ.get("VERCEL"):
     try:
@@ -261,18 +257,6 @@ def filter_candidates(candidates, term):
         if matched:
             return matched, mode, len(matched), 0
 
-    if mode == "keyword" and term_str:
-        q_terms = matcher.parse_terms(term_str)
-        matched = []
-        for c in candidates:
-            if matcher.matches_query_strict(c, term_str, query_terms=q_terms):
-                m_str, score, reason = matcher.calculate_score(c, term_str, query_terms=q_terms)
-                c["Matched Skills"] = m_str
-                c["Match Score"] = score
-                c["Match Reason"] = reason
-                matched.append(c)
-        return matched, mode, len(matched), 0
-
     return candidates, mode, len(candidates), 0
 
 @app.template_filter('format_received_date')
@@ -350,7 +334,7 @@ def compute_date_display(preset, df_str, dt_str):
         pass
     return None
 
-def execute_full_candidate_search(job_query, selected_account, max_candidates=200, date_preset=None, date_from=None, date_to=None, include_excel=True):
+def execute_full_candidate_search(job_query, selected_account, max_candidates=25, date_preset=None, date_from=None, date_to=None, include_excel=False):
     resume_folder = RS_Project.RESUME_FOLDER
     try:
         if not os.path.exists(resume_folder):
@@ -541,8 +525,8 @@ def process():
         except (ValueError, TypeError):
             min_exp = None
 
-        max_candidates = int(request.form.get('max_candidates') or request.args.get('max_candidates') or 200)
-        user_search_mode = request.form.get('search_mode') or request.args.get('search_mode') or 'live'
+        max_candidates = int(request.form.get('max_candidates') or request.args.get('max_candidates') or 25)
+        user_search_mode = request.form.get('search_mode') or request.args.get('search_mode') or ('history' if time_window != 'any' else 'live')
 
         # SHOW = COPIED MODE: Filter by copied_history.copied_at timestamp (No Gmail / Gemini API calls)
         if show_mode == 'copied':
@@ -589,8 +573,8 @@ def process():
                 scan_summary={"pdf": 0, "docx": 0, "xlsx": 0, "xls": 0, "xlsx_candidates": 0, "source": "copied"}
             )
 
-        # HISTORY SEARCH MODE: Executed only if explicitly requested as 'history'
-        if user_search_mode == 'history':
+        # HISTORY SEARCH MODE: If user chose history OR if a Time Window filter is active (!= 'any')
+        if user_search_mode == 'history' or (user_search_mode != 'live' and time_window and time_window != 'any'):
             hist_res = db.search_candidates_from_history(
                 mailbox_account=selected_account,
                 job_query=job_query,
@@ -1538,9 +1522,9 @@ def api_search():
             logging.info("Search cache expired or missing; rerunning")
 
     try:
-        max_candidates = int(request.args.get('max_candidates') or request.form.get('max_candidates') or 200)
+        max_candidates = int(request.args.get('max_candidates') or request.form.get('max_candidates') or 25)
     except (ValueError, TypeError):
-        max_candidates = 200
+        max_candidates = 25
 
     df, scan_summary = execute_full_candidate_search(job_query, selected_account, max_candidates=max_candidates, date_preset=time_window, date_from=date_from, date_to=date_to)
     
@@ -1706,34 +1690,11 @@ def gmail_count():
     })
 
 @app.route('/debug-parse-exp', methods=['GET'])
+
 def debug_parse_exp():
     text = request.args.get('text', '')
     parsed = parse_experience_years(text)
     return jsonify({"text": text, "parsed": parsed})
-
-@app.route('/debug/parse-excel-folder')
-def debug_parse_excel_folder():
-    import glob
-    import excel_parser
-    resume_folder = getattr(RS_Project, 'RESUME_FOLDER', 'Resumes')
-    files = glob.glob(os.path.join(resume_folder, '**/*.xlsx'), recursive=True)
-    if not files:
-        files = glob.glob(os.path.join(resume_folder, '**/*.xls'), recursive=True)
-    if not files:
-        files = glob.glob('Resumes/**/*.xlsx', recursive=True)
-    results = []
-    for f in files[:5]:
-        cands = excel_parser.parse_excel_to_candidates(f)
-        results.append({
-            'file': f,
-            'candidate_count': len(cands),
-            'first_candidate': cands[0] if cands else None,
-        })
-    return jsonify({
-        'total_files': len(files),
-        'sampled': len(results),
-        'results': results,
-    })
 
 @app.route('/debug-phone-match', methods=['GET'])
 def debug_phone_match():
@@ -1788,128 +1749,5 @@ def debug_extract_text(filename):
         'extracted_name_fallback': RS_Project.extract_name_from_resume_text(text)
     })
 
-@app.route('/debug/search-pipeline')
-@login_required
-def debug_search_pipeline():
-    """Run a test search and return detailed stats."""
-    mailbox = request.args.get('mailbox', 'recruiter@ecorptrainings.com')
-    jd = request.args.get('jd', 'python')
-    max_candidates = int(request.args.get('max', 10))
-    
-    from RS_Project import search_resumes
-    try:
-        result = search_resumes(
-            jd, 
-            account_email=mailbox, 
-            max_candidates=max_candidates
-        )
-        if hasattr(result, 'to_dict'):
-            stats = {
-                'candidate_count': len(result),
-                'candidates': result.to_dict(orient='records')
-            }
-        elif isinstance(result, list):
-            stats = {
-                'candidate_count': len(result),
-                'candidates': result
-            }
-        else:
-            stats = {'result': str(result)}
-
-        return jsonify({
-            'success': True,
-            'result_stats': stats,
-        })
-    except Exception as e:
-        import traceback
-        return jsonify({
-            'success': False,
-            'error': str(e),
-            'traceback': traceback.format_exc()
-        }), 500
-
-@app.route('/debug/search-limits')
-@login_required
-def debug_search_limits():
-    mailbox = request.args.get('mailbox', 'recruiter@ecorptrainings.com')
-    jd = request.args.get('jd', 'datadog')
-    max_c = request.args.get('max', 200, type=int)
-    
-    from gmail_search import build_gmail_search_query
-    query = build_gmail_search_query(jd)
-    
-    service = RS_Project.auto_authenticate_google(mailbox)
-    
-    # Total available estimate
-    try:
-        count_req = service.users().messages().list(userId='me', q=query, maxResults=1)
-        count_resp = RS_Project.gmail_call_with_retry(lambda: count_req.execute())
-        total = count_resp.get('resultSizeEstimate', 0)
-    except Exception as e:
-        total = 0
-    
-    # Fetch up to max_c using pagination
-    messages = []
-    page_token = None
-    while len(messages) < max_c:
-        batch_size = min(max_c - len(messages), 500)
-        params = {
-            'userId': 'me',
-            'q': query,
-            'maxResults': batch_size,
-        }
-        if page_token:
-            params['pageToken'] = page_token
-        req = service.users().messages().list(**params)
-        resp = RS_Project.gmail_call_with_retry(lambda: req.execute())
-        msgs = resp.get('messages', [])
-        if not msgs:
-            break
-        messages.extend(msgs)
-        page_token = resp.get('nextPageToken')
-        if not page_token:
-            break
-    
-    return jsonify({
-        'mailbox': mailbox,
-        'query': query,
-        'total_estimate': total,
-        'fetched': len(messages),
-        'requested_max': max_c,
-    })
-
-def verify_gemini_startup():
-    # TODO: Note - google.generativeai package support has ended notice; migrate to google.genai in future refactor.
-    import google.generativeai as legacy_genai
-    api_key = os.environ.get('GEMINI_API_KEY')
-    if not api_key and hasattr(RS_Project, 'GEMINI_API_KEY'):
-        api_key = RS_Project.GEMINI_API_KEY
-    if not api_key:
-        logging.error("[startup] ❌ GEMINI_API_KEY not set")
-        return None
-    
-    try:
-        legacy_genai.configure(api_key=api_key)
-    except Exception as ex:
-        logging.warning(f"[startup] genai configure error: {ex}")
-    
-    # Try each model in priority order
-    for model_name in ["gemini-3.8-flash", "gemini-3.6-flash"]:
-        try:
-            model = legacy_genai.GenerativeModel(model_name)
-            response = model.generate_content("hi")
-            if response and getattr(response, 'text', None):
-                logging.info(f"[startup] ✅ Gemini ready: {model_name}")
-                return model_name
-        except Exception as e:
-            logging.warning(f"[startup] model {model_name} failed: {e}")
-    
-    logging.error("[startup] ❌ No working Gemini model found!")
-    return None
-
 if __name__ == '__main__':
-    try:
-        verify_gemini_startup()
-    except Exception as ex:
-        logging.warning(f"[startup] verify_gemini_startup error: {ex}")
     app.run(debug=True)

@@ -119,12 +119,6 @@
                         <span style="color: var(--text-muted); font-size: 12px;">(Optional — leave blank to show all)</span>
                     </div>
 
-                    <div class="form-field-inline checkbox-field">
-                        <input type="checkbox" name="include_excel" id="include_excel" value="1" {% if include_excel is not defined or include_excel %}checked{% endif %} class="form-checkbox">
-                        <label for="include_excel" class="checkbox-label">
-                            <span data-icon="file-spreadsheet" data-size="14"></span> Include Excel attachments (.xlsx / .xls)
-                        </label>
-                    </div>
                 </div>
 
                 <div class="form-divider"></div>
@@ -211,7 +205,7 @@
             {% if scan_summary %}
                 <div style="background: var(--bg-subtle); border: 1px solid var(--border); color: var(--text-primary); padding: 8px 14px; border-radius: var(--radius-md); font-size: 13px; font-weight: 500; margin-bottom: 12px; display: flex; align-items: center; gap: 6px;">
                     <span data-icon="file-text" data-size="14"></span>
-                    <span>Scan Summary: Scanned {{ scan_summary.get('pdf', 0) }} PDFs, {{ scan_summary.get('docx', 0) }} DOCX, {{ scan_summary.get('xlsx', 0) + scan_summary.get('xls', 0) }} Excel files ({{ scan_summary.get('xlsx_candidates', 0) }} rows total) &nbsp;·&nbsp; Found {{ total_matches }} matching candidates</span>
+                    <span>Scan Summary: Scanned {{ scan_summary.get('pdf', 0) }} PDFs, {{ scan_summary.get('docx', 0) }} DOCX resumes &nbsp;·&nbsp; Found {{ total_matches }} matching candidates</span>
                 </div>
             {% endif %}
 
