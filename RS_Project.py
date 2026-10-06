@@ -718,26 +718,45 @@ def main(job_query, account_email="recruiter@ecorptrainings.com", max_candidates
     
     t_start = time.time()
 class SearchProgress:
-    def __init__(self, total, search_id=""):
-        self.total = max(total, 1)
+    def __init__(self, target, search_id=""):
+        self.target = max(target, 1)
+        self.emails_scanned = 0
+        self.resumes_found = 0
         self.current = 0
         self.lock = threading.Lock()
-        self.status = "processing"
+        self.status = "downloading"  # downloading | extracting | done | error
         self.search_id = search_id
+        self.t_start = time.time()
+
+    def set_stats(self, emails_scanned=None, resumes_found=None, status=None):
+        with self.lock:
+            if emails_scanned is not None:
+                self.emails_scanned = emails_scanned
+            if resumes_found is not None:
+                self.resumes_found = resumes_found
+            if status is not None:
+                self.status = status
 
     def increment(self, step=1):
         with self.lock:
-            self.current = min(self.current + step, self.total)
-            pct = int((self.current / self.total) * 100)
-            logger.info(f"[search-PROGRESS] {self.current}/{self.total} ({pct}%)")
+            self.current = min(self.current + step, self.target)
+            pct = int((self.current / self.target) * 100)
+            logger.info(f"[search-PROGRESS] {self.current}/{self.target} ({pct}%)")
 
     def done(self):
         with self.lock:
-            self.current = self.total
+            self.current = self.target
             self.status = "done"
 
 _searches = {}
 _attachment_cache = {}
+_search_cache = {}
+
+MAX_EMAILS_TO_SCAN = 500
+MAX_ATTACHMENTS_TO_DOWNLOAD = 200
+
+if os.environ.get("VERCEL"):
+    MAX_ATTACHMENTS_TO_DOWNLOAD = 50
 
 def download_attachment_cached(service, message_id, attachment_id):
     cache_key = f"{message_id}:{attachment_id}"
@@ -769,21 +788,145 @@ def download_attachment_cached(service, message_id, attachment_id):
         return file_bytes
     return None
 
-def main(job_query, account_email="recruiter@ecorptrainings.com", max_candidates=25, date_preset=None, date_from=None, date_to=None, include_excel=False, search_id=None):
+def search_gmail_until_target(service, query, email_key, target_attachments=100, batch_size=50, max_emails=500, search_id=None):
+    """
+    Fetch Gmail emails in batches until target_attachments resume files are downloaded (PART 2).
+    Deduplicates attachments by content hash (PART 8) and caches results for 5 min (PART 9).
+    """
+    cache_key = f"{email_key}|{query}|{target_attachments}"
+    if cache_key in _search_cache:
+        cached_files, ts = _search_cache[cache_key]
+        if time.time() - ts < 300:
+            logger.info(f"[search] cache hit for target search: {cache_key}")
+            return cached_files
+
+    target_attachments = min(target_attachments, MAX_ATTACHMENTS_TO_DOWNLOAD)
+    downloaded_files = []
+    seen_hashes = set()
+    page_token = None
+    emails_scanned = 0
+    iteration = 0
+    max_iterations = max_emails // batch_size
+
+    progress = _searches.get(search_id) if search_id else None
+
+    while len(downloaded_files) < target_attachments and iteration < max_iterations:
+        iteration += 1
+        logger.info(
+            f"[search-FETCH] iteration {iteration}: "
+            f"have {len(downloaded_files)}/{target_attachments} attachments, scanned {emails_scanned} emails"
+        )
+
+        try:
+            kwargs = {'userId': 'me', 'q': query, 'maxResults': batch_size}
+            if page_token:
+                kwargs['pageToken'] = page_token
+            res = gmail_call_with_retry(lambda: service.users().messages().list(**kwargs).execute())
+        except Exception as e:
+            logger.warning(f"[search-FETCH] Error listing messages: {e}")
+            break
+
+        messages = res.get('messages', [])
+        if not messages:
+            logger.info("[search-FETCH] no more emails available")
+            break
+
+        for msg_meta in messages:
+            emails_scanned += 1
+            if progress:
+                progress.set_stats(emails_scanned=emails_scanned, resumes_found=len(downloaded_files), status="downloading")
+
+            if len(downloaded_files) >= target_attachments:
+                break
+
+            try:
+                full_msg = gmail_call_with_retry(lambda: service.users().messages().get(
+                    userId='me', id=msg_meta['id'], format='full'
+                ).execute())
+                if not full_msg or not has_pdf_or_docx_attachment(full_msg):
+                    continue
+
+                payload = full_msg.get("payload", {})
+                parts = payload.get("parts", [])
+                headers = payload.get("headers", [])
+                subject = next((h["value"] for h in headers if h["name"].lower() == "subject"), "")
+                sender_header = next((h["value"] for h in headers if h["name"].lower() == "from"), "")
+                reply_to_header = next((h["value"] for h in headers if h["name"].lower() == "reply-to"), "")
+                internal_date_ms = full_msg.get("internalDate")
+
+                attachments = []
+                def walk_parts(part_list):
+                    for part in part_list:
+                        fn = part.get("filename")
+                        att_id = part.get("body", {}).get("attachmentId")
+                        if fn and att_id:
+                            attachments.append((fn, att_id))
+                        if "parts" in part:
+                            walk_parts(part["parts"])
+                walk_parts(parts)
+
+                valid_files = [(f, a_id) for f, a_id in attachments if is_valid_resume_filename(f)]
+                for filename, attachment_id in valid_files:
+                    if len(downloaded_files) >= target_attachments:
+                        break
+                    file_bytes = download_attachment_cached(service, msg_meta['id'], attachment_id)
+                    if not file_bytes:
+                        continue
+
+                    # Dedupe by content hash (PART 8)
+                    content_hash = hashlib.md5(file_bytes[:4096]).hexdigest()
+                    if content_hash in seen_hashes:
+                        logger.info(f"[search] duplicate attachment skipped for {filename}")
+                        continue
+                    seen_hashes.add(content_hash)
+
+                    downloaded_files.append({
+                        'filename': filename,
+                        'file_bytes': file_bytes,
+                        'message_id': msg_meta['id'],
+                        'payload': payload,
+                        'headers': headers,
+                        'subject': subject,
+                        'sender_header': sender_header,
+                        'reply_to_header': reply_to_header,
+                        'internal_date_ms': internal_date_ms
+                    })
+                    if progress:
+                        progress.set_stats(resumes_found=len(downloaded_files))
+                    logger.info(f"[search-DOWNLOAD] {len(downloaded_files)}/{target_attachments} attachments")
+
+            except Exception as e_item:
+                logger.warning(f"[search] Error processing message {msg_meta['id']}: {e_item}")
+
+            time.sleep(0.05)
+
+        if len(downloaded_files) >= target_attachments:
+            logger.info(f"[search-FETCH] TARGET REACHED: {len(downloaded_files)} attachments")
+            break
+
+        page_token = res.get('nextPageToken')
+        if not page_token:
+            logger.info("[search-FETCH] no more pages available")
+            break
+
+    _search_cache[cache_key] = (downloaded_files, time.time())
+    logger.info(f"[search-FETCH-DONE] scanned={emails_scanned} attachments={len(downloaded_files)} target={target_attachments}")
+    return downloaded_files
+
+def main(job_query, account_email="recruiter@ecorptrainings.com", max_candidates=25, date_preset=None, date_from=None, date_to=None, include_excel=False, search_id=None, fast_mode=False):
     """
     Main entrypoint called from app.py or CLI.
-    Processes ONLY PDF/DOCX attachments.
-    Honors max_candidates limit strictly.
-    Uses Groq for ultra-fast candidate entity extraction with gentle sequential delays.
+    Fetches Gmail emails until max_candidates target attachments are downloaded.
+    Extracts candidates via Groq with progress tracking.
     """
     if not job_query or not job_query.strip():
         print("Job Query / Job Description cannot be empty.")
         return
 
     try:
-        max_candidates = int(max_candidates or 25)
+        target_candidates = int(max_candidates or 25)
     except (ValueError, TypeError):
-        max_candidates = 25
+        target_candidates = 25
 
     os.makedirs(RESUME_FOLDER, exist_ok=True)
     if isinstance(account_email, dict):
@@ -793,58 +936,54 @@ def main(job_query, account_email="recruiter@ecorptrainings.com", max_candidates
     t_start = time.time()
     service = auto_authenticate_google(email_key)
     search_query = build_gmail_search_query(job_query, date_preset=date_preset, date_from=date_from, date_to=date_to)
-    
-    messages = fetch_messages_cached(service, search_query, email_key, max_results=max_candidates)
-    logger.info(f"[search-START] mailbox={email_key} jd={job_query} total_emails={len(messages)}")
 
-    default_cols = ["Rank", "Source", "source", "source_file", "Name", "Gender", "Email", "Phone", "Experience", "Skill Set", "Matched Skills", "Match Score", "Match Reason", "ReceivedAt"]
-
-    if not messages:
-        logger.info("[search-DONE] 0 emails found.")
-        pd.DataFrame(columns=default_cols).to_csv(OUTPUT_CSV, index=False)
-        with open(os.path.join(RESUME_FOLDER, "scan_summary.json"), "w") as f_sum:
-            json.dump({'pdf': 0, 'docx': 0, 'total_scanned': 0, 'matched': 0}, f_sum)
-        return
-
-    # Filter emails for PDF/DOCX attachments ONLY
-    emails_with_resumes = []
-    for msg_meta in messages:
-        try:
-            full_msg = gmail_call_with_retry(lambda: service.users().messages().get(
-                userId='me', id=msg_meta['id'], format='full'
-            ).execute())
-            if full_msg and has_pdf_or_docx_attachment(full_msg):
-                emails_with_resumes.append(full_msg)
-        except Exception as e:
-            logger.warning(f"[search] Error fetching message {msg_meta['id']}: {e}")
-
-    total_with_resumes = len(emails_with_resumes)
-    progress = SearchProgress(total=total_with_resumes, search_id=search_id or "")
+    progress = SearchProgress(target=target_candidates, search_id=search_id or "")
     if search_id:
         _searches[search_id] = progress
 
-    logger.info(f"[search-FILTER] {total_with_resumes} of {len(messages)} emails have PDF/DOCX attachments")
+    logger.info(f"[search-START] search_id={search_id or 'cli'} mailbox={email_key} jd={job_query} target={target_candidates}")
 
+    downloaded_attachments = search_gmail_until_target(
+        service=service,
+        query=search_query,
+        email_key=email_key,
+        target_attachments=target_candidates,
+        batch_size=50,
+        max_emails=min(target_candidates * 5, MAX_EMAILS_TO_SCAN),
+        search_id=search_id
+    )
+
+    total_downloaded = len(downloaded_attachments)
+    default_cols = ["Rank", "Source", "source", "source_file", "Name", "Gender", "Email", "Phone", "Experience", "Skill Set", "Matched Skills", "Match Score", "Match Reason", "ReceivedAt"]
+
+    if not downloaded_attachments:
+        logger.info("[search-DONE] 0 resume attachments found.")
+        pd.DataFrame(columns=default_cols).to_csv(OUTPUT_CSV, index=False)
+        with open(os.path.join(RESUME_FOLDER, "scan_summary.json"), "w") as f_sum:
+            json.dump({'pdf': 0, 'docx': 0, 'total_scanned': 0, 'matched': 0}, f_sum)
+        progress.done()
+        return
+
+    # PART 6: Fast Mode cap (extract only up to 30)
+    items_to_extract = downloaded_attachments
+    if fast_mode and total_downloaded > 30:
+        items_to_extract = downloaded_attachments[:30]
+        logger.info(f"[search-FASTMODE] Fast mode active: extracting 30 of {total_downloaded} downloaded attachments")
+
+    progress.set_stats(status="extracting")
     candidates = []
     seen_identifiers = set()
     scan_summary = {'pdf': 0, 'docx': 0}
-    attachments_downloaded = 0
     matched_count = 0
 
-    for idx, msg in enumerate(emails_with_resumes, start=1):
-        if len(candidates) >= max_candidates:
-            logger.info(f"[search-LIMIT] Reached user candidate limit of {max_candidates}. Stopping extraction.")
-            break
-
-        message_id = msg["id"]
-        payload = msg.get("payload", {})
-        parts = payload.get("parts", [])
-        headers = payload.get("headers", [])
-        
-        subject = next((h["value"] for h in headers if h["name"].lower() == "subject"), "")
-        sender_header = next((h["value"] for h in headers if h["name"].lower() == "from"), "")
-        reply_to_header = next((h["value"] for h in headers if h["name"].lower() == "reply-to"), "")
-        internal_date_ms = msg.get("internalDate")
+    for idx, item in enumerate(items_to_extract, start=1):
+        filename = item['filename']
+        file_bytes = item['file_bytes']
+        email_body = extract_email_body(item['payload'])
+        sender_header = item['sender_header']
+        reply_to_header = item['reply_to_header']
+        subject = item['subject']
+        internal_date_ms = item['internal_date_ms']
         received_iso = None
 
         if internal_date_ms:
@@ -854,116 +993,82 @@ def main(job_query, account_email="recruiter@ecorptrainings.com", max_candidates
             except Exception:
                 pass
 
-        email_body = extract_email_body(payload)
+        fn_low = filename.lower()
+        src_type = 'pdf' if fn_low.endswith('.pdf') else 'docx'
+        scan_summary[src_type] = scan_summary.get(src_type, 0) + 1
 
-        attachments = []
-        def walk_parts(part_list):
-            for part in part_list:
-                fn = part.get("filename")
-                attachment_id = part.get("body", {}).get("attachmentId")
-                if fn and attachment_id:
-                    attachments.append((fn, attachment_id))
-                if "parts" in part:
-                    walk_parts(part["parts"])
-        walk_parts(parts)
+        resume_text = extract_text_from_bytes(file_bytes, filename)
+        if not resume_text:
+            progress.increment()
+            continue
 
-        valid_files = [(f, a_id) for f, a_id in attachments if is_valid_resume_filename(f)]
+        extracted_email = extract_email_smart(resume_text, email_body, sender_header, reply_to_header, subject)
+        extracted_phone = extract_phone_smart(resume_text, email_body, subject)
+        deterministic_name = extract_candidate_name_smart(resume_text, email_body, sender_header, filename, extracted_email, subject)
+        deterministic_exp = extract_experience_from_text(resume_text)
+        deterministic_skills = extract_skills_from_text(resume_text, job_query)
+        det_score, det_matched_skills, det_reason = extract_matched_skills_and_score(resume_text, job_query)
 
-        for filename, attachment_id in valid_files:
-            if len(candidates) >= max_candidates:
-                break
+        candidate_data = {
+            "Name": deterministic_name if deterministic_name not in ["Candidate", "N/A"] else "Verified Candidate",
+            "Email": extracted_email if extracted_email != "N/A" else "candidate.contact@gmail.com",
+            "Phone": extracted_phone if extracted_phone != "N/A" else "Available via Email",
+            "Skill Set": deterministic_skills,
+            "Experience": deterministic_exp,
+            "Matched Skills": det_matched_skills,
+            "Match Score": det_score,
+            "Match Reason": det_reason,
+            "Gender": "Unknown",
+            "Source": src_type,
+            "source": src_type,
+            "source_file": filename,
+            "ReceivedAt": received_iso or datetime.now(timezone.utc).isoformat(),
+            "received_at": received_iso or datetime.now(timezone.utc).isoformat()
+        }
 
-            try:
-                file_bytes = download_attachment_cached(service, message_id, attachment_id)
-                if not file_bytes:
-                    continue
-                attachments_downloaded += 1
+        combined_text = resume_text if len(resume_text) > 50 else (resume_text + "\n" + email_body)
+        
+        ai_fields = ai_extractor.extract_fields_cached(combined_text, progress=progress) if combined_text.strip() else {}
+        if ai_fields and isinstance(ai_fields, dict):
+            if ai_fields.get("name"):
+                c_name = clean_candidate_name(str(ai_fields["name"]).strip())
+                if c_name != "Candidate":
+                    candidate_data["Name"] = c_name
+            if ai_fields.get("email") and "@" in str(ai_fields["email"]):
+                c_email = clean_extracted_email(str(ai_fields["email"]).strip())
+                if c_email != "N/A":
+                    candidate_data["Email"] = c_email
+            if ai_fields.get("phone") and str(ai_fields["phone"]).strip():
+                c_phone = clean_phone(str(ai_fields["phone"]).strip())
+                if c_phone:
+                    candidate_data["Phone"] = c_phone
+            if ai_fields.get("skills") and str(ai_fields["skills"]).strip():
+                candidate_data["Skill Set"] = str(ai_fields["skills"]).strip()
+            if ai_fields.get("experience") and str(ai_fields["experience"]).strip():
+                exp_val = str(ai_fields["experience"]).strip()
+                exp_parsed = extract_experience_from_text(exp_val)
+                candidate_data["Experience"] = exp_parsed if exp_parsed != "2.0 years" else f"{exp_val} years"
+            if ai_fields.get("gender") and str(ai_fields["gender"]).lower() != "unknown":
+                candidate_data["Gender"] = str(ai_fields["gender"]).strip().capitalize()
 
-                pct_dl = int((attachments_downloaded / total_with_resumes) * 100) if total_with_resumes > 0 else 100
-                logger.info(f"[search-DOWNLOAD] {attachments_downloaded}/{total_with_resumes} ({pct_dl}%)")
+        cand_email = str(candidate_data.get("Email", "")).lower().strip()
+        if is_system_or_portal_email(cand_email, email_key):
+            pers_match = re.findall(r'[A-Za-z0-9._%+-]+@(?!ecorptrainings|ecorp|naukri|linkedin|indeed)[A-Za-z0-9.-]+\.[A-Za-z]{2,6}', resume_text, re.IGNORECASE)
+            if pers_match:
+                candidate_data["Email"] = pers_match[0]
+            else:
+                continue
 
-                fn_low = filename.lower()
-                src_type = 'pdf' if fn_low.endswith('.pdf') else 'docx'
-                scan_summary[src_type] = scan_summary.get(src_type, 0) + 1
-
-                resume_text = extract_text_from_bytes(file_bytes, filename)
-                if not resume_text:
-                    progress.increment()
-                    continue
-
-                # Prepare deterministic fields
-                extracted_email = extract_email_smart(resume_text, email_body, sender_header, reply_to_header, subject)
-                extracted_phone = extract_phone_smart(resume_text, email_body, subject)
-                deterministic_name = extract_candidate_name_smart(resume_text, email_body, sender_header, filename, extracted_email, subject)
-                deterministic_exp = extract_experience_from_text(resume_text)
-                deterministic_skills = extract_skills_from_text(resume_text, job_query)
-                det_score, det_matched_skills, det_reason = extract_matched_skills_and_score(resume_text, job_query)
-
-                candidate_data = {
-                    "Name": deterministic_name if deterministic_name not in ["Candidate", "N/A"] else "Verified Candidate",
-                    "Email": extracted_email if extracted_email != "N/A" else "candidate.contact@gmail.com",
-                    "Phone": extracted_phone if extracted_phone != "N/A" else "Available via Email",
-                    "Skill Set": deterministic_skills,
-                    "Experience": deterministic_exp,
-                    "Matched Skills": det_matched_skills,
-                    "Match Score": det_score,
-                    "Match Reason": det_reason,
-                    "Gender": "Unknown",
-                    "Source": src_type,
-                    "source": src_type,
-                    "source_file": filename,
-                    "ReceivedAt": received_iso or datetime.now(timezone.utc).isoformat(),
-                    "received_at": received_iso or datetime.now(timezone.utc).isoformat()
-                }
-
-                combined_text = resume_text if len(resume_text) > 50 else (resume_text + "\n" + email_body)
-                
-                # Single AI extraction with progress tracking
-                ai_fields = ai_extractor.extract_fields_cached(combined_text, progress=progress) if combined_text.strip() else {}
-                if ai_fields and isinstance(ai_fields, dict):
-                    if ai_fields.get("name"):
-                        c_name = clean_candidate_name(str(ai_fields["name"]).strip())
-                        if c_name != "Candidate":
-                            candidate_data["Name"] = c_name
-                    if ai_fields.get("email") and "@" in str(ai_fields["email"]):
-                        c_email = clean_extracted_email(str(ai_fields["email"]).strip())
-                        if c_email != "N/A":
-                            candidate_data["Email"] = c_email
-                    if ai_fields.get("phone") and str(ai_fields["phone"]).strip():
-                        c_phone = clean_phone(str(ai_fields["phone"]).strip())
-                        if c_phone:
-                            candidate_data["Phone"] = c_phone
-                    if ai_fields.get("skills") and str(ai_fields["skills"]).strip():
-                        candidate_data["Skill Set"] = str(ai_fields["skills"]).strip()
-                    if ai_fields.get("experience") and str(ai_fields["experience"]).strip():
-                        exp_val = str(ai_fields["experience"]).strip()
-                        exp_parsed = extract_experience_from_text(exp_val)
-                        candidate_data["Experience"] = exp_parsed if exp_parsed != "2.0 years" else f"{exp_val} years"
-                    if ai_fields.get("gender") and str(ai_fields["gender"]).lower() != "unknown":
-                        candidate_data["Gender"] = str(ai_fields["gender"]).strip().capitalize()
-
-                cand_email = str(candidate_data.get("Email", "")).lower().strip()
-                if is_system_or_portal_email(cand_email, email_key):
-                    pers_match = re.findall(r'[A-Za-z0-9._%+-]+@(?!ecorptrainings|ecorp|naukri|linkedin|indeed)[A-Za-z0-9.-]+\.[A-Za-z]{2,6}', resume_text, re.IGNORECASE)
-                    if pers_match:
-                        candidate_data["Email"] = pers_match[0]
-                    else:
-                        continue
-
-                dedup_key = candidate_data["Email"].lower()
-                if dedup_key not in seen_identifiers:
-                    seen_identifiers.add(dedup_key)
-                    candidates.append(candidate_data)
-                    if candidate_data.get("Match Score", 0) >= 50:
-                        matched_count += 1
-
-            except Exception as e_file:
-                logger.warning(f"[file] Error downloading/parsing attachment {filename}: {e_file}")
-                progress.increment()
+        dedup_key = candidate_data["Email"].lower()
+        if dedup_key not in seen_identifiers:
+            seen_identifiers.add(dedup_key)
+            candidates.append(candidate_data)
+            if candidate_data.get("Match Score", 0) >= 50:
+                matched_count += 1
 
     progress.done()
     elapsed = round(time.time() - t_start, 1)
-    logger.info(f"[search-DONE] total_time={elapsed}s resumes={len(candidates)}")
+    logger.info(f"[search-DONE] search_id={search_id or 'cli'} attachments={total_downloaded} candidates={len(candidates)} duration={elapsed}s")
 
     summary_data = {
         'pdf': scan_summary.get('pdf', 0),

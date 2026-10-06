@@ -217,11 +217,12 @@ def build_gmail_search_query(job_description, days_back=None, date_preset=None, 
         start_date = (datetime.now() - timedelta(days=days_back)).strftime('%Y/%m/%d')
         date_clause = f"after:{start_date}"
 
-    date_clause = date_clause.strip()
+    GMAIL_ATTACHMENT_FILTER = "(filename:pdf OR filename:docx OR filename:xlsx OR filename:xls)"
+
     if date_clause:
-        full_query = f"has:attachment {date_clause} {kw_query}".strip() if kw_query else f"has:attachment {date_clause}"
+        full_query = f"has:attachment {GMAIL_ATTACHMENT_FILTER} {date_clause} {kw_query}".strip() if kw_query else f"has:attachment {GMAIL_ATTACHMENT_FILTER} {date_clause}"
     else:
-        full_query = f"{kw_query}" if kw_query else "has:attachment"
+        full_query = f"has:attachment {GMAIL_ATTACHMENT_FILTER} {kw_query}".strip() if kw_query else f"has:attachment {GMAIL_ATTACHMENT_FILTER}"
 
     logging.info(f"Generated Gmail search query: {full_query}")
     return full_query

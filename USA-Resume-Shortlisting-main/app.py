@@ -536,13 +536,35 @@ def api_search_start():
 def api_search_progress(search_id):
     if search_id in RS_Project._searches:
         prog = RS_Project._searches[search_id]
+        elapsed = time.time() - prog.t_start
+        pct = int((prog.current / max(prog.target, 1)) * 100) if prog.target > 0 else 0
+        
+        if prog.status == "downloading":
+            rem_sec = max(10, int((prog.target - max(prog.resumes_found, 1)) * 1.5))
+            msg = f"Downloading attachments ({prog.resumes_found}/{prog.target} found)"
+        elif prog.status == "extracting":
+            extracted = prog.current
+            remaining_items = max(0, prog.target - extracted)
+            rem_sec = max(5, int(remaining_items * 1.8))
+            msg = f"Extracting candidates ({extracted}/{prog.target})"
+        else:
+            rem_sec = 0
+            msg = "Search complete"
+
         return jsonify({
             "status": prog.status,
-            "current": prog.current,
-            "total": prog.total,
-            "pct": int((prog.current / max(prog.total, 1)) * 100)
+            "emails_scanned": prog.emails_scanned,
+            "resumes_found": prog.resumes_found,
+            "extracted": prog.current,
+            "target": prog.target,
+            "percentage": pct,
+            "eta_seconds": rem_sec,
+            "message": msg
         })
-    return jsonify(_search_progress_store.get(search_id, {"status": "not_found", "current": 0, "total": 0, "pct": 0}))
+    return jsonify(_search_progress_store.get(search_id, {
+        "status": "not_found", "emails_scanned": 0, "resumes_found": 0,
+        "extracted": 0, "target": 0, "percentage": 0, "eta_seconds": 0, "message": "Search initializing..."
+    }))
 
 @app.route('/api/search/result/<search_id>')
 def api_search_result(search_id):
