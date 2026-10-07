@@ -21,10 +21,10 @@ except ImportError:
     HAS_GEMINI = False
 
 # Gemini Models configuration
-GEMINI_PRIMARY_MODEL = os.getenv('GEMINI_PRIMARY_MODEL', 'gemini-3.5-flash-lite')
-GEMINI_FALLBACK_1 = os.getenv('GEMINI_FALLBACK_MODEL_1', 'gemini-3.6-flash')
-GEMINI_FALLBACK_2 = os.getenv('GEMINI_FALLBACK_MODEL_2', 'gemini-3.7-flash')
-GEMINI_FALLBACK_3 = os.getenv('GEMINI_FALLBACK_MODEL_3', 'gemini-3.8-flash')
+GEMINI_PRIMARY_MODEL = os.getenv('GEMINI_PRIMARY_MODEL', 'gemini-3.5-flash')
+GEMINI_FALLBACK_1 = os.getenv('GEMINI_FALLBACK_MODEL_1', 'gemini-3.7-flash')
+GEMINI_FALLBACK_2 = os.getenv('GEMINI_FALLBACK_MODEL_2', 'gemini-flash-latest')
+GEMINI_FALLBACK_3 = os.getenv('GEMINI_FALLBACK_MODEL_3', 'gemini-3.5-flash-lite')
 
 GEMINI_MODELS = [
     GEMINI_PRIMARY_MODEL,
@@ -188,13 +188,13 @@ def call_gemini_with_fallback(prompt, status_callback=None):
                     break
 
                 if '429' in err_str or 'resourceexhausted' in err_str or 'quota' in err_str or 'rate' in err_str:
-                    retry_after = 3
+                    retry_after = 5
                     if hasattr(e, 'retry_delay') and hasattr(e.retry_delay, 'seconds'):
-                        retry_after = min(e.retry_delay.seconds, 3)
+                        retry_after = e.retry_delay.seconds
                     logger.warning(f"[gemini] rate limited, waiting {retry_after}s for {model_name}")
                     if status_callback:
-                        status_callback({'waiting': True, 'wait_seconds': retry_after, 'waiting_message': f'Gemini rate limit — waiting {retry_after}s'})
-                    time.sleep(retry_after)
+                        status_callback({'waiting': True, 'wait_seconds': retry_after + 2, 'waiting_message': f'Gemini rate limit — waiting {retry_after+2}s'})
+                    time.sleep(retry_after + 2)
                     continue
 
                 logger.warning(f"[gemini] error for model {model_name}: {e}")
@@ -296,7 +296,7 @@ def expand_keys(item):
         return {}
     return {KEY_MAP.get(k, k): v for k, v in item.items()}
 
-def extract_batch(resume_texts, jd, status_callback=None, batch_num=None, total_batches=None):
+def extract_batch(resume_texts, jd, status_callback=None):
     if not resume_texts:
         return []
 
@@ -313,34 +313,36 @@ def extract_batch(resume_texts, jd, status_callback=None, batch_num=None, total_
     raw_candidates = []
     used_provider = "none"
 
-    gemini_key = os.getenv("GEMINI_API_KEY", "").strip()
+    # 1. Try Groq as PRIMARY extractor
+    messages = [
+        {'role': 'system', 'content': BATCH_SYSTEM_PROMPT},
+        {'role': 'user', 'content': f"Target JD: {jd}\n\nResumes:\n{combined}"}
+    ]
+    try:
+        response, used_model = call_groq_with_fallback(messages, max_tokens=1500, status_callback=status_callback)
+        content = response.choices[0].message.content
+        data = json.loads(content)
+        raw_candidates = data.get('c', []) or data.get('candidates', [])
+        used_provider = f"groq ({used_model})"
+    except Exception as e_groq:
+        logger.warning(f"[groq] Groq primary extraction failed ({e_groq}), falling back to Gemini")
+        raw_candidates = []
 
-    # 1. Prefer Gemini if GEMINI_API_KEY exists
-    if HAS_GEMINI and gemini_key:
-        try:
-            text_resp, used_model = call_gemini_with_fallback(prompt, status_callback=status_callback)
-            data = json.loads(text_resp)
-            raw_candidates = data.get('c', []) or data.get('candidates', [])
-            used_provider = used_model
-        except Exception as e_gemini:
-            logger.warning(f"[gemini] Gemini primary extraction failed ({e_gemini}), falling back to Groq")
-            raw_candidates = []
-
-    # 2. Fall back to Groq if Gemini key missing or Gemini extraction failed
+    # 2. Try Gemini as OPTIONAL FALLBACK if Groq returned no candidates or failed
     if not raw_candidates:
-        messages = [
-            {'role': 'system', 'content': BATCH_SYSTEM_PROMPT},
-            {'role': 'user', 'content': f"Target JD: {jd}\n\nResumes:\n{combined}"}
-        ]
-        try:
-            response, used_model = call_groq_with_fallback(messages, max_tokens=1500, status_callback=status_callback)
-            content = response.choices[0].message.content
-            data = json.loads(content)
-            raw_candidates = data.get('c', []) or data.get('candidates', [])
-            used_provider = f"groq-{used_model}"
-        except Exception as e_groq:
-            logger.error(f"[groq] Groq fallback extraction failed: {e_groq}")
-            raw_candidates = []
+        gemini_key = os.getenv("GEMINI_API_KEY", "").strip()
+        if HAS_GEMINI and gemini_key:
+            try:
+                text_resp, used_model = call_gemini_with_fallback(prompt, status_callback=status_callback)
+                data = json.loads(text_resp)
+                raw_candidates = data.get('c', []) or data.get('candidates', [])
+                used_provider = f"gemini ({used_model})"
+            except Exception as e_gemini:
+                logger.error(f"[gemini] Gemini fallback extraction failed: {e_gemini}")
+                raw_candidates = []
+        else:
+            if not gemini_key:
+                logger.warning("[gemini] GEMINI_API_KEY missing — skipped fallback")
 
     candidates = []
     for raw in raw_candidates:
@@ -370,12 +372,11 @@ def extract_batch(resume_texts, jd, status_callback=None, batch_num=None, total_
         })
 
     # FIX 5: Better logging
-    batch_prefix = f"batch {batch_num}/{total_batches}: " if (batch_num and total_batches) else ""
     if candidates:
-        logger.info(f"[extract] {batch_prefix}{len(candidates)} candidates via {used_provider}")
+        logger.info(f"[extract] {len(candidates)} candidates via {used_provider}")
         _ai_cache[cache_key] = candidates
     else:
-        logger.warning(f"[extract] {batch_prefix}all providers failed for batch")
+        logger.warning(f"[extract] all providers failed for batch")
 
     return candidates
 

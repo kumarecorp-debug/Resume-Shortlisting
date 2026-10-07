@@ -5,11 +5,14 @@ import pandas as pd
 from io import StringIO
 import sys
 import logging
+import threading
+import time
+import uuid
+from collections import defaultdict
 from contextlib import redirect_stdout, redirect_stderr
 from functools import wraps
 import RS_Project
 import gmail_search
-import matcher
 import os
 import db
 import db_copied_history
@@ -62,28 +65,25 @@ supabase_client: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
-def check_dependencies():
-    try:
-        import openpyxl
-        import xlrd
-        import pandas
-        logging.info("[startup] openpyxl, xlrd, pandas — all OK")
-    except ImportError as e:
-        logging.error(f"[startup] MISSING DEPENDENCY: {e}")
-        logging.error("Run: pip install openpyxl xlrd pandas")
+def verify_ai_startup():
+    groq_key = os.environ.get('GROQ_API_KEY')
+    if groq_key:
+        logging.info("[startup] ✅ Groq AI ready (Primary Provider)")
+    else:
+        logging.warning("[startup] ⚠️ GROQ_API_KEY missing. Get one free at console.groq.com")
 
-    try:
-        import RS_Project
-        required = ['STOP_WORDS', 'logger', 'SUPPORTED_ACCOUNTS', 'RESUME_FOLDER', 'OUTPUT_CSV']
-        missing = [name for name in required if not hasattr(RS_Project, name)]
-        if missing:
-            logging.error(f"[startup] MISSING MODULE GLOBALS in RS_Project: {missing}")
-        else:
-            logging.info("[startup] All required RS_Project module globals present OK")
-    except Exception as e_glob:
-        logging.warning(f"[startup] Unable to verify RS_Project globals: {e_glob}")
+    gemini_key = os.environ.get('GEMINI_API_KEY')
+    if gemini_key:
+        logging.info("[startup] ✅ Gemini API ready (Optional Fallback)")
 
-check_dependencies()
+verify_ai_startup()
+
+search_progress_store = {}
+
+@app.route('/api/search/progress/<search_id>', methods=['GET'])
+def get_search_progress(search_id):
+    prog = search_progress_store.get(search_id, {"current": 0, "total": 0, "status": "completed"})
+    return jsonify(prog)
 
 if not os.environ.get("VERCEL"):
     try:
@@ -261,18 +261,6 @@ def filter_candidates(candidates, term):
         if matched:
             return matched, mode, len(matched), 0
 
-    if mode == "keyword" and term_str:
-        q_terms = matcher.parse_terms(term_str)
-        matched = []
-        for c in candidates:
-            if matcher.matches_query_strict(c, term_str, query_terms=q_terms):
-                m_str, score, reason = matcher.calculate_score(c, term_str, query_terms=q_terms)
-                c["Matched Skills"] = m_str
-                c["Match Score"] = score
-                c["Match Reason"] = reason
-                matched.append(c)
-        return matched, mode, len(matched), 0
-
     return candidates, mode, len(candidates), 0
 
 @app.template_filter('format_received_date')
@@ -350,7 +338,7 @@ def compute_date_display(preset, df_str, dt_str):
         pass
     return None
 
-def execute_full_candidate_search(job_query, selected_account, max_candidates=200, date_preset=None, date_from=None, date_to=None, include_excel=True):
+def execute_full_candidate_search(job_query, selected_account, max_candidates=25, date_preset=None, date_from=None, date_to=None, search_id=None):
     resume_folder = RS_Project.RESUME_FOLDER
     try:
         if not os.path.exists(resume_folder):
@@ -366,15 +354,12 @@ def execute_full_candidate_search(job_query, selected_account, max_candidates=20
         RS_Project.RESUME_FOLDER = resume_folder
         RS_Project.OUTPUT_CSV = os.path.join(resume_folder, "resume_analysis.csv")
 
-    scan_summary = {'pdf': 0, 'docx': 0, 'xlsx': 0, 'xls': 0, 'xlsx_candidates': 0}
+    scan_summary = {'pdf': 0, 'docx': 0}
 
-    stdout_buffer = StringIO()
-    stderr_buffer = StringIO()
-    with redirect_stdout(stdout_buffer), redirect_stderr(stderr_buffer):
-        try:
-            RS_Project.main(job_query, account_email=selected_account, max_candidates=max_candidates, date_preset=date_preset, date_from=date_from, date_to=date_to, include_excel=include_excel)
-        except Exception as e:
-            logging.error(f"Error in RS_Project.main: {e}")
+    try:
+        RS_Project.main(job_query, account_email=selected_account, max_candidates=max_candidates, date_preset=date_preset, date_from=date_from, date_to=date_to, search_id=search_id)
+    except Exception as e:
+        logging.error(f"Error in RS_Project.main: {e}")
 
     summary_file = os.path.join(RS_Project.RESUME_FOLDER, "scan_summary.json")
     if os.path.exists(summary_file):
@@ -437,35 +422,63 @@ def execute_full_candidate_search(job_query, selected_account, max_candidates=20
             pass
 
         def guess_gender(name):
-            name_parts = str(name).strip().split()
-            if not name_parts or name.lower() in ['verified candidate', 'candidate', 'n/a']:
+            name_str = str(name).strip()
+            if not name_str or name_str.lower() in ['verified candidate', 'candidate', 'n/a', 'unknown']:
                 return 'Male'
-            first_name = name_parts[0].capitalize()
+                
+            words = [w.strip() for w in re.split(r'[\s._-]+', name_str) if w.strip()]
+            if not words:
+                return 'Male'
+                
+            first_name = words[0].capitalize()
             first_name_lower = first_name.lower()
+            
             female_names = {
                 'pooja', 'priya', 'neha', 'anjali', 'swati', 'divya', 'kavita', 'deepa', 'megha', 'shweta',
                 'sunita', 'anita', 'kiran', 'rekha', 'rashmi', 'sneha', 'jyoti', 'monika', 'payal', 'richa',
                 'sonam', 'smita', 'bhavna', 'sapna', 'archana', 'simran', 'preeti', 'renu', 'seema', 'tanvi',
-                'radha', 'sheetal', 'harshita', 'apoorva', 'srishti', 'kriti', 'nisha', 'sakshi', 'shikha',
-                'shipra', 'garima', 'pallavi', 'surabhi', 'saloni', 'sonia', 'vandana', 'komal', 'namrata'
+                'radha', 'sheetal', 'apoorva', 'srishti', 'kriti', 'nisha', 'sakshi', 'shikha',
+                'shipra', 'garima', 'pallavi', 'surabhi', 'saloni', 'sonia', 'vandana', 'komal', 'namrata',
+                'ruchika', 'jyothi', 'shruthi', 'shruti', 'sowmya', 'soumya', 'lakshmi', 'laxmi', 'ananya',
+                'bhavya', 'kavya', 'ramya', 'priyanka', 'chaitra', 'supriya', 'shreya', 'vidya'
             }
-            male_exceptions = {
+            
+            male_names = {
                 'karan', 'bhavin', 'gulab', 'sudhakar', 'nagarjuna', 'krishna', 'rama', 'aditya', 'surya',
                 'shiva', 'pavan', 'vijay', 'ajay', 'sanjay', 'jay', 'rahul', 'amit', 'sumit', 'vince',
                 'anil', 'sunil', 'rajesh', 'suresh', 'ramesh', 'dinesh', 'manish', 'mukesh', 'nilesh',
-                'harshita', 'gopal', 'mohan', 'sohan', 'rohan', 'varun', 'tarun', 'arun', 'alok', 'ashok'
+                'harshita', 'gopal', 'mohan', 'sohan', 'rohan', 'varun', 'tarun', 'arun', 'alok', 'ashok',
+                'balu', 'prashant', 'doresh', 'hana', 'balakrishna', 'suraj', 'devendar', 'devender', 'shrikanth',
+                'rajakrishnan', 'kishan', 'samir', 'sagar', 'rajashekhar', 'digvijay', 'chandra', 'debanjan',
+                'hemanth', 'sukhbir', 'ssm', 'sudharshan', 'cnsureshbabu', 'mahammad', 'mohammed', 'amarendra',
+                'kavin', 'phani', 'chinmaya', 'ravikumar', 'ravi', 'sandeep', 'ananda', 'sanket', 'shaffiq',
+                'divy', 'sripathi', 'sony', 'makesh', 'gourab', 'swaroop', 'prashanth', 'amitrider', 'jyothichintha'
             }
-            if first_name_lower in female_names:
+            
+            if any(w.lower() in female_names for w in words):
                 return 'Female'
-            if first_name_lower in male_exceptions:
+            if any(w.lower() in male_names for w in words):
                 return 'Male'
+                
             if gender_detector:
                 gen = gender_detector.get_gender(first_name)
                 if gen in ['male', 'mostly_male']: return 'Male'
                 if gen in ['female', 'mostly_female']: return 'Female'
-            if first_name_lower.endswith(('a', 'i')) and len(first_name_lower) > 3: 
-                return 'Female'
+                
             return 'Male'
+
+        def parse_exp_num(exp_val):
+            if not exp_val:
+                return 2.0
+            nums = re.findall(r'(\d+(?:\.\d+)?)', str(exp_val))
+            if nums:
+                try:
+                    val = float(nums[0])
+                    if 0.5 <= val <= 45:
+                        return val
+                except Exception:
+                    pass
+            return 2.0
 
         if 'Name' in df.columns:
             if 'Gender' not in df.columns:
@@ -478,7 +491,123 @@ def execute_full_candidate_search(job_query, selected_account, max_candidates=20
                     axis=1
                 )
 
+        if 'Experience' in df.columns:
+            df['experience_years'] = df['Experience'].apply(parse_exp_num)
+            df['Experience'] = df['experience_years'].apply(lambda y: f"{y:.1f} years")
+
     return df, scan_summary
+
+_search_progress_store = defaultdict(dict)
+_search_result_store = {}
+
+def run_async_search(search_id, params):
+    t_start = time.time()
+    _search_progress_store[search_id] = {
+        "status": "processing",
+        "current": 0,
+        "total": 0,
+        "message": "Connecting to mailbox..."
+    }
+    try:
+        job_query = params.get('job_query')
+        selected_account = params.get('selected_account', 'recruiter@ecorptrainings.com')
+        max_candidates = int(params.get('max_candidates', 25))
+        date_preset = params.get('date_preset', 'any')
+        date_from = params.get('date_from', '')
+        date_to = params.get('date_to', '')
+        fast_mode = params.get('fast_mode', False)
+
+        if fast_mode and max_candidates > 30:
+            max_candidates = 30
+
+        df, scan_summary = execute_full_candidate_search(
+            job_query,
+            selected_account,
+            max_candidates=max_candidates,
+            date_preset=date_preset,
+            date_from=date_from,
+            date_to=date_to
+        )
+
+        all_records = df.fillna("N/A").to_dict(orient='records') if not df.empty else []
+        elapsed = round(time.time() - t_start, 1)
+        logging.info(f"[search-STATS] search_id={search_id} total_time={elapsed}s candidates={len(all_records)}")
+
+        _search_result_store[search_id] = {
+            "status": "done",
+            "candidates": all_records,
+            "scan_summary": scan_summary,
+            "elapsed": elapsed
+        }
+        _search_progress_store[search_id] = {
+            "status": "done",
+            "current": len(all_records),
+            "total": len(all_records),
+            "message": "Search complete"
+        }
+    except Exception as e:
+        logging.error(f"[search-ERROR] {e}")
+        _search_progress_store[search_id] = {
+            "status": "error",
+            "message": str(e)
+        }
+
+@app.route('/api/search/start', methods=['POST'])
+def api_search_start():
+    params = request.get_json(force=True) or {}
+    search_id = str(uuid.uuid4())
+    t = threading.Thread(target=run_async_search, args=(search_id, params), daemon=True)
+    t.start()
+    return jsonify({"search_id": search_id})
+
+_active_searches = {}
+_search_lock = threading.Lock()
+
+@app.route('/api/search/progress/<search_id>')
+def api_search_progress(search_id):
+    if search_id in RS_Project._searches:
+        prog = RS_Project._searches[search_id]
+        target = max(prog.target, 1)
+        found_relevant = getattr(prog, 'current', 0)
+        resumes_extracted = getattr(prog, 'current', 0)
+        emails_scanned = getattr(prog, 'emails_scanned', 0)
+        pct = int((resumes_extracted / target) * 100) if target > 0 else 0
+        
+        if prog.status == "downloading":
+            rem_sec = max(10, int((target - max(prog.resumes_found, 1)) * 1.5))
+            msg = f"Downloading attachments ({prog.resumes_found}/{target} found)"
+        elif prog.status == "extracting":
+            remaining_items = max(0, target - resumes_extracted)
+            rem_sec = max(5, int(remaining_items * 1.5))
+            msg = f"Found {found_relevant} relevant (still searching...)"
+        else:
+            rem_sec = 0
+            msg = "Search complete"
+
+        return jsonify({
+            "status": prog.status,
+            "target": target,
+            "found_relevant": found_relevant,
+            "resumes_extracted": resumes_extracted,
+            "emails_scanned": emails_scanned,
+            "percentage": min(pct, 100),
+            "eta_seconds": rem_sec,
+            "message": msg
+        })
+    return jsonify({
+        "status": "not_found",
+        "target": 25,
+        "found_relevant": 0,
+        "resumes_extracted": 0,
+        "emails_scanned": 0,
+        "percentage": 0,
+        "eta_seconds": 0,
+        "message": "Search initializing..."
+    })
+
+@app.route('/api/search/result/<search_id>')
+def api_search_result(search_id):
+    return jsonify(_search_result_store.get(search_id, {"status": "not_found", "candidates": []}))
 
 @app.route('/', methods=['GET', 'POST'])
 @app.route('/process', methods=['GET', 'POST'])
@@ -491,303 +620,7 @@ def process():
     is_get_search = request.method == 'GET' and (request.args.get('jd') or request.args.get('job_query'))
 
     if request.method == 'POST' or is_get_search:
-        import uuid
-        job_query = (request.form.get('job_query') or request.args.get('jd') or request.args.get('job_query') or '').strip()
-        raw_acct = request.form.get('account_email') or request.form.get('mailbox') or request.args.get('account_email') or request.args.get('mailbox') or session.get('selected_account') or default_account
-        if isinstance(raw_acct, dict):
-            selected_account = raw_acct.get('email', default_account)
-        else:
-            selected_account = str(raw_acct).strip() if raw_acct else default_account
-        session['selected_account'] = selected_account
-
-        time_window = request.form.get('time_window') or request.args.get('time_window') or request.form.get('date_preset') or request.args.get('date_preset') or 'any'
-        date_preset = time_window
-        date_from = request.form.get('date_from') or request.args.get('date_from') or ''
-        date_to = request.form.get('date_to') or request.args.get('date_to') or ''
-        show_mode = request.form.get('show_mode') or request.args.get('show_mode') or 'all'
-
-        include_excel_val = request.form.get('include_excel') if request.method == 'POST' else request.args.get('include_excel')
-        include_excel = False if include_excel_val in ('0', 'false', 'False') else True
-
-        if time_window == 'custom' and date_from and date_to:
-            if date_from > date_to:
-                flash('From date must be before or equal to To date.', 'error')
-
-        if not job_query:
-            flash('Please enter a job description, role, or keywords.', 'error')
-            return render_template(
-                'process.jinja',
-                job_query=None,
-                job_role=None,
-                selected_account=selected_account,
-                available_accounts=available_accounts,
-                table_data=[],
-                columns=[],
-                search_id=None,
-                total_matches=0,
-                page_size=25,
-                time_window=time_window,
-                date_preset=date_preset,
-                date_from=date_from,
-                date_to=date_to,
-                show_mode=show_mode,
-                include_excel=include_excel,
-                scan_summary=None
-            )
-
-        min_exp_raw = request.form.get('min_exp') or request.args.get('min_exp') or request.args.get('exp')
-        try:
-            min_exp = float(min_exp_raw) if min_exp_raw is not None and str(min_exp_raw).strip() != '' else None
-        except (ValueError, TypeError):
-            min_exp = None
-
-        max_candidates = int(request.form.get('max_candidates') or request.args.get('max_candidates') or 200)
-        user_search_mode = request.form.get('search_mode') or request.args.get('search_mode') or 'live'
-
-        # SHOW = COPIED MODE: Filter by copied_history.copied_at timestamp (No Gmail / Gemini API calls)
-        if show_mode == 'copied':
-            copied_res = db_copied_history.get_copied_candidates_by_time_window(
-                mailbox_account=selected_account,
-                job_query=job_query,
-                time_window=time_window,
-                date_from=date_from,
-                date_to=date_to,
-                min_exp=min_exp
-            )
-            all_records = copied_res.get('candidates', [])
-            total_matches = len(all_records)
-            search_id = str(uuid.uuid4())
-            db.cache_search_results(search_id, all_records)
-            date_display = compute_date_display(time_window, date_from, date_to)
-
-            logging.info(f"[search] mode={user_search_mode} show={show_mode} date_field=copied_at range={date_from}..{date_to} mailbox={selected_account} jd={job_query} total={total_matches}")
-
-            return render_template(
-                'process.jinja',
-                job_query=job_query,
-                job_role=job_query,
-                selected_account=selected_account,
-                available_accounts=available_accounts,
-                table_data=all_records,
-                columns=["Rank", "Name", "Gender", "Email", "Phone", "Experience", "Skill Set", "Matched Skills", "Match Score", "Match Reason"],
-                search_id=search_id,
-                total_matches=total_matches,
-                max_candidates=max_candidates,
-                min_exp=min_exp,
-                time_window=time_window,
-                date_preset=date_preset,
-                date_from=date_from,
-                date_to=date_to,
-                show_mode=show_mode,
-                search_mode=user_search_mode,
-                search_source='copied_history',
-                date_field='copied_at',
-                explanation='Candidates you copied in this window',
-                date_display=date_display,
-                resolved_gmail_query=f"DB copied_history: copied_at in window {time_window}",
-                include_excel=include_excel,
-                scan_summary={"pdf": 0, "docx": 0, "xlsx": 0, "xls": 0, "xlsx_candidates": 0, "source": "copied"}
-            )
-
-        # HISTORY SEARCH MODE: Executed only if explicitly requested as 'history'
-        if user_search_mode == 'history':
-            hist_res = db.search_candidates_from_history(
-                mailbox_account=selected_account,
-                job_query=job_query,
-                time_window=time_window,
-                date_from=date_from,
-                date_to=date_to,
-                show_mode=show_mode,
-                min_exp=min_exp
-            )
-            all_records = hist_res.get('candidates', [])
-            total_matches = len(all_records)
-            search_id = str(uuid.uuid4())
-            db.cache_search_results(search_id, all_records)
-            date_display = compute_date_display(time_window, date_from, date_to)
-            search_source = "search_history"
-            scan_summary = {"pdf": 0, "docx": 0, "xlsx": 0, "xls": 0, "xlsx_candidates": 0, "source": "history"}
-            resolved_gmail_query = f"DB search_history: searched_at >= {time_window}"
-            logging.info(f"[search] mode={user_search_mode} show={show_mode} date_field=received_at range={date_from}..{date_to} mailbox={selected_account} jd={job_query} total={total_matches}")
-
-            if not all_records:
-                flash(f'No candidate records found in search history matching "{job_query}" for window [{time_window}].', 'info')
-
-            return render_template(
-                'process.jinja',
-                job_query=job_query,
-                job_role=job_query,
-                selected_account=selected_account,
-                available_accounts=available_accounts,
-                table_data=all_records,
-                columns=["Rank", "Name", "Gender", "Email", "Phone", "Experience", "Skill Set", "Matched Skills", "Match Score", "Match Reason"],
-                search_id=search_id,
-                total_matches=total_matches,
-                max_candidates=max_candidates,
-                min_exp=min_exp,
-                time_window=time_window,
-                date_preset=date_preset,
-                date_from=date_from,
-                date_to=date_to,
-                show_mode=show_mode,
-                search_mode='history',
-                search_source=search_source,
-                date_display=date_display,
-                resolved_gmail_query=resolved_gmail_query,
-                include_excel=include_excel,
-                scan_summary=scan_summary
-            )
-
-        # LIVE GMAIL SEARCH MODE: Query Gmail API live
-        df, scan_summary = execute_full_candidate_search(
-            job_query, 
-            selected_account, 
-            max_candidates=max_candidates,
-            date_preset=date_preset,
-            date_from=date_from,
-            date_to=date_to,
-            include_excel=include_excel
-        )
-        
-        date_display = compute_date_display(time_window, date_from, date_to)
-        resolved_gmail_query = gmail_search.build_gmail_search_query(job_query, date_preset=time_window, date_from=date_from, date_to=date_to)
-
-        if df.empty:
-            flash(f'No candidate resumes found for "{job_query}" in mailbox {selected_account}. Try broader search terms.', 'error')
-            return render_template(
-                'process.jinja',
-                job_query=job_query,
-                job_role=job_query,
-                selected_account=selected_account,
-                available_accounts=available_accounts,
-                table_data=[],
-                columns=[],
-                search_id=None,
-                total_matches=0,
-                max_candidates=max_candidates,
-                min_exp=min_exp,
-                time_window=time_window,
-                date_preset=date_preset,
-                date_from=date_from,
-                date_to=date_to,
-                show_mode=show_mode,
-                search_mode='live',
-                search_source='gmail',
-                date_display=date_display,
-                resolved_gmail_query=resolved_gmail_query,
-                include_excel=include_excel,
-                scan_summary=scan_summary
-            )
-
-        # Attach persistent candidate status from Supabase
-        if not df.empty and 'Email' in df.columns:
-            emails_list = df['Email'].dropna().tolist()
-            status_map = db.get_candidate_statuses(selected_account, emails_list)
-            df['Status'] = df['Email'].apply(lambda e: status_map.get(str(e).strip().lower(), 'new'))
-        else:
-            df['Status'] = 'new'
-
-        columns_order = [
-            "Rank", "Source", "Status", "Name", "Gender", "Email", "Phone", "Experience", "Skill Set", "Matched Skills", "Match Score", "Match Reason", "ReceivedAt"
-        ]
-        columns_order = [col for col in columns_order if col in df.columns]
-        
-        all_records = df.fillna("N/A").to_dict(orient='records')
-        total_matches = len(all_records)
-        search_id = str(uuid.uuid4())
-
-        # Save Search History in Supabase with FULL Candidate Details
-        try:
-            user_email = session.get('user', {}).get('email') if isinstance(session.get('user'), dict) else selected_account
-            cand_list_full = [
-                {
-                    "name": str(r.get("Name", "")),
-                    "gender": str(r.get("Gender", "N/A")),
-                    "email": str(r.get("Email", "")),
-                    "phone": str(r.get("Phone", "")),
-                    "experience": str(r.get("Experience", "")),
-                    "skills": str(r.get("Skill Set", "")),
-                    "matched_skills": str(r.get("Matched Skills", "")),
-                    "match_score": str(r.get("Match Score", "")),
-                    "match_reason": str(r.get("Match Reason", ""))
-                }
-                for r in all_records
-            ]
-            db.save_search_history(
-                user_email=user_email,
-                mailbox_account=selected_account,
-                job_description=job_query,
-                batch_size=max_candidates,
-                results_count=total_matches,
-                candidates_seen=cand_list_full
-            )
-        except Exception as e_hist:
-            logging.warning(f"Error saving search history: {e_hist}")
-
-        # Detect search mode metadata
-        mode_records, search_mode, exact_cnt, approx_cnt = filter_candidates(all_records, job_query)
-        
-        # Apply min_exp filter server-side
-        hidden_by_exp = 0
-        if min_exp is not None:
-            kept = []
-            for c in mode_records:
-                years = parse_experience_years(c.get("Experience") or c.get("experience"))
-                c["experience_years"] = years
-                if years is None:
-                    c["experience_unknown"] = True
-                    kept.append(c)
-                elif years >= min_exp:
-                    kept.append(c)
-                else:
-                    hidden_by_exp += 1
-            mode_records = kept
-        else:
-            for c in mode_records:
-                c["experience_years"] = parse_experience_years(c.get("Experience") or c.get("experience"))
-
-        # Apply show_mode filter (all / copied / not_copied)
-        if show_mode and show_mode != 'all':
-            copied_emails = get_cached_copied_emails(selected_account)
-            if show_mode == 'not_copied':
-                mode_records = [c for c in mode_records if (c.get('Email') or c.get('email') or '').strip().lower() not in copied_emails]
-            elif show_mode == 'copied':
-                mode_records = [c for c in mode_records if (c.get('Email') or c.get('email') or '').strip().lower() in copied_emails]
-
-        # Sort by experience_years DESC (nulls last) if specified or default match score
-        mode_records.sort(
-            key=lambda c: (c.get("experience_years") is not None, c.get("experience_years") or -1),
-            reverse=True
-        )
-
-        logging.info(f"[search] mailbox={selected_account} jd={job_query} time_window={time_window} date_from={date_from} date_to={date_to} show_mode={show_mode} total={total_matches} shown={len(mode_records)}")
-
-        return render_template(
-            'process.jinja',
-            job_query=job_query,
-            job_role=job_query,
-            selected_account=selected_account,
-            available_accounts=available_accounts,
-            table_data=mode_records,
-            columns=columns_order,
-            search_id=search_id,
-            total_matches=total_matches,
-            max_candidates=max_candidates,
-            search_mode=search_mode,
-            exact_matches=exact_cnt,
-            approx_matches=approx_cnt,
-            min_exp=min_exp,
-            hidden_by_experience=hidden_by_exp,
-            time_window=time_window,
-            date_preset=date_preset,
-            date_from=date_from,
-            date_to=date_to,
-            show_mode=show_mode,
-            date_display=date_display,
-            resolved_gmail_query=resolved_gmail_query,
-            include_excel=include_excel,
-            scan_summary=scan_summary
-        )
+        return _do_process(available_accounts, default_account, is_get_search)
 
     raw_acct = request.args.get('account_email') or request.args.get('mailbox') or session.get('selected_account') or default_account
     if isinstance(raw_acct, dict):
@@ -809,6 +642,405 @@ def process():
         date_from='',
         date_to='',
         date_display=None
+    )
+
+def _do_process(available_accounts, default_account, is_get_search):
+    import uuid
+    job_query = (request.form.get('job_query') or request.args.get('jd') or request.args.get('job_query') or '').strip()
+    search_id = str(uuid.uuid4())
+    logging.info(f"[search-NEW] search_id={search_id} jd={job_query}")
+    raw_acct = request.form.get('account_email') or request.form.get('mailbox') or request.args.get('account_email') or request.args.get('mailbox') or session.get('selected_account') or default_account
+    if isinstance(raw_acct, dict):
+        selected_account = raw_acct.get('email', default_account)
+    else:
+        selected_account = str(raw_acct).strip() if raw_acct else default_account
+    session['selected_account'] = selected_account
+
+    time_window = request.form.get('time_window') or request.args.get('time_window') or request.form.get('date_preset') or request.args.get('date_preset') or 'any'
+    date_preset = time_window
+    date_from = request.form.get('date_from') or request.args.get('date_from') or ''
+    date_to = request.form.get('date_to') or request.args.get('date_to') or ''
+    show_mode = request.form.get('show_mode') or request.args.get('show_mode') or 'all'
+
+
+
+    if time_window == 'custom' and date_from and date_to:
+        if date_from > date_to:
+            flash('From date must be before or equal to To date.', 'error')
+
+    if not job_query:
+        flash('Please enter a job description, role, or keywords.', 'error')
+        return render_template(
+            'process.jinja',
+            job_query=None,
+            job_role=None,
+            selected_account=selected_account,
+            available_accounts=available_accounts,
+            table_data=[],
+            columns=[],
+            search_id=None,
+            total_matches=0,
+            page_size=25,
+            time_window=time_window,
+            date_preset=date_preset,
+            date_from=date_from,
+            date_to=date_to,
+            show_mode=show_mode,
+            scan_summary=None
+        )
+
+
+
+    min_exp_raw = request.form.get('min_exp') or request.args.get('min_exp') or request.args.get('exp')
+    try:
+        min_exp = float(min_exp_raw) if min_exp_raw is not None and str(min_exp_raw).strip() != '' else None
+    except (ValueError, TypeError):
+        min_exp = None
+
+    max_candidates = int(request.form.get('max_candidates') or request.args.get('max_candidates') or 25)
+    user_search_mode = request.form.get('search_mode') or request.args.get('search_mode') or ('history' if time_window != 'any' else 'live')
+
+    # SHOW = COPIED MODE: Filter by copied_history.copied_at timestamp (No Gmail / Gemini API calls)
+    if show_mode == 'copied':
+        copied_res = db_copied_history.get_copied_candidates_by_time_window(
+            mailbox_account=selected_account,
+            job_query=job_query,
+            time_window=time_window,
+            date_from=date_from,
+            date_to=date_to,
+            min_exp=min_exp
+        )
+        all_records = copied_res.get('candidates', [])
+        total_matches = len(all_records)
+        search_id = str(uuid.uuid4())
+        db.cache_search_results(search_id, all_records)
+        date_display = compute_date_display(time_window, date_from, date_to)
+
+        logging.info(f"[search] mode={user_search_mode} show={show_mode} date_field=copied_at range={date_from}..{date_to} mailbox={selected_account} jd={job_query} total={total_matches}")
+
+        return render_template(
+            'process.jinja',
+            job_query=job_query,
+            job_role=job_query,
+            selected_account=selected_account,
+            available_accounts=available_accounts,
+            table_data=all_records,
+            columns=["Rank", "Name", "Gender", "Email", "Phone", "Experience", "Skill Set", "Matched Skills", "Match Score", "Match Reason"],
+            search_id=search_id,
+            total_matches=total_matches,
+            max_candidates=max_candidates,
+            min_exp=min_exp,
+            time_window=time_window,
+            date_preset=date_preset,
+            date_from=date_from,
+            date_to=date_to,
+            show_mode=show_mode,
+            search_mode=user_search_mode,
+            search_source='copied_history',
+            date_field='copied_at',
+            explanation='Candidates you copied in this window',
+            date_display=date_display,
+            resolved_gmail_query=f"DB copied_history: copied_at in window {time_window}",
+            scan_summary={"pdf": 0, "docx": 0, "source": "copied"}
+        )
+
+    # HISTORY SEARCH MODE: If user chose history OR if a Time Window filter is active (!= 'any')
+    if user_search_mode == 'history' or (user_search_mode != 'live' and time_window and time_window != 'any'):
+        hist_res = db.search_candidates_from_history(
+            mailbox_account=selected_account,
+            job_query=job_query,
+            time_window=time_window,
+            date_from=date_from,
+            date_to=date_to,
+            show_mode=show_mode,
+            min_exp=min_exp
+        )
+        all_records = hist_res.get('candidates', [])
+        total_matches = len(all_records)
+        search_id = str(uuid.uuid4())
+        db.cache_search_results(search_id, all_records)
+        date_display = compute_date_display(time_window, date_from, date_to)
+        search_source = "search_history"
+        scan_summary = {"pdf": 0, "docx": 0, "source": "history"}
+        resolved_gmail_query = f"DB search_history: searched_at >= {time_window}"
+        logging.info(f"[search] mode={user_search_mode} show={show_mode} date_field=received_at range={date_from}..{date_to} mailbox={selected_account} jd={job_query} total={total_matches}")
+
+        if not all_records:
+            flash(f'No candidate records found in search history matching "{job_query}" for window [{time_window}].', 'info')
+
+        return render_template(
+            'process.jinja',
+            job_query=job_query,
+            job_role=job_query,
+            selected_account=selected_account,
+            available_accounts=available_accounts,
+            table_data=all_records,
+            columns=["Rank", "Name", "Gender", "Email", "Phone", "Experience", "Skill Set", "Matched Skills", "Match Score", "Match Reason"],
+            search_id=search_id,
+            total_matches=total_matches,
+            max_candidates=max_candidates,
+            min_exp=min_exp,
+            time_window=time_window,
+            date_preset=date_preset,
+            date_from=date_from,
+            date_to=date_to,
+            show_mode=show_mode,
+            search_mode='history',
+            search_source=search_source,
+            date_display=date_display,
+            resolved_gmail_query=resolved_gmail_query,
+            scan_summary=scan_summary
+        )
+
+    # LIVE GMAIL SEARCH MODE: Query Gmail API live
+    df, scan_summary = execute_full_candidate_search(
+        job_query, 
+        selected_account, 
+        max_candidates=max_candidates,
+        date_preset=date_preset,
+        date_from=date_from,
+        date_to=date_to,
+        search_id=search_id
+    )
+    
+    date_display = compute_date_display(time_window, date_from, date_to)
+    resolved_gmail_query = gmail_search.build_gmail_search_query(job_query, date_preset=time_window, date_from=date_from, date_to=date_to)
+
+    if df.empty:
+        flash(f'No candidate resumes found for "{job_query}" in mailbox {selected_account}. Try broader search terms.', 'error')
+        return render_template(
+            'process.jinja',
+            job_query=job_query,
+            job_role=job_query,
+            selected_account=selected_account,
+            available_accounts=available_accounts,
+            table_data=[],
+            columns=[],
+            search_id=None,
+            total_matches=0,
+            max_candidates=max_candidates,
+            min_exp=min_exp,
+            time_window=time_window,
+            date_preset=date_preset,
+            date_from=date_from,
+            date_to=date_to,
+            show_mode=show_mode,
+            search_mode='live',
+            search_source='gmail',
+            date_display=date_display,
+            resolved_gmail_query=resolved_gmail_query,
+            scan_summary=scan_summary
+        )
+
+    # Attach persistent candidate status from Supabase
+    if not df.empty and 'Email' in df.columns:
+        emails_list = df['Email'].dropna().tolist()
+        status_map = db.get_candidate_statuses(selected_account, emails_list)
+        df['Status'] = df['Email'].apply(lambda e: status_map.get(str(e).strip().lower(), 'new'))
+    else:
+        df['Status'] = 'new'
+
+    columns_order = [
+        "Rank", "Source", "Status", "Name", "Gender", "Email", "Phone", "Experience", "Skill Set", "Matched Skills", "Match Score", "Match Reason", "ReceivedAt"
+    ]
+    columns_order = [col for col in columns_order if col in df.columns]
+    
+    all_records = df.fillna("N/A").to_dict(orient='records')
+    total_matches = len(all_records)
+    search_id = str(uuid.uuid4())
+
+    # Save Search History in Supabase with FULL Candidate Details
+    try:
+        user_email = session.get('user', {}).get('email') if isinstance(session.get('user'), dict) else selected_account
+        cand_list_full = [
+            {
+                "name": str(r.get("Name", "")),
+                "gender": str(r.get("Gender", "N/A")),
+                "email": str(r.get("Email", "")),
+                "phone": str(r.get("Phone", "")),
+                "experience": str(r.get("Experience", "")),
+                "skills": str(r.get("Skill Set", "")),
+                "matched_skills": str(r.get("Matched Skills", "")),
+                "match_score": str(r.get("Match Score", "")),
+                "match_reason": str(r.get("Match Reason", ""))
+            }
+            for r in all_records
+        ]
+        db.save_search_history(
+            user_email=user_email,
+            mailbox_account=selected_account,
+            job_description=job_query,
+            batch_size=max_candidates,
+            results_count=total_matches,
+            candidates_seen=cand_list_full
+        )
+    except Exception as e_hist:
+        logging.warning(f"Error saving search history: {e_hist}")
+
+    # Detect search mode metadata
+    mode_records, search_mode, exact_cnt, approx_cnt = filter_candidates(all_records, job_query)
+    
+    # Apply min_exp filter server-side
+    hidden_by_exp = 0
+    if min_exp is not None:
+        kept = []
+        for c in mode_records:
+            years = parse_experience_years(c.get("Experience") or c.get("experience"))
+            c["experience_years"] = years
+            if years is None:
+                c["experience_unknown"] = True
+                kept.append(c)
+            elif years >= min_exp:
+                kept.append(c)
+            else:
+                hidden_by_exp += 1
+        mode_records = kept
+    else:
+        for c in mode_records:
+            c["experience_years"] = parse_experience_years(c.get("Experience") or c.get("experience"))
+
+    # Apply show_mode filter (all / copied / not_copied)
+    if show_mode and show_mode != 'all':
+        copied_emails = get_cached_copied_emails(selected_account)
+        if show_mode == 'not_copied':
+            mode_records = [c for c in mode_records if (c.get('Email') or c.get('email') or '').strip().lower() not in copied_emails]
+        elif show_mode == 'copied':
+            mode_records = [c for c in mode_records if (c.get('Email') or c.get('email') or '').strip().lower() in copied_emails]
+
+    # Sort by experience_years DESC (nulls last) if specified or default match score
+    mode_records.sort(
+        key=lambda c: (c.get("experience_years") is not None, c.get("experience_years") or -1),
+        reverse=True
+    )
+
+    logging.info(f"[search] mailbox={selected_account} jd={job_query} time_window={time_window} date_from={date_from} date_to={date_to} show_mode={show_mode} total={total_matches} shown={len(mode_records)}")
+
+    return render_template(
+        'process.jinja',
+        job_query=job_query,
+        job_role=job_query,
+        selected_account=selected_account,
+        available_accounts=available_accounts,
+        table_data=mode_records,
+        columns=columns_order,
+        search_id=search_id,
+        total_matches=total_matches,
+        max_candidates=max_candidates,
+        search_mode=search_mode,
+        exact_matches=exact_cnt,
+        approx_matches=approx_cnt,
+        min_exp=min_exp,
+        hidden_by_experience=hidden_by_exp,
+        time_window=time_window,
+        date_preset=date_preset,
+        date_from=date_from,
+        date_to=date_to,
+        show_mode=show_mode,
+        date_display=date_display,
+        resolved_gmail_query=resolved_gmail_query,
+        scan_summary=scan_summary
+    )
+
+    raw_acct = request.args.get('account_email') or request.args.get('mailbox') or session.get('selected_account') or default_account
+    if isinstance(raw_acct, dict):
+        selected_account = raw_acct.get('email', default_account)
+    else:
+        selected_account = str(raw_acct).strip() if raw_acct else default_account
+    return render_template(
+        'process.jinja',
+        job_query=None,
+        job_role=None,
+        selected_account=selected_account,
+        available_accounts=available_accounts,
+        table_data=[],
+        columns=[],
+        search_id=None,
+        total_matches=0,
+        page_size=25,
+        date_preset='any',
+        date_from='',
+        date_to='',
+        date_display=None
+    )
+
+_searches = {}
+
+def _run_search_async(search_id, mailbox, jd, target):
+    try:
+        _searches[search_id]['status'] = 'searching'
+        from RS_Project import search_until_relevant
+        candidates, meta = search_until_relevant(
+            mailbox=mailbox, jd=jd, target_relevant=target,
+            progress_callback=lambda cur, tot: _searches[search_id].update(
+                progress={'current': cur, 'total': tot}
+            )
+        )
+        _searches[search_id]['results'] = candidates
+        _searches[search_id]['meta'] = meta
+        _searches[search_id]['status'] = 'done'
+    except Exception as e:
+        import traceback
+        logging.exception(f'[search-{search_id}] failed')
+        _searches[search_id]['status'] = 'error'
+        _searches[search_id]['error'] = str(e)
+
+@app.route('/search-progress/<search_id>')
+def search_progress_page(search_id):
+    return render_template('search_progress.jinja', search_id=search_id)
+
+@app.route('/api/search-status/<search_id>')
+def search_status(search_id):
+    if search_id not in _searches:
+        return jsonify({'status': 'not_found'}), 404
+    s = _searches[search_id]
+    
+    try:
+        from ai_extractor import _groq_limiter
+        waiting_msg = getattr(_groq_limiter, 'last_wait_msg', None)
+        wait_sec = getattr(_groq_limiter, 'last_wait_sec', 0)
+    except Exception:
+        waiting_msg = None
+        wait_sec = 0
+
+    return jsonify({
+        'status': s['status'],
+        'progress': s['progress'],
+        'error': s.get('error'),
+        'waiting': bool(waiting_msg),
+        'waiting_message': waiting_msg,
+        'wait_seconds': wait_sec
+    })
+
+@app.route('/search-results/<search_id>')
+def search_results(search_id):
+    if search_id not in _searches:
+        return redirect('/')
+    s = _searches[search_id]
+    if s['status'] != 'done':
+        return redirect(f'/search-progress/{search_id}')
+    
+    available_accounts = list(RS_Project.SUPPORTED_ACCOUNTS.values())
+    default_account = available_accounts[0]['email'] if available_accounts else 'recruiter@ecorptrainings.com'
+    candidates = s.get('results') or []
+    meta = s.get('meta') or {}
+    
+    table_data = []
+    for idx, c in enumerate(candidates, 1):
+        row = dict(c)
+        row['Rank'] = idx
+        table_data.append(row)
+
+    return render_template(
+        'process.jinja',
+        job_query=meta.get('jd', ''),
+        job_role=meta.get('jd', ''),
+        selected_account=meta.get('mailbox', default_account),
+        available_accounts=available_accounts,
+        table_data=table_data,
+        columns=["Rank", "Name", "Gender", "Email", "Phone", "Experience", "Skill Set", "Matched Skills", "Match Score", "Match Reason"],
+        search_id=search_id,
+        total_matches=len(table_data),
+        scan_summary={'pdf': len([c for c in table_data if c.get('Source') == 'pdf']), 'docx': len([c for c in table_data if c.get('Source') == 'docx']), 'total_scanned': meta.get('emails_scanned', len(table_data)), 'matched': len(table_data), 'hidden_below_score': 0}
     )
 
 @app.route('/debug-status')
@@ -1312,14 +1544,14 @@ def api_copied_history_export():
     
     for item in entries:
         row = [
-            f'"{str(item.get("id", "")).replace('"', '""')}"',
-            f'"{str(item.get("user_email", "")).replace('"', '""')}"',
-            f'"{str(item.get("mailbox_account", "")).replace('"', '""')}"',
-            f'"{str(item.get("candidate_name", "")).replace('"', '""')}"',
-            f'"{str(item.get("candidate_email", "")).replace('"', '""')}"',
-            f'"{str(item.get("candidate_phone", "")).replace('"', '""')}"',
-            f'"{str(item.get("job_description", "")).replace('"', '""')}"',
-            f'"{str(item.get("copied_at", "")).replace('"', '""')}"'
+            '"' + str(item.get("id", "")).replace('"', '""') + '"',
+            '"' + str(item.get("user_email", "")).replace('"', '""') + '"',
+            '"' + str(item.get("mailbox_account", "")).replace('"', '""') + '"',
+            '"' + str(item.get("candidate_name", "")).replace('"', '""') + '"',
+            '"' + str(item.get("candidate_email", "")).replace('"', '""') + '"',
+            '"' + str(item.get("candidate_phone", "")).replace('"', '""') + '"',
+            '"' + str(item.get("job_description", "")).replace('"', '""') + '"',
+            '"' + str(item.get("copied_at", "")).replace('"', '""') + '"'
         ]
         csv_lines.append(",".join(row))
         
@@ -1538,9 +1770,9 @@ def api_search():
             logging.info("Search cache expired or missing; rerunning")
 
     try:
-        max_candidates = int(request.args.get('max_candidates') or request.form.get('max_candidates') or 200)
+        max_candidates = int(request.args.get('max_candidates') or request.form.get('max_candidates') or 25)
     except (ValueError, TypeError):
-        max_candidates = 200
+        max_candidates = 25
 
     df, scan_summary = execute_full_candidate_search(job_query, selected_account, max_candidates=max_candidates, date_preset=time_window, date_from=date_from, date_to=date_to)
     
@@ -1706,34 +1938,11 @@ def gmail_count():
     })
 
 @app.route('/debug-parse-exp', methods=['GET'])
+
 def debug_parse_exp():
     text = request.args.get('text', '')
     parsed = parse_experience_years(text)
     return jsonify({"text": text, "parsed": parsed})
-
-@app.route('/debug/parse-excel-folder')
-def debug_parse_excel_folder():
-    import glob
-    import excel_parser
-    resume_folder = getattr(RS_Project, 'RESUME_FOLDER', 'Resumes')
-    files = glob.glob(os.path.join(resume_folder, '**/*.xlsx'), recursive=True)
-    if not files:
-        files = glob.glob(os.path.join(resume_folder, '**/*.xls'), recursive=True)
-    if not files:
-        files = glob.glob('Resumes/**/*.xlsx', recursive=True)
-    results = []
-    for f in files[:5]:
-        cands = excel_parser.parse_excel_to_candidates(f)
-        results.append({
-            'file': f,
-            'candidate_count': len(cands),
-            'first_candidate': cands[0] if cands else None,
-        })
-    return jsonify({
-        'total_files': len(files),
-        'sampled': len(results),
-        'results': results,
-    })
 
 @app.route('/debug-phone-match', methods=['GET'])
 def debug_phone_match():
@@ -1788,128 +1997,5 @@ def debug_extract_text(filename):
         'extracted_name_fallback': RS_Project.extract_name_from_resume_text(text)
     })
 
-@app.route('/debug/search-pipeline')
-@login_required
-def debug_search_pipeline():
-    """Run a test search and return detailed stats."""
-    mailbox = request.args.get('mailbox', 'recruiter@ecorptrainings.com')
-    jd = request.args.get('jd', 'python')
-    max_candidates = int(request.args.get('max', 10))
-    
-    from RS_Project import search_resumes
-    try:
-        result = search_resumes(
-            jd, 
-            account_email=mailbox, 
-            max_candidates=max_candidates
-        )
-        if hasattr(result, 'to_dict'):
-            stats = {
-                'candidate_count': len(result),
-                'candidates': result.to_dict(orient='records')
-            }
-        elif isinstance(result, list):
-            stats = {
-                'candidate_count': len(result),
-                'candidates': result
-            }
-        else:
-            stats = {'result': str(result)}
-
-        return jsonify({
-            'success': True,
-            'result_stats': stats,
-        })
-    except Exception as e:
-        import traceback
-        return jsonify({
-            'success': False,
-            'error': str(e),
-            'traceback': traceback.format_exc()
-        }), 500
-
-@app.route('/debug/search-limits')
-@login_required
-def debug_search_limits():
-    mailbox = request.args.get('mailbox', 'recruiter@ecorptrainings.com')
-    jd = request.args.get('jd', 'datadog')
-    max_c = request.args.get('max', 200, type=int)
-    
-    from gmail_search import build_gmail_search_query
-    query = build_gmail_search_query(jd)
-    
-    service = RS_Project.auto_authenticate_google(mailbox)
-    
-    # Total available estimate
-    try:
-        count_req = service.users().messages().list(userId='me', q=query, maxResults=1)
-        count_resp = RS_Project.gmail_call_with_retry(lambda: count_req.execute())
-        total = count_resp.get('resultSizeEstimate', 0)
-    except Exception as e:
-        total = 0
-    
-    # Fetch up to max_c using pagination
-    messages = []
-    page_token = None
-    while len(messages) < max_c:
-        batch_size = min(max_c - len(messages), 500)
-        params = {
-            'userId': 'me',
-            'q': query,
-            'maxResults': batch_size,
-        }
-        if page_token:
-            params['pageToken'] = page_token
-        req = service.users().messages().list(**params)
-        resp = RS_Project.gmail_call_with_retry(lambda: req.execute())
-        msgs = resp.get('messages', [])
-        if not msgs:
-            break
-        messages.extend(msgs)
-        page_token = resp.get('nextPageToken')
-        if not page_token:
-            break
-    
-    return jsonify({
-        'mailbox': mailbox,
-        'query': query,
-        'total_estimate': total,
-        'fetched': len(messages),
-        'requested_max': max_c,
-    })
-
-def verify_gemini_startup():
-    # TODO: Note - google.generativeai package support has ended notice; migrate to google.genai in future refactor.
-    import google.generativeai as legacy_genai
-    api_key = os.environ.get('GEMINI_API_KEY')
-    if not api_key and hasattr(RS_Project, 'GEMINI_API_KEY'):
-        api_key = RS_Project.GEMINI_API_KEY
-    if not api_key:
-        logging.error("[startup] ❌ GEMINI_API_KEY not set")
-        return None
-    
-    try:
-        legacy_genai.configure(api_key=api_key)
-    except Exception as ex:
-        logging.warning(f"[startup] genai configure error: {ex}")
-    
-    # Try each model in priority order
-    for model_name in ["gemini-3.8-flash", "gemini-3.6-flash"]:
-        try:
-            model = legacy_genai.GenerativeModel(model_name)
-            response = model.generate_content("hi")
-            if response and getattr(response, 'text', None):
-                logging.info(f"[startup] ✅ Gemini ready: {model_name}")
-                return model_name
-        except Exception as e:
-            logging.warning(f"[startup] model {model_name} failed: {e}")
-    
-    logging.error("[startup] ❌ No working Gemini model found!")
-    return None
-
 if __name__ == '__main__':
-    try:
-        verify_gemini_startup()
-    except Exception as ex:
-        logging.warning(f"[startup] verify_gemini_startup error: {ex}")
     app.run(debug=True)

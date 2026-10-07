@@ -180,6 +180,29 @@ def fetch_messages_cached(service, query, mailbox, max_results=25, ttl=3600):
 
     return messages
 
+class ResponseWrapper(dict):
+    def __init__(self, res):
+        super().__init__(res.headers)
+        self.status = res.status_code
+        self.reason = res.reason
+
+class RequestsAuthorizedHttp:
+    def __init__(self, creds):
+        from google.auth.transport.requests import AuthorizedSession
+        self.session = AuthorizedSession(creds)
+
+    def request(self, uri, method='GET', body=None, headers=None, **kwargs):
+        res = self.session.request(method=method, url=uri, data=body, headers=headers)
+        return ResponseWrapper(res), res.content
+
+def build_gmail_service(creds):
+    try:
+        authed_http = RequestsAuthorizedHttp(creds)
+        return build('gmail', 'v1', http=authed_http)
+    except Exception as e:
+        logger.warning(f"Requests-based transport setup failed ({e}), falling back to default build")
+        return build('gmail', 'v1', credentials=creds)
+
 def auto_authenticate_google(account_email="recruiter@ecorptrainings.com"):
     """Authenticates with Google Gmail API for specified mailbox."""
     if isinstance(account_email, dict):
@@ -213,7 +236,7 @@ def auto_authenticate_google(account_email="recruiter@ecorptrainings.com"):
                     creds.refresh(Request())
                 if creds and creds.valid:
                     logger.info(f"Successfully authenticated {email_key} via {env_k}")
-                    return build('gmail', 'v1', credentials=creds)
+                    return build_gmail_service(creds)
             except Exception as e:
                 logger.warning(f"Failed to load token from environment variable {env_k}: {e}")
                 creds = None
@@ -232,7 +255,7 @@ def auto_authenticate_google(account_email="recruiter@ecorptrainings.com"):
                 with open(token_file, 'w', encoding='utf-8') as token:
                     token.write(creds.to_json())
             if creds and creds.valid:
-                return build('gmail', 'v1', credentials=creds)
+                return build_gmail_service(creds)
         except Exception as e:
             logger.warning(f"Existing token file for {email_key} invalid: {e}")
             creds = None
@@ -263,7 +286,7 @@ def auto_authenticate_google(account_email="recruiter@ecorptrainings.com"):
             logger.error(f"Authentication failed for {email_key}: {e}")
             raise
 
-    return build('gmail', 'v1', credentials=creds)
+    return build_gmail_service(creds)
 
 def decode_base64(data):
     missing_padding = len(data) % 4
@@ -748,28 +771,6 @@ def extract_candidate_entities_with_ai(resume_text, email_body, job_description,
 
     return candidate_data
 
-def main(job_query, account_email="recruiter@ecorptrainings.com", max_candidates=25, date_preset=None, date_from=None, date_to=None, include_excel=False):
-    """
-    Main entrypoint called from app.py or CLI.
-    Processes ONLY PDF/DOCX attachments.
-    Honors max_candidates limit strictly.
-    Uses Groq for ultra-fast candidate entity extraction with gentle sequential delays.
-    """
-    if not job_query or not job_query.strip():
-        print("Job Query / Job Description cannot be empty.")
-        return
-
-    try:
-        max_candidates = int(max_candidates or 25)
-    except (ValueError, TypeError):
-        max_candidates = 25
-
-    os.makedirs(RESUME_FOLDER, exist_ok=True)
-    if isinstance(account_email, dict):
-        account_email = account_email.get("email", "recruiter@ecorptrainings.com")
-    email_key = account_email.lower().strip() if account_email else "recruiter@ecorptrainings.com"
-    
-    t_start = time.time()
 class SearchProgress:
     def __init__(self, target, search_id=""):
         self.target = max(target, 1)
@@ -1191,22 +1192,23 @@ def search_until_relevant(mailbox="recruiter@ecorptrainings.com", jd="", target_
     logger.info(f'[search-DONE] {meta}')
     return relevant, meta
 
-def main(job_query, account_email="recruiter@ecorptrainings.com", max_candidates=25, date_preset=None, date_from=None, date_to=None, include_excel=False, search_id=None, fast_mode=False):
+def main(job_query, account_email="recruiter@ecorptrainings.com", max_candidates=25, date_preset=None, date_from=None, date_to=None, search_id=None, fast_mode=False):
     """
     Main entrypoint called from app.py or CLI.
     Fetches Gmail emails until max_candidates target attachments are downloaded.
     Extracts candidates via Groq with progress tracking.
     """
-    if not _search_lock.acquire(blocking=False):
-        logger.warning("[search] already running, skipping duplicate search request")
-        return pd.DataFrame()
-
+    acquired = _search_lock.acquire(blocking=True, timeout=120)
     try:
-        return _do_main(job_query, account_email=account_email, max_candidates=max_candidates, date_preset=date_preset, date_from=date_from, date_to=date_to, include_excel=include_excel, search_id=search_id, fast_mode=fast_mode)
+        return _do_main(job_query, account_email=account_email, max_candidates=max_candidates, date_preset=date_preset, date_from=date_from, date_to=date_to, search_id=search_id, fast_mode=fast_mode)
     finally:
-        _search_lock.release()
+        if acquired:
+            try:
+                _search_lock.release()
+            except Exception:
+                pass
 
-def _do_main(job_query, account_email="recruiter@ecorptrainings.com", max_candidates=25, date_preset=None, date_from=None, date_to=None, include_excel=False, search_id=None, fast_mode=False):
+def _do_main(job_query, account_email="recruiter@ecorptrainings.com", max_candidates=25, date_preset=None, date_from=None, date_to=None, search_id=None, fast_mode=False):
     if not job_query or not job_query.strip():
         print("Job Query / Job Description cannot be empty.")
         return
@@ -1302,8 +1304,8 @@ def _do_main(job_query, account_email="recruiter@ecorptrainings.com", max_candid
             txt = extract_text_from_bytes(item['file_bytes'], item['filename'])
             batch_texts.append(txt)
 
-        # Batch AI Extraction via Groq
-        batch_ai_results = ai_extractor.extract_batch(batch_texts, job_query)
+        # Batch AI Extraction via Gemini/Groq
+        batch_ai_results = ai_extractor.extract_batch(batch_texts, job_query, batch_num=batch_idx + 1, total_batches=total_batches)
         logger.info(f"[search-EXTRACT] batch {batch_idx + 1}/{total_batches} ({len(batch_ai_results)} candidates)")
 
         for idx, item in enumerate(batch_items):
