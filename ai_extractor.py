@@ -22,9 +22,9 @@ except ImportError:
 
 # Gemini Models configuration
 GEMINI_PRIMARY_MODEL = os.getenv('GEMINI_PRIMARY_MODEL', 'gemini-3.5-flash-lite')
-GEMINI_FALLBACK_1 = os.getenv('GEMINI_FALLBACK_MODEL_1', 'gemini-3.6-flash')
-GEMINI_FALLBACK_2 = os.getenv('GEMINI_FALLBACK_MODEL_2', 'gemini-3.7-flash')
-GEMINI_FALLBACK_3 = os.getenv('GEMINI_FALLBACK_MODEL_3', 'gemini-3.8-flash')
+GEMINI_FALLBACK_1 = os.getenv('GEMINI_FALLBACK_MODEL_1', 'gemini-2.5-flash')
+GEMINI_FALLBACK_2 = os.getenv('GEMINI_FALLBACK_MODEL_2', 'gemini-flash-latest')
+GEMINI_FALLBACK_3 = os.getenv('GEMINI_FALLBACK_MODEL_3', 'gemini-3.5-flash')
 
 GEMINI_MODELS = [
     GEMINI_PRIMARY_MODEL,
@@ -34,7 +34,7 @@ GEMINI_MODELS = [
 ]
 
 # Configurable Parameters & Batch Sizes
-GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "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")
+GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
 MAX_RESUME_CHARS = int(os.environ.get("MAX_RESUME_CHARS", 4000))
 BATCH_SIZE_GEMINI = int(os.getenv('BATCH_SIZE_GEMINI', 10))
 BATCH_SIZE_GROQ = int(os.getenv('BATCH_SIZE_GROQ', 3))
