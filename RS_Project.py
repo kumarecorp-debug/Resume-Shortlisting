@@ -221,7 +221,9 @@ def auto_authenticate_google(account_email="recruiter@ecorptrainings.com"):
         primary_env,
         f"GOOGLE_TOKEN_{username_prefix}_JSON",
         f"TOKEN_{username_prefix}_JSON",
-        f"GMAIL_TOKEN_{username_prefix}"
+        f"GMAIL_TOKEN_{username_prefix}",
+        "GOOGLE_TOKEN_JSON",
+        "GMAIL_TOKEN_JSON"
     ]
     seen = set()
     env_token_keys = [k for k in env_token_keys if k and not (k in seen or seen.add(k))]
