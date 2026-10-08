@@ -147,7 +147,7 @@ def build_gmail_search_query(job_description, days_back=None, date_preset=None, 
                             if branch_tokens:
                                 valid_tokens.append(" ".join(branch_tokens))
                         if len(valid_tokens) > 1:
-                            kw_query = "(" + " OR ".join(valid_tokens) + ")"
+                            kw_query = "(" + " AND ".join(valid_tokens) + ")"
                         elif valid_tokens:
                             kw_query = valid_tokens[0]
                         else:
@@ -167,7 +167,7 @@ def build_gmail_search_query(job_description, days_back=None, date_preset=None, 
                                 expanded_tokens.append("Salesforce")
 
                         if len(expanded_tokens) > 1:
-                            kw_query = "(" + " OR ".join(expanded_tokens) + ")"
+                            kw_query = "(" + " AND ".join(expanded_tokens) + ")"
                         elif len(expanded_tokens) == 1:
                             kw_query = expanded_tokens[0]
                         else:

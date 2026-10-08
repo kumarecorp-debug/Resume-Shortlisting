@@ -22,8 +22,14 @@ document.addEventListener('DOMContentLoaded', function () {
     searchForm.addEventListener('submit', function (e) {
         updateGlobals();
 
+        if (window.__isFormSubmitting) {
+            e.preventDefault();
+            return;
+        }
+
         if (window._skipCopiedHandled) {
             window._skipCopiedHandled = false;
+            window.__isFormSubmitting = true;
             return; // Allow form submission
         }
 
@@ -36,6 +42,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
         if (savedPref) {
             applyCopiedPreference(savedPref);
+            window.__isFormSubmitting = true;
             return; // Continue form submission
         }
 
@@ -48,13 +55,19 @@ document.addEventListener('DOMContentLoaded', function () {
                     showSkipCopiedModal(mailbox, jd, data, sessionKey, searchForm);
                 } else {
                     window._skipCopiedHandled = true;
-                    searchForm.submit();
+                    if (!window.__isFormSubmitting) {
+                        window.__isFormSubmitting = true;
+                        searchForm.submit();
+                    }
                 }
             })
             .catch(err => {
                 console.error('Error checking copied history:', err);
                 window._skipCopiedHandled = true;
-                searchForm.submit();
+                if (!window.__isFormSubmitting) {
+                    window.__isFormSubmitting = true;
+                    searchForm.submit();
+                }
             });
     });
 
@@ -145,7 +158,10 @@ function showSkipCopiedModal(mailbox, jd, data, sessionKey, form) {
 
     if (!overlay) {
         window._skipCopiedHandled = true;
-        form.submit();
+        if (!window.__isFormSubmitting) {
+            window.__isFormSubmitting = true;
+            form.submit();
+        }
         return;
     }
 
@@ -184,7 +200,10 @@ function showSkipCopiedModal(mailbox, jd, data, sessionKey, form) {
         if (link) link.style.display = 'inline-block';
 
         window._skipCopiedHandled = true;
-        form.submit();
+        if (!window.__isFormSubmitting) {
+            window.__isFormSubmitting = true;
+            form.submit();
+        }
     };
 
     if (btnSkip) btnSkip.onclick = () => handleChoice('skip');

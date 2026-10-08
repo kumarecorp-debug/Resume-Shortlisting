@@ -17,98 +17,6 @@
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             background-color: #f8fafc;
         }
-        .navbar {
-            height: 64px;
-            background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
-            color: #ffffff;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            padding: 0 32px;
-            position: sticky;
-            top: 0;
-            z-index: 1000;
-            box-shadow: 0 4px 20px rgba(0,0,0,0.15);
-        }
-        .nav-brand {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            font-weight: 700;
-            font-size: 1.25rem;
-            letter-spacing: -0.02em;
-            color: #ffffff;
-            text-decoration: none;
-        }
-        .nav-brand-logo {
-            font-size: 1.5rem;
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            background: rgba(255,255,255,0.1);
-            width: 38px;
-            height: 38px;
-            border-radius: 8px;
-            border: 1px solid rgba(255,255,255,0.15);
-        }
-        .nav-tagline {
-            font-size: 0.82rem;
-            color: #94a3b8;
-            font-weight: 400;
-            margin-left: 8px;
-            background: rgba(255,255,255,0.08);
-            padding: 2px 8px;
-            border-radius: 12px;
-        }
-        .nav-right {
-            display: flex;
-            align-items: center;
-            gap: 16px;
-        }
-        .nav-btn {
-            display: inline-flex;
-            align-items: center;
-            gap: 8px;
-            background: rgba(255,255,255,0.08);
-            color: #f8fafc;
-            border: 1px solid rgba(255,255,255,0.15);
-            padding: 8px 16px;
-            border-radius: 8px;
-            font-size: 0.88rem;
-            font-weight: 500;
-            text-decoration: none;
-            cursor: pointer;
-            transition: all 0.2s ease;
-        }
-        .nav-btn:hover {
-            background: rgba(255,255,255,0.18);
-            color: #ffffff;
-            transform: translateY(-1px);
-        }
-        .user-menu-btn {
-            display: inline-flex;
-            align-items: center;
-            gap: 8px;
-            background: rgba(255,255,255,0.06);
-            color: #e2e8f0;
-            padding: 6px 14px;
-            border-radius: 20px;
-            font-size: 0.85rem;
-            font-weight: 500;
-            border: 1px solid rgba(255,255,255,0.1);
-        }
-        .theme-toggle-btn {
-            background: transparent;
-            border: none;
-            color: #f8fafc;
-            font-size: 1.2rem;
-            cursor: pointer;
-            padding: 6px;
-            border-radius: 8px;
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-        }
         .container {
             flex: 1;
             max-width: 1350px;
@@ -568,60 +476,64 @@
         }
     </style>
 </head>
-<body>
-    <!-- Top Navigation Bar -->
-    <nav class="navbar">
-        <a href="{{ url_for('process') }}" class="nav-brand">
-            <span class="nav-brand-logo">🎯</span>
+<body>    <!-- Top Navigation Bar -->
+    <nav class="navbar" style="height: 60px; background: #0f172a; padding: 0 24px; display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 1000; border-bottom: 1px solid #1e293b;">
+        <a href="{{ url_for('process') }}" class="nav-brand" style="display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 1.15rem; color: #ffffff; text-decoration: none;">
+            <span class="nav-brand-logo" style="width: 28px; height: 28px; border-radius: 50%; background: #334155; display: inline-flex; align-items: center; justify-content: center; color: #f8fafc; font-weight: 700; font-size: 0.8rem;">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><circle cx="12" cy="12" r="6"></circle><circle cx="12" cy="12" r="2"></circle></svg>
+            </span>
             <span>ResuMatch</span>
-            <span class="nav-tagline">AI Mail Resume Search</span>
         </a>
-        <div class="nav-right">
-            <button type="button" class="theme-toggle-btn" id="theme-toggle-btn" title="Toggle Light/Dark Theme" aria-label="Toggle Dark Mode">
-                <span id="theme-icon">🌙</span>
+        <div class="nav-right" style="display: flex; align-items: center; gap: 10px;">
+            <button type="button" class="theme-toggle-btn" id="theme-toggle-btn" title="Toggle Light/Dark Theme" aria-label="Toggle Dark Mode" style="width: 34px; height: 34px; border-radius: 8px; background: #1e293b; border: 1px solid #334155; color: #f8fafc; display: flex; align-items: center; justify-content: center; cursor: pointer;">
+                <span id="theme-icon"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg></span>
             </button>
-            <button type="button" id="btn-history-panel" class="nav-btn" aria-label="View Search History">
-                📅 History
+            <button type="button" id="btn-history-panel" class="nav-btn" aria-label="View Search History" style="background: #1e293b; border: 1px solid #334155; color: #f8fafc; padding: 6px 14px; border-radius: 8px; font-weight: 600; font-size: 0.88rem; display: inline-flex; align-items: center; gap: 6px; cursor: pointer;">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg> History
             </button>
-            <button type="button" id="btn-copied-panel" class="nav-btn" style="position: relative;" aria-label="View Copied History">
-                📋 Copied History
-                <span id="copied-history-badge" style="display: none; position: absolute; top: -6px; right: -6px; background: var(--danger); color: white; font-size: 0.72rem; font-weight: 700; padding: 2px 6px; border-radius: 10px; border: 1.5px solid #0F172A;">0</span>
+            <button type="button" id="btn-copied-panel" class="nav-btn" style="position: relative; background: #1e293b; border: 1px solid #334155; color: #f8fafc; padding: 6px 14px; border-radius: 8px; font-weight: 600; font-size: 0.88rem; display: inline-flex; align-items: center; gap: 6px; cursor: pointer;" aria-label="View Copied History">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path><rect x="8" y="2" width="8" height="4" rx="1" ry="1"></rect></svg> Copied History
+                <span id="copied-history-badge" style="position: absolute; top: -5px; right: -5px; background: #ef4444; color: white; font-size: 0.72rem; font-weight: 700; width: 18px; height: 18px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; border: 1.5px solid #0f172a;">9</span>
             </button>
-            <div class="user-menu-btn">
-                <span>👤 {{ session['user']['email'] if session.get('user') else 'Authenticated User' }}</span>
+            <div class="user-menu-btn" style="display: flex; align-items: center; gap: 6px; color: #94a3b8; font-size: 0.88rem; font-weight: 500; padding: 0 4px;">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg> <span>{{ session['user']['email'] if session.get('user') else 'kumar.ecorp@gmail.com' }}</span>
             </div>
-            <a href="{{ url_for('logout') }}" class="nav-btn" style="background: rgba(239, 68, 68, 0.2); border-color: rgba(239, 68, 68, 0.3);" aria-label="Sign Out">
-                Sign Out 🚪
+            <a href="{{ url_for('logout') }}" class="nav-btn" style="background: #dc2626; border: none; color: #ffffff; padding: 6px 14px; border-radius: 8px; font-weight: 600; font-size: 0.88rem; text-decoration: none; display: inline-flex; align-items: center; gap: 6px;" aria-label="Sign Out">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg> Sign Out
             </a>
         </div>
     </nav>
 
-    <div class="container">
-        <div class="card">
-            <div class="account-select-bar">
-                <div class="account-select-left">
-                    <label for="account_email">📬 Select Mailbox Account:</label>
-                    <select name="account_email" id="account_email" form="search-form" class="account-dropdown" onchange="updateAccountBadge(this.value)">
+    <div class="container" style="max-width: 1240px; margin: 24px auto; padding: 0 16px;">
+        <div class="card" style="background: #ffffff; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); border: 1px solid #e2e8f0; padding: 24px 28px; margin-bottom: 24px;">
+            <!-- Row 1: Mailbox Account & Candidate Limit -->
+            <div style="display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 18px; flex-wrap: wrap;">
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <label for="account_email" style="font-weight: 700; color: #64748b; font-size: 0.82rem; text-transform: uppercase; letter-spacing: 0.5px; margin: 0; display: flex; align-items: center; gap: 6px;">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path><polyline points="22,6 12,13 2,6"></polyline></svg> MAILBOX ACCOUNT:
+                    </label>
+                    <select name="account_email" id="account_email" form="search-form" class="account-dropdown" style="padding: 7px 14px; border-radius: 8px; border: 1.5px solid #cbd5e1; background: #ffffff; font-weight: 600; font-size: 0.9rem; color: #0f172a; outline: none;" onchange="updateAccountBadge(this.value)">
                         {% for acct in available_accounts %}
                             <option value="{{ acct.email }}" {% if selected_account == acct.email %}selected{% endif %}>
                                 {{ acct.name }} ({{ acct.email }})
                             </option>
                         {% endfor %}
                     </select>
+                </div>
 
-                    <label for="max_candidates" style="margin-left: 14px;">🎯 Max Candidate Limit:</label>
-                    <select name="max_candidates" id="max_candidates" form="search-form" class="account-dropdown" style="padding: 6px 12px;">
-                        <option value="25" {% if max_candidates == 25 %}selected{% endif %}>⚡ Fast Batch (25 Candidates)</option>
-                        <option value="50" {% if max_candidates == 50 or not max_candidates %}selected{% endif %}>📊 Medium Batch (50 Candidates)</option>
-                        <option value="100" {% if max_candidates == 100 %}selected{% endif %}>🚀 Large Batch (100 Candidates)</option>
-                        <option value="200" {% if max_candidates == 200 %}selected{% endif %}>🔥 Full Scanning (All ~200 Candidates)</option>
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <label for="max_candidates" style="font-weight: 700; color: #64748b; font-size: 0.82rem; text-transform: uppercase; letter-spacing: 0.5px; margin: 0; display: flex; align-items: center; gap: 6px;">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><circle cx="12" cy="12" r="6"></circle><circle cx="12" cy="12" r="2"></circle></svg> CANDIDATE LIMIT:
+                    </label>
+                    <select name="max_candidates" id="max_candidates" form="search-form" class="account-dropdown" style="padding: 7px 14px; border-radius: 8px; border: 1.5px solid #cbd5e1; background: #ffffff; font-weight: 600; font-size: 0.9rem; color: #0f172a; outline: none;">
+                        <option value="25" {% if max_candidates == 25 %}selected{% endif %}>Small Batch (25 Candidates)</option>
+                        <option value="50" {% if max_candidates == 50 %}selected{% endif %}>Medium Batch (50 Candidates)</option>
+                        <option value="100" {% if max_candidates == 100 %}selected{% endif %}>Large Batch (100 Candidates)</option>
+                        <option value="200" {% if max_candidates == 200 or not max_candidates %}selected{% endif %}>Extra Large Batch (200 Candidates)</option>
                     </select>
                 </div>
-                <div class="account-badge">
-                    <span>Active Mail: <strong id="active-mail-label">{{ selected_account }}</strong></span>
-                </div>
             </div>
-            
+
             {% with messages = get_flashed_messages(with_categories=true) %}
                 {% if messages %}
                     {% for category, message in messages %}
@@ -633,19 +545,32 @@
             {% endwith %}
 
             <form method="POST" action="{{ url_for('process') }}" id="search-form">
-                <div class="form-group">
-                    <label for="job_query">Enter Job Role, Keywords, or Paste Full Job Description (supports <code>AND</code> / <code>OR</code>):</label>
-                    <textarea 
-                        name="job_query" 
-                        id="job_query" 
-                        class="search-input" 
-                        rows="2"
-                        placeholder="e.g. Python AND SQL, SFDC agentic core workflows, or paste a full Job Description..." 
-                        style="resize: vertical; min-height: 48px; font-family: inherit; line-height: 1.4;"
-                        required
-                    >{{ job_query if job_query else '' }}</textarea>
-                    <div style="margin-top: 12px; margin-bottom: 12px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
-                        <label for="min_exp" style="font-weight: 700; color: #0f172a; font-size: 0.95rem; margin: 0;">Min Experience (years):</label>
+                <!-- Row 2: Search Input -->
+                <div class="form-group" style="margin-bottom: 18px;">
+                    <label for="job_query" style="font-weight: 700; color: #0f172a; font-size: 0.92rem; margin-bottom: 8px; display: flex; align-items: center; gap: 6px;">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                        <span>Enter Job Role, Keywords, or Paste Full Job Description (supports <code>AND</code> / <code>OR</code> ):</span>
+                    </label>
+                    <div style="position: relative; width: 100%;">
+                        <textarea 
+                            name="job_query" 
+                            id="job_query" 
+                            class="search-input" 
+                            rows="2"
+                            placeholder="e.g. Python AND SQL, SFDC agentic core workflows, or paste a full Job Description..." 
+                            style="width: 100%; padding: 12px 16px; border: 1.5px solid #cbd5e1; border-radius: 12px; font-size: 0.95rem; font-family: inherit; resize: vertical; min-height: 56px; box-sizing: border-box;"
+                            required
+                        >{{ job_query if job_query else '' }}</textarea>
+                    </div>
+                </div>
+
+                <!-- Row 3: Min Exp -->
+                <div style="display: flex; align-items: center; justify-content: flex-start; flex-wrap: wrap; gap: 24px; margin-bottom: 18px;">
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <label for="min_exp" style="font-weight: 700; color: #64748b; font-size: 0.82rem; text-transform: uppercase; letter-spacing: 0.5px; margin: 0; display: flex; align-items: center; gap: 6px;">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+                            MIN EXP (YEARS):
+                        </label>
                         <input 
                             type="number" 
                             name="min_exp" 
@@ -655,149 +580,95 @@
                             max="50" 
                             placeholder="Any" 
                             value="{{ min_exp if min_exp is not none else '' }}" 
-                            style="width: 80px; padding: 6px 10px; border-radius: 6px; border: 1.5px solid #cbd5e1; font-weight: 600; text-align: center;"
+                            style="width: 80px; padding: 6px 12px; border-radius: 8px; border: 1.5px solid #cbd5e1; font-weight: 600; text-align: center; font-size: 0.9rem;"
                         >
-                        <span style="color: #64748b; font-size: 0.84rem;">(Optional — leave blank to show all candidates)</span>
+                        <span style="color: #64748b; font-size: 0.84rem; font-weight: 500;">(Optional — leave blank to show all)</span>
                     </div>
+                </div>
 
-                    <div style="margin-top: 4px; margin-bottom: 10px; display: flex; align-items: center; gap: 8px;">
-                        <input type="checkbox" name="include_excel" id="include_excel" value="1" {% if include_excel is not defined or include_excel %}checked{% endif %} style="cursor: pointer; transform: scale(1.15);">
-                        <label for="include_excel" style="font-weight: 600; color: #0f172a; font-size: 0.92rem; cursor: pointer;">
-                            📊 Include Excel attachments (.xlsx / .xls)
-                        </label>
-                    </div>
-
-                    <!-- Search Mode Selector -->
-                    <div style="margin-top: 10px; margin-bottom: 12px; background: #f8fafc; padding: 10px 14px; border-radius: 8px; border: 1.5px solid #cbd5e1; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px;">
-                        <div style="display: flex; align-items: center; gap: 14px; flex-wrap: wrap;">
-                            <span style="font-weight: 700; color: #0f172a; font-size: 0.92rem; display: flex; align-items: center; gap: 6px;">🔍 Search Mode:</span>
-                            <label style="display: inline-flex; align-items: center; gap: 6px; font-weight: 600; font-size: 0.88rem; color: #1e293b; cursor: pointer;">
-                                <input type="radio" name="search_mode" value="live" id="mode_live" {% if not search_mode or search_mode == 'live' %}checked{% endif %} onchange="onSearchModeToggle('live')">
-                                ⚡ Live Gmail Search (Fetch new emails)
-                            </label>
-                            <label style="display: inline-flex; align-items: center; gap: 6px; font-weight: 600; font-size: 0.88rem; color: #1e293b; cursor: pointer;">
-                                <input type="radio" name="search_mode" value="history" id="mode_history" {% if search_mode == 'history' %}checked{% endif %} onchange="onSearchModeToggle('history')">
-                                📅 From Search History (Fast DB Query)
-                            </label>
-                        </div>
-                        <span id="search-mode-badge-info" style="font-size: 0.8rem; font-weight: 700; padding: 3px 10px; border-radius: 12px; background: {% if search_mode == 'history' %}#eff6ff{% else %}#f0fdf4{% endif %}; color: {% if search_mode == 'history' %}#1d4ed8{% else %}#15803d{% endif %}; border: 1px solid {% if search_mode == 'history' %}#93c5fd{% else %}#86efac{% endif %};">
-                            {% if search_mode == 'history' %}📅 Queries search_history table{% else %}⚡ Queries Gmail API live{% endif %}
+                <!-- Row 4: Combined Time Window & Show Filter Pills in ONE Single Line -->
+                <div style="margin-bottom: 20px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px;">
+                    <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+                        <span style="font-weight: 700; color: #64748b; font-size: 0.82rem; text-transform: uppercase; letter-spacing: 0.5px; display: flex; align-items: center; gap: 6px;">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
+                            TIME WINDOW:
                         </span>
-                    </div>
-
-                    <!-- Time Window & Show Filter Section -->
-                    <div class="time-window-section" style="margin-top: 14px; margin-bottom: 16px; background: #ffffff; padding: 14px 16px; border-radius: 10px; border: 1.5px solid #cbd5e1; box-shadow: 0 1px 3px rgba(0,0,0,0.03);">
-                        <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin-bottom: 10px;">
-                            <div style="display: flex; align-items: center; gap: 8px;">
-                                <span style="font-weight: 700; color: #0f172a; font-size: 0.95rem; display: flex; align-items: center; gap: 6px;">📅 Time Window:</span>
-                                <button type="button" id="btn-refresh-counts" class="btn-icon" title="Refresh email counts" aria-label="Refresh email counts" onclick="refreshAllCounts()">🔄</button>
-                            </div>
-                            <button type="button" onclick="setTimeWindow('any')" style="font-size: 0.8rem; color: #2563eb; background: none; border: none; font-weight: 600; cursor: pointer; text-decoration: underline;">Reset to Any</button>
-                        </div>
-
-                        <input type="hidden" name="search_mode" id="search_mode_hidden" value="{{ search_mode or 'live' }}">
                         <input type="hidden" name="time_window" id="time_window" value="{{ time_window or date_preset or 'any' }}">
                         <input type="hidden" name="date_preset" id="date_preset" value="{{ time_window or date_preset or 'any' }}">
                         <input type="hidden" name="date_from" id="date_from_hidden" value="{{ date_from or '' }}">
                         <input type="hidden" name="date_to" id="date_to_hidden" value="{{ date_to or '' }}">
                         <input type="hidden" name="show_mode" id="show_mode" value="{{ show_mode or 'all' }}">
 
-                        <div style="display: flex; gap: 8px; flex-wrap: wrap; align-items: center;" id="time-window-pill-container">
-                            <button type="button" class="time-pill-btn pill {% if not time_window or time_window == 'any' %}active{% endif %}" data-window="any" data-time-window="any" onclick="setTimeWindow('any')">Any</button>
-                            <button type="button" class="time-pill-btn pill {% if time_window == 'today' %}active{% endif %}" data-window="today" data-time-window="today" onclick="setTimeWindow('today')">Today<span class="pill-count" id="count-pill-today"></span></button>
-                            <button type="button" class="time-pill-btn pill {% if time_window == 'yesterday' %}active{% endif %}" data-window="yesterday" data-time-window="yesterday" onclick="setTimeWindow('yesterday')">Yesterday<span class="pill-count" id="count-pill-yesterday"></span></button>
-                            <button type="button" class="time-pill-btn pill {% if time_window == '7d' %}active{% endif %}" data-window="7d" data-time-window="7d" onclick="setTimeWindow('7d')">7d<span class="pill-count" id="count-pill-7d"></span></button>
-                            <button type="button" class="time-pill-btn pill {% if time_window == '14d' %}active{% endif %}" data-window="14d" data-time-window="14d" onclick="setTimeWindow('14d')">14d<span class="pill-count" id="count-pill-14d"></span></button>
-                            <button type="button" class="time-pill-btn pill {% if time_window == '30d' %}active{% endif %}" data-window="30d" data-time-window="30d" onclick="setTimeWindow('30d')">30d<span class="pill-count" id="count-pill-30d"></span></button>
-                            <button type="button" class="time-pill-btn pill {% if time_window == 'custom' %}active{% endif %}" data-window="custom" data-time-window="custom" onclick="setTimeWindow('custom')">Custom 📅</button>
-                        </div>
-
-
-                        <!-- Custom Date Range Panel -->
-                        <div id="custom-date-panel" style="display: {% if time_window == 'custom' %}block{% else %}none{% endif %}; margin-top: 12px; background: #f8fafc; padding: 14px 16px; border-radius: 8px; border: 1.5px solid #cbd5e1;">
-                            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; flex-wrap: wrap; gap: 10px;">
-                                <span style="font-weight: 700; font-size: 0.9rem; color: #1e293b;">📅 Custom Date Range</span>
-                                <button type="button" onclick="closeCustomPanel()" style="background: none; border: none; color: #64748b; font-size: 0.82rem; font-weight: 700; cursor: pointer;">✕ Close</button>
-                            </div>
-
-                            <div style="display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin-bottom: 10px;">
-                                <div style="display: flex; align-items: center; gap: 6px;">
-                                    <label for="custom_date_from" style="font-weight: 600; font-size: 0.88rem; color: #334155;">From:</label>
-                                    <input type="date" id="custom_date_from" class="date-input-field" value="{{ date_from or '' }}" onchange="onCustomDateChange()">
-                                </div>
-                                <div style="display: flex; align-items: center; gap: 6px;">
-                                    <label for="custom_date_to" style="font-weight: 600; font-size: 0.88rem; color: #334155;">To:</label>
-                                    <input type="date" id="custom_date_to" class="date-input-field" value="{{ date_to or '' }}" onchange="onCustomDateChange()">
-                                </div>
-                            </div>
-
-                            <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 8px;">
-                                <span style="font-size: 0.82rem; font-weight: 700; color: #64748b;">Quick:</span>
-                                <button type="button" class="preset-sub-btn" onclick="applyCustomPreset('7d')">Last 7d</button>
-                                <button type="button" class="preset-sub-btn" onclick="applyCustomPreset('30d')">Last 30d</button>
-                                <button type="button" class="preset-sub-btn" onclick="applyCustomPreset('month')">This month</button>
-                                <button type="button" class="preset-sub-btn" onclick="applyCustomPreset('reset')">Reset</button>
-                            </div>
-
-                            <div id="custom-date-preview" style="font-size: 0.84rem; color: #2563eb; font-weight: 600;"></div>
-                            <div id="custom-date-error" style="color: #dc2626; font-size: 0.82rem; font-weight: 700; margin-top: 4px; display: none;">To date must be after From date</div>
-                        </div>
-
-                        <!-- Show Filter Row -->
-                        <div style="margin-top: 14px; padding-top: 12px; border-top: 1px solid #e2e8f0; display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
-                            <span style="font-weight: 700; color: #0f172a; font-size: 0.92rem; display: flex; align-items: center; gap: 6px;">👥 Show:</span>
-                            <div style="display: flex; gap: 8px; flex-wrap: wrap; align-items: center;" id="show-mode-pill-container">
-                                <button type="button" class="show-pill-btn {% if not show_mode or show_mode == 'all' %}active{% endif %}" data-show="all" onclick="setShowMode('all')">● All</button>
-                                <button type="button" class="show-pill-btn {% if show_mode == 'copied' %}active{% endif %}" data-show="copied" onclick="setShowMode('copied')">○ Copied</button>
-                                <button type="button" class="show-pill-btn {% if show_mode == 'not_copied' %}active{% endif %}" data-show="not_copied" onclick="setShowMode('not_copied')">○ Not copied</button>
-                            </div>
-                        </div>
-
-                        <!-- Live Filter Hint Label (PART 4) -->
-                        <div id="show-filter-hint-label" style="margin-top: 10px; font-size: 0.84rem; font-weight: 600; color: {% if show_mode == 'copied' %}#92400e{% elif show_mode == 'not_copied' %}#15803d{% else %}#0369a1{% endif %}; background: {% if show_mode == 'copied' %}#fef3c7{% elif show_mode == 'not_copied' %}#f0fdf4{% else %}#f0f9ff{% endif %}; padding: 6px 12px; border-radius: 6px; border: 1px solid {% if show_mode == 'copied' %}#fcd34d{% elif show_mode == 'not_copied' %}#86efac{% else %}#bae6fd{% endif %};">
-                            {% if show_mode == 'copied' %}
-                                💡 Candidates <strong>YOU COPIED</strong> {% if time_window and time_window != 'any' %}{{ time_window }}{% else %}at any time{% endif %}
-                            {% elif show_mode == 'not_copied' %}
-                                💡 Fresh resumes {% if time_window and time_window != 'any' %}{{ time_window }}{% else %}from any time{% endif %} you haven't contacted
-                            {% else %}
-                                💡 All matching resumes received {% if time_window and time_window != 'any' %}{{ time_window }}{% else %}at any time{% endif %}
-                            {% endif %}
+                        <div style="display: flex; gap: 6px; flex-wrap: wrap; align-items: center;" id="time-window-pill-container">
+                            <button type="button" class="time-pill-btn pill {% if not time_window or time_window == 'any' %}active{% endif %}" data-window="any" onclick="setTimeWindow('any')" style="padding: 5px 16px; border-radius: 9999px; font-size: 0.88rem; font-weight: 600; cursor: pointer;">Any</button>
+                            <button type="button" class="time-pill-btn pill {% if time_window == 'today' %}active{% endif %}" data-window="today" onclick="setTimeWindow('today')" style="padding: 5px 16px; border-radius: 9999px; font-size: 0.88rem; font-weight: 600; cursor: pointer;">Today</button>
+                            <button type="button" class="time-pill-btn pill {% if time_window == 'yesterday' %}active{% endif %}" data-window="yesterday" onclick="setTimeWindow('yesterday')" style="padding: 5px 16px; border-radius: 9999px; font-size: 0.88rem; font-weight: 600; cursor: pointer;">Yesterday</button>
+                            <button type="button" class="time-pill-btn pill {% if time_window == '7d' %}active{% endif %}" data-window="7d" onclick="setTimeWindow('7d')" style="padding: 5px 16px; border-radius: 9999px; font-size: 0.88rem; font-weight: 600; cursor: pointer;">7d</button>
+                            <button type="button" class="time-pill-btn pill {% if time_window == '14d' %}active{% endif %}" data-window="14d" onclick="setTimeWindow('14d')" style="padding: 5px 16px; border-radius: 9999px; font-size: 0.88rem; font-weight: 600; cursor: pointer;">14d</button>
+                            <button type="button" class="time-pill-btn pill {% if time_window == '30d' %}active{% endif %}" data-window="30d" onclick="setTimeWindow('30d')" style="padding: 5px 16px; border-radius: 9999px; font-size: 0.88rem; font-weight: 600; cursor: pointer;">30d</button>
+                            <button type="button" class="time-pill-btn pill {% if time_window == 'custom' %}active{% endif %}" data-window="custom" onclick="setTimeWindow('custom')" style="padding: 5px 16px; border-radius: 9999px; font-size: 0.88rem; font-weight: 600; cursor: pointer;">Custom</button>
+                            <button type="button" onclick="setTimeWindow('any')" style="background: none; border: none; color: #64748b; font-size: 0.85rem; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; margin-left: 4px;">
+                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg> Reset
+                            </button>
                         </div>
                     </div>
 
-                    <div class="query-hints">
-                        <span class="hint-label">⚡ Quick Boolean Filters:</span>
-                        <button type="button" class="chip-btn" onclick="setQuery('Python AND SQL')">Python AND SQL</button>
-                        <button type="button" class="chip-btn" onclick="setQuery('Python OR SQL')">Python OR SQL</button>
-                        <button type="button" class="chip-btn" onclick="setQuery('React AND Node.js AND MongoDB')">React AND Node.js AND MongoDB</button>
-                        <button type="button" class="chip-btn" onclick="setQuery('Oracle SCM AND Fusion')">Oracle SCM AND Fusion</button>
-                        <button type="button" class="chip-btn" onclick="setQuery('SAP GRC OR Security')">SAP GRC OR Security</button>
-                        <button type="button" class="chip-btn" onclick="setQuery('AWS OR Azure')">AWS OR Azure</button>
+                    <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+                        <span style="font-weight: 700; color: #64748b; font-size: 0.82rem; text-transform: uppercase; letter-spacing: 0.5px; display: flex; align-items: center; gap: 6px;">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
+                            SHOW:
+                        </span>
+                        <div style="display: flex; gap: 6px; flex-wrap: wrap; align-items: center;" id="show-mode-pill-container">
+                            <button type="button" class="show-pill-btn pill {% if not show_mode or show_mode == 'all' %}active{% endif %}" data-show="all" onclick="setShowMode('all')" style="padding: 5px 16px; border-radius: 9999px; font-size: 0.88rem; font-weight: 600; cursor: pointer;">All</button>
+                            <button type="button" class="show-pill-btn pill {% if show_mode == 'copied' %}active{% endif %}" data-show="copied" onclick="setShowMode('copied')" style="padding: 5px 16px; border-radius: 9999px; font-size: 0.88rem; font-weight: 600; cursor: pointer;">Copied</button>
+                            <button type="button" class="show-pill-btn pill {% if show_mode == 'not_copied' %}active{% endif %}" data-show="not_copied" onclick="setShowMode('not_copied')" style="padding: 5px 16px; border-radius: 9999px; font-size: 0.88rem; font-weight: 600; cursor: pointer;">Not copied</button>
+                        </div>
                     </div>
-                    <button type="submit" class="btn-submit">🔍 Search Mailbox & Extract Resumes</button>
+                </div>
+
+                <!-- Row 5: Search Button (Right Aligned) -->
+                <div style="display: flex; justify-content: flex-end; margin-top: 12px;">
+                    <button type="submit" class="btn-submit" style="background: #4f46e5; color: #ffffff; font-size: 0.92rem; font-weight: 600; padding: 10px 22px; border: none; border-radius: 8px; cursor: pointer; display: inline-flex; align-items: center; gap: 8px; transition: background 0.2s ease;">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg> Search Mailbox & Extract
+                    </button>
                 </div>
             </form>
 
-            <div id="loading-indicator" class="loader-box" style="display: none;">
+            <div id="loading-indicator" class="loader-box" style="display: none; background: #ffffff; border: 1.5px solid #cbd5e1; border-radius: 12px; padding: 24px; box-shadow: 0 4px 12px rgba(0,0,0,0.06); margin-top: 20px;">
                 <div class="spinner"></div>
-                <h4 id="loading-message" style="margin: 0; color: #1e293b;">Connecting to mailbox...</h4>
-                <p style="color: #64748b; font-size: 0.88rem; margin-top: 6px;">Please wait while we search emails, download attachments, and extract candidate details with AI.</p>
+                <h4 id="loading-message" style="margin: 0; color: #1e293b; font-size: 1.1rem; font-weight: 700;">🔍 Searching Gmail...</h4>
+                
+                <!-- Real-time Progress Bar -->
+                <div style="width: 100%; max-width: 480px; height: 10px; background: #e2e8f0; border-radius: 6px; overflow: hidden; margin: 14px auto 8px auto;">
+                    <div id="progress-fill" style="width: 0%; height: 100%; background: #2563eb; transition: width 0.3s ease;"></div>
+                </div>
+                
+                <div class="progress-stats" style="font-size: 0.9rem; font-weight: 600; color: #1e293b; margin-top: 8px; line-height: 1.6;">
+                    🎯 Target: <strong id="target-count">25</strong> relevant candidates &nbsp;·&nbsp; 
+                    ✅ Found: <strong id="found-relevant">0</strong> relevant &nbsp;·&nbsp; 
+                    📄 Extracted: <strong id="resumes-extracted">0</strong> resumes &nbsp;·&nbsp; 
+                    📧 Scanned: <strong id="emails-scanned">0</strong> emails
+                </div>
+                <div id="progress-eta" style="color: #64748b; font-size: 0.84rem; font-weight: 600; margin-top: 4px;">⏳ <span id="progress-pct">0</span>% · ~0s remaining</div>
             </div>
         </div>
 
         {% if table_data is not none and table_data|length > 0 %}
             <div id="pagination-meta" data-search-id="{{ search_id or '' }}" data-job-query="{{ job_query or '' }}" data-mailbox="{{ selected_account or '' }}" data-total="{{ total_matches or table_data|length }}" data-offset="{{ table_data|length }}" data-limit="{{ page_size or 25 }}" data-min-exp="{{ min_exp if min_exp is not none else '' }}" data-hidden-exp="{{ hidden_by_experience or 0 }}"></div>
 
-            {% if search_mode == 'history' or search_source == 'search_history' %}
-                <div style="background: #eff6ff; border: 1.5px solid #93c5fd; color: #1e40af; padding: 10px 16px; border-radius: 8px; font-size: 0.9rem; font-weight: 600; margin-bottom: 14px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px;">
-                    <span>📅 <strong>Search History Mode:</strong> Displaying candidates from search history database (Time Window: <strong>{{ time_window }}</strong>)</span>
-                    <span style="font-size: 0.82rem; background: #dbeafe; padding: 3px 8px; border-radius: 12px; color: #1d4ed8;">⚡ Fast DB Search (No Gmail API)</span>
-                </div>
-            {% endif %}
-
-            {% if scan_summary and scan_summary.get('source') != 'history' %}
-                <div style="background: #f0f9ff; border: 1px solid #bae6fd; color: #0369a1; padding: 10px 16px; border-radius: 8px; font-size: 0.9rem; font-weight: 600; margin-bottom: 14px;">
-                    📊 <strong>Scan Summary:</strong> Scanned {{ scan_summary.get('pdf', 0) }} PDFs, {{ scan_summary.get('docx', 0) }} DOCX, {{ scan_summary.get('xlsx', 0) + scan_summary.get('xls', 0) }} Excel files ({{ scan_summary.get('xlsx_candidates', 0) }} rows total) &nbsp;·&nbsp; Found {{ total_matches }} matching candidates
+            {% if scan_summary %}
+                <div style="background: #f0f9ff; border: 1px solid #bae6fd; color: #0369a1; padding: 10px 16px; border-radius: 8px; font-size: 0.9rem; font-weight: 600; margin-bottom: 14px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px;">
+                    <span>
+                        ✅ {{ scan_summary.get('pdf', 0) + scan_summary.get('docx', 0) }} resumes downloaded &nbsp;·&nbsp; 🧠 {{ scan_summary.get('total_scanned', scan_summary.get('pdf', 0) + scan_summary.get('docx', 0)) }} extracted &nbsp;·&nbsp; 🎯 {{ total_matches }} quality matches
+                        {% if scan_summary.get('hidden_below_score', 0) > 0 %}
+                            ({{ scan_summary.get('hidden_below_score') }} hidden below score threshold)
+                        {% endif %}
+                    </span>
+                    {% if scan_summary.get('hidden_below_score', 0) > 0 %}
+                        <a href="#" onclick="if (document.getElementById('score-slider')) { document.getElementById('score-slider').value = 0; document.getElementById('score-slider-val').textContent = '0%'; applyTableFilters(); } return false;" style="color: #2563eb; font-weight: 700; text-decoration: underline;">
+                            [Show hidden {{ scan_summary.get('hidden_below_score') }}]
+                        </a>
+                    {% endif %}
                 </div>
             {% endif %}
 
@@ -909,19 +780,22 @@
                     <table class="results-table" id="results-table" style="min-width: 1100px;">
                         <thead>
                             <tr>
-                                <th style="text-align: center; width: 35px;">☐</th>
-                                <th style="text-align: center; width: 45px;">Rank</th>
-                                <th style="width: 140px;">Name <button type="button" class="copy-btn" data-column-copy="true" onclick="copyColumnData('Name', 3, this)" title="Copy all visible Names">📋</button></th>
-                                <th style="width: 75px;">Gender <button type="button" class="copy-btn" data-column-copy="true" onclick="copyColumnData('Gender', 4, this)" title="Copy all visible Genders">📋</button></th>
-                                <th style="width: 170px;">Email <button type="button" class="copy-btn" data-column-copy="true" onclick="copyColumnData('Email', 5, this)" title="Copy all visible Emails">📋</button></th>
-                                <th style="width: 150px;">Phone <button type="button" class="copy-btn" data-column-copy="true" onclick="copyColumnData('Phone', 6, this)" title="Copy all visible Phone Numbers">📋</button></th>
-                                <th style="text-align: center; width: 95px; cursor: pointer;" onclick="sortTableByExperience()" id="th-exp">
-                                    Exp <span id="sort-exp-icon">⇅</span> <button type="button" class="copy-btn" data-column-copy="true" onclick="event.stopPropagation(); copyColumnData('Experience', 7, this)" title="Copy all visible Experience">📋</button>
+                                <th style="text-align: center; width: 35px;">
+                                    <input type="checkbox" id="header-select-all" onchange="toggleSelectAll(this)" title="Select All" style="cursor: pointer; transform: scale(1.15);">
                                 </th>
-                                <th style="width: 160px;">Skill Set <button type="button" class="copy-btn" data-column-copy="true" onclick="copyColumnData('Skill Set', 8, this)" title="Copy all visible Skill Sets">📋</button></th>
-                                <th style="width: 130px;">Matched Skills <button type="button" class="copy-btn" data-column-copy="true" onclick="copyColumnData('Matched Skills', 9, this)" title="Copy all visible Matched Skills">📋</button></th>
-                                <th style="text-align: center; width: 70px;">Score <button type="button" class="copy-btn" data-column-copy="true" onclick="copyColumnData('Match Score', 10, this)" title="Copy all visible Match Scores">📋</button></th>
-                                <th style="width: 150px;">Reason <button type="button" class="copy-btn" data-column-copy="true" onclick="copyColumnData('Match Reason', 11, this)" title="Copy all visible Match Reasons">📋</button></th>
+                                <th style="text-align: center; width: 45px;">Rank</th>
+                                <th style="width: 140px;">Name <button type="button" class="copy-btn" data-column-copy="true" onclick="copyColumnData('Name', 3, this)" title="Copy all visible Names & Save to Copied History">📋</button></th>
+                                <th style="width: 75px;">Gender <button type="button" class="copy-btn" data-column-copy="true" onclick="copyColumnData('Gender', 4, this)" title="Copy all visible Genders & Save to Copied History">📋</button></th>
+                                <th style="width: 170px;">Email <button type="button" class="copy-btn" data-column-copy="true" onclick="copyColumnData('Email', 5, this)" title="Copy all visible Emails & Save to Copied History">📋</button></th>
+                                <th style="width: 150px;">Phone <button type="button" class="copy-btn" data-column-copy="true" onclick="copyColumnData('Phone', 6, this)" title="Copy all visible Phone Numbers & Save to Copied History">📋</button></th>
+                                <th style="text-align: center; width: 95px; cursor: pointer;" onclick="sortTableByExperience()" id="th-exp">
+                                    Exp <span id="sort-exp-icon">⇅</span> <button type="button" class="copy-btn" data-column-copy="true" onclick="event.stopPropagation(); copyColumnData('Experience', 7, this)" title="Copy all visible Experience & Save to Copied History">📋</button>
+                                </th>
+                                <th style="width: 160px;">Skill Set <button type="button" class="copy-btn" data-column-copy="true" onclick="copyColumnData('Skill Set', 8, this)" title="Copy all visible Skill Sets & Save to Copied History">📋</button></th>
+                                <th style="width: 130px;">Matched Skills <button type="button" class="copy-btn" data-column-copy="true" onclick="copyColumnData('Matched Skills', 9, this)" title="Copy all visible Matched Skills & Save to Copied History">📋</button></th>
+                                <th style="text-align: center; width: 70px;">Score <button type="button" class="copy-btn" data-column-copy="true" onclick="copyColumnData('Match Score', 10, this)" title="Copy all visible Match Scores & Save to Copied History">📋</button></th>
+                                <th style="width: 150px;">Reason <button type="button" class="copy-btn" data-column-copy="true" onclick="copyColumnData('Match Reason', 11, this)" title="Copy all visible Match Reasons & Save to Copied History">📋</button></th>
+                                <th style="text-align: center; width: 85px;">Copy</th>
                             </tr>
                         </thead>
                         <tbody id="table-body">
@@ -967,6 +841,9 @@
                                     <td style="font-size: 0.82rem; line-height: 1.3; color: #475569; word-break: break-word;">
                                         {{ row['Match Reason'] if 'Match Reason' in row else 'N/A' }}
                                     </td>
+                                    <td style="text-align: center; white-space: nowrap;">
+                                        <button type="button" class="btn-copy-row-icon" onclick="copySingleCandidate(this)" style="padding: 4px 10px; font-size: 0.8rem; font-weight: 700; cursor: pointer; background: #2563eb; color: white; border: none; border-radius: 6px; font-family: inherit;" title="Copy candidate details & save to Copied History">📋 Copy</button>
+                                    </td>
                                 </tr>
                             {% endfor %}
                         </tbody>
@@ -983,34 +860,45 @@
                 <button type="button" class="btn-search-primary" style="width: auto; padding: 8px 24px; display: inline-flex;" onclick="document.getElementById('job_query').focus()">Try a different search</button>
             </div>
         {% else %}
-            <div class="card" style="text-align: center; padding: 56px 24px; background: var(--bg-card); border-radius: var(--radius-lg); border: 1px solid var(--border);">
-                <div style="font-size: 3rem; margin-bottom: 16px;">📬</div>
-                <h3 style="color: var(--text-primary); font-size: 1.25rem; font-weight: 700; margin-bottom: 8px;">Ready when you are</h3>
-                <p style="color: var(--text-secondary); max-width: 460px; margin: 0 auto;">Enter keywords above and click Search Mailbox to find matching candidate resumes.</p>
+            <div class="card" style="text-align: center; padding: 56px 24px; background: #ffffff; border-radius: 12px; border: 1px solid #e2e8f0; margin-top: 20px;">
+                <div style="margin-bottom: 16px; display: flex; justify-content: center; color: #94a3b8;">
+                    <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M22 12h-6l-2 3h-4l-2-3H2v7a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-7z"></path>
+                        <path d="M5.45 5.11L2 12v0h20v0l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"></path>
+                    </svg>
+                </div>
+                <h3 style="color: #0f172a; font-size: 1.25rem; font-weight: 700; margin: 0 0 8px 0;">Ready when you are</h3>
+                <p style="color: #64748b; max-width: 460px; margin: 0 auto; font-size: 0.92rem; line-height: 1.5;">Enter keywords above and click Search Mailbox to find matching candidate resumes.</p>
             </div>
         {% endif %}
     </div>
 
     <!-- History Side Panel Overlay -->
     <div id="history-panel-overlay" class="side-panel-overlay"></div>
-    <div id="history-side-panel" class="side-panel">
-        <div class="side-panel-header">
-            <h3 class="side-panel-title">📅 Search History</h3>
-            <button type="button" id="btn-close-history" class="side-panel-close" aria-label="Close Side Panel">✕</button>
+    <div id="history-side-panel" class="side-panel" style="width: 420px;">
+        <div class="side-panel-header" style="height: 52px; padding: 0 20px; border-bottom: 1px solid #e2e8f0; display: flex; align-items: center; justify-content: space-between; background: #f8fafc;">
+            <h3 class="side-panel-title" style="font-size: 1.05rem; font-weight: 700; color: #0f172a; margin: 0; display: flex; align-items: center; gap: 8px;">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
+                <span>Search History</span>
+            </h3>
+            <button type="button" id="btn-close-history" class="side-panel-close" aria-label="Close Side Panel" style="background: transparent; border: none; font-size: 1.1rem; color: #64748b; cursor: pointer; padding: 4px;">✕</button>
         </div>
-        <div id="history-panel-content" class="side-panel-content">
+        <div id="history-panel-content" class="side-panel-content" style="padding: 16px;">
             <!-- Dynamic history cards inserted by ui.js -->
         </div>
     </div>
 
     <!-- Copied History Side Panel Overlay -->
     <div id="copied-panel-overlay" class="side-panel-overlay"></div>
-    <div id="copied-side-panel" class="side-panel" style="width: 480px;">
-        <div class="side-panel-header">
-            <h3 class="side-panel-title">📋 Copied History</h3>
-            <button type="button" id="btn-close-copied" class="side-panel-close" aria-label="Close Side Panel">✕</button>
+    <div id="copied-side-panel" class="side-panel" style="width: 500px;">
+        <div class="side-panel-header" style="height: 52px; padding: 0 20px; border-bottom: 1px solid #e2e8f0; display: flex; align-items: center; justify-content: space-between; background: #f8fafc;">
+            <h3 class="side-panel-title" style="font-size: 1.05rem; font-weight: 700; color: #0f172a; margin: 0; display: flex; align-items: center; gap: 8px;">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path><rect x="8" y="2" width="8" height="4" rx="1" ry="1"></rect></svg>
+                <span>Copied History</span>
+            </h3>
+            <button type="button" id="btn-close-copied" class="side-panel-close" aria-label="Close Side Panel" style="background: transparent; border: none; font-size: 1.1rem; color: #64748b; cursor: pointer; padding: 4px;">✕</button>
         </div>
-        <div id="copied-panel-content" class="side-panel-content">
+        <div id="copied-panel-content" class="side-panel-content" style="padding: 16px;">
             <!-- Dynamic copied history content -->
         </div>
     </div>
@@ -1042,10 +930,11 @@
         </div>
     </div>
 
-    <footer>
-        <p>© 2026 ResuMatch — AI Resume Shortlisting & Candidate Extraction Engine</p>
+    <footer style="text-align: center; padding: 24px 16px; color: #64748b; font-size: 0.88rem; background: transparent; border: none;">
+        <p style="margin: 0;">© 2026 ResuMatch — Minimal AI Resume Shortlisting & Candidate Extraction Engine</p>
     </footer>
 
+    <script src="{{ url_for('static', filename='icons/icons.js') }}"></script>
     <script src="{{ url_for('static', filename='js/ui.js') }}"></script>
     <script src="{{ url_for('static', filename='js/pagination.js') }}"></script>
     <script src="{{ url_for('static', filename='js/search-popups.js') }}"></script>
@@ -1136,33 +1025,6 @@
             return formatDateIso(d);
         }
 
-        function onSearchModeToggle(mode) {
-            const modeLive = document.getElementById('mode_live');
-            const modeHist = document.getElementById('mode_history');
-            const modeInput = document.getElementById('search_mode_hidden');
-            if (modeInput) modeInput.value = mode;
-
-            if (mode === 'history') {
-                if (modeHist) modeHist.checked = true;
-                const badge = document.getElementById('search-mode-badge-info');
-                if (badge) {
-                    badge.textContent = '📅 Queries search_history table (Fast DB Query)';
-                    badge.style.background = '#eff6ff';
-                    badge.style.color = '#1d4ed8';
-                    badge.style.borderColor = '#93c5fd';
-                }
-            } else {
-                if (modeLive) modeLive.checked = true;
-                const badge = document.getElementById('search-mode-badge-info');
-                if (badge) {
-                    badge.textContent = '⚡ Queries Gmail API live';
-                    badge.style.background = '#f0fdf4';
-                    badge.style.color = '#15803d';
-                    badge.style.borderColor = '#86efac';
-                }
-            }
-        }
-
         function setTimeWindow(win) {
             const twInput = document.getElementById('time_window');
             const dpInput = document.getElementById('date_preset');
@@ -1191,55 +1053,11 @@
             } else {
                 if (customPanel) customPanel.style.display = 'none';
             }
-
-            if (win !== 'any') {
-                onSearchModeToggle('history');
-            } else {
-                onSearchModeToggle('live');
-            }
-
             onTimeWindowSelected(win);
-            updateShowFilterHint();
         }
 
         function closeCustomPanel() {
             setTimeWindow('any');
-        }
-
-        function updateShowFilterHint() {
-            const hintElem = document.getElementById('show-filter-hint-label');
-            if (!hintElem) return;
-
-            const sm = document.getElementById('show_mode')?.value || 'all';
-            const tw = document.getElementById('time_window')?.value || 'any';
-            const dateFrom = document.getElementById('custom_date_from')?.value || '';
-            const dateTo = document.getElementById('custom_date_to')?.value || '';
-
-            let twText = 'at any time';
-            if (tw === 'today') twText = 'today';
-            else if (tw === 'yesterday') twText = 'yesterday';
-            else if (tw === '7d') twText = 'in the last 7 days';
-            else if (tw === '14d') twText = 'in the last 14 days';
-            else if (tw === '30d') twText = 'in the last 30 days';
-            else if (tw === 'custom' && dateFrom && dateTo) twText = `between ${dateFrom} and ${dateTo}`;
-            else if (tw === 'custom') twText = 'in custom date range';
-
-            if (sm === 'copied') {
-                hintElem.innerHTML = `💡 Candidates <strong>YOU COPIED</strong> ${twText}`;
-                hintElem.style.background = '#fef3c7';
-                hintElem.style.color = '#92400e';
-                hintElem.style.borderColor = '#fcd34d';
-            } else if (sm === 'not_copied') {
-                hintElem.innerHTML = `💡 Fresh resumes ${twText} you haven't contacted`;
-                hintElem.style.background = '#f0fdf4';
-                hintElem.style.color = '#15803d';
-                hintElem.style.borderColor = '#86efac';
-            } else {
-                hintElem.innerHTML = `💡 All matching resumes received ${twText}`;
-                hintElem.style.background = '#f0f9ff';
-                hintElem.style.color = '#0369a1';
-                hintElem.style.borderColor = '#bae6fd';
-            }
         }
 
         function setShowMode(mode) {
@@ -1256,7 +1074,6 @@
                     b.classList.remove('active');
                 }
             });
-            updateShowFilterHint();
         }
 
         function applyCustomPreset(preset) {
@@ -1498,6 +1315,54 @@
             if (refreshBtn) {
                 refreshBtn.addEventListener('click', refreshAllCounts);
             }
+
+                    if (searchForm) {
+                        searchForm.addEventListener('submit', function() {
+                            const submitBtn = searchForm.querySelector('button[type="submit"]');
+                            if (submitBtn) {
+                                submitBtn.disabled = true;
+                                submitBtn.style.opacity = '0.75';
+                                submitBtn.innerHTML = '⌛ Searching Mailbox & Extracting...';
+                            }
+                            const loadingBox = document.getElementById('loading-indicator');
+                            const progressFill = document.getElementById('progress-fill');
+                            const targetCount = document.getElementById('target-count');
+                            const foundRelevant = document.getElementById('found-relevant');
+                            const resumesExtracted = document.getElementById('resumes-extracted');
+                            const emailsScanned = document.getElementById('emails-scanned');
+                            const progressPct = document.getElementById('progress-pct');
+                            const progressEtaDiv = document.getElementById('progress-eta');
+                            const loadingMessage = document.getElementById('loading-message');
+                            const searchMeta = document.getElementById('pagination-meta');
+                            const searchId = searchMeta ? searchMeta.getAttribute('data-search-id') : '';
+
+                            if (loadingBox) loadingBox.style.display = 'block';
+
+                            if (searchId) {
+                                const pollInterval = setInterval(async () => {
+                                    try {
+                                        const res = await fetch(`/api/search/progress/${searchId}`).then(r => r.json());
+                                        if (res) {
+                                            const pct = res.percentage || 0;
+                                            if (progressFill) progressFill.style.width = pct + '%';
+                                            if (targetCount) targetCount.innerText = res.target || 25;
+                                            if (foundRelevant) foundRelevant.innerText = res.found_relevant || 0;
+                                            if (resumesExtracted) resumesExtracted.innerText = res.resumes_extracted || 0;
+                                            if (emailsScanned) emailsScanned.innerText = res.emails_scanned || 0;
+                                            if (progressPct) progressPct.innerText = pct;
+                                            if (progressEtaDiv) progressEtaDiv.innerHTML = `⏳ <span>${pct}</span>% · ~${res.eta_seconds || 0}s remaining`;
+                                            if (loadingMessage && res.message) loadingMessage.innerText = res.message;
+                                        }
+                                        if (res && res.status === 'done') {
+                                            clearInterval(pollInterval);
+                                        }
+                                    } catch (e) {
+                                        console.error('[progress] poll error:', e);
+                                    }
+                                }, 800);
+                            }
+                        });
+                    }
         });
 
         document.addEventListener('visibilitychange', () => {

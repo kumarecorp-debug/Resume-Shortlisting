@@ -71,7 +71,7 @@ def verify_ai_startup():
         logging.info("[startup] ✅ Groq AI ready (Primary Provider)")
     else:
         logging.warning("[startup] ⚠️ GROQ_API_KEY missing. Get one free at console.groq.com")
-        
+
     gemini_key = os.environ.get('GEMINI_API_KEY')
     if gemini_key:
         logging.info("[startup] ✅ Gemini API ready (Optional Fallback)")
@@ -338,7 +338,7 @@ def compute_date_display(preset, df_str, dt_str):
         pass
     return None
 
-def execute_full_candidate_search(job_query, selected_account, max_candidates=25, date_preset=None, date_from=None, date_to=None, include_excel=False, search_id=None):
+def execute_full_candidate_search(job_query, selected_account, max_candidates=25, date_preset=None, date_from=None, date_to=None, search_id=None):
     resume_folder = RS_Project.RESUME_FOLDER
     try:
         if not os.path.exists(resume_folder):
@@ -354,15 +354,12 @@ def execute_full_candidate_search(job_query, selected_account, max_candidates=25
         RS_Project.RESUME_FOLDER = resume_folder
         RS_Project.OUTPUT_CSV = os.path.join(resume_folder, "resume_analysis.csv")
 
-    scan_summary = {'pdf': 0, 'docx': 0, 'xlsx': 0, 'xls': 0, 'xlsx_candidates': 0}
+    scan_summary = {'pdf': 0, 'docx': 0}
 
-    stdout_buffer = StringIO()
-    stderr_buffer = StringIO()
-    with redirect_stdout(stdout_buffer), redirect_stderr(stderr_buffer):
-        try:
-            RS_Project.main(job_query, account_email=selected_account, max_candidates=max_candidates, date_preset=date_preset, date_from=date_from, date_to=date_to, include_excel=include_excel, search_id=search_id)
-        except Exception as e:
-            logging.error(f"Error in RS_Project.main: {e}")
+    try:
+        RS_Project.main(job_query, account_email=selected_account, max_candidates=max_candidates, date_preset=date_preset, date_from=date_from, date_to=date_to, search_id=search_id)
+    except Exception as e:
+        logging.error(f"Error in RS_Project.main: {e}")
 
     summary_file = os.path.join(RS_Project.RESUME_FOLDER, "scan_summary.json")
     if os.path.exists(summary_file):
@@ -529,8 +526,7 @@ def run_async_search(search_id, params):
             max_candidates=max_candidates,
             date_preset=date_preset,
             date_from=date_from,
-            date_to=date_to,
-            include_excel=False
+            date_to=date_to
         )
 
         all_records = df.fillna("N/A").to_dict(orient='records') if not df.empty else []
@@ -666,8 +662,7 @@ def _do_process(available_accounts, default_account, is_get_search):
     date_to = request.form.get('date_to') or request.args.get('date_to') or ''
     show_mode = request.form.get('show_mode') or request.args.get('show_mode') or 'all'
 
-    include_excel_val = request.form.get('include_excel') if request.method == 'POST' else request.args.get('include_excel')
-    include_excel = False if include_excel_val in ('0', 'false', 'False') else True
+
 
     if time_window == 'custom' and date_from and date_to:
         if date_from > date_to:
@@ -691,7 +686,6 @@ def _do_process(available_accounts, default_account, is_get_search):
             date_from=date_from,
             date_to=date_to,
             show_mode=show_mode,
-            include_excel=include_excel,
             scan_summary=None
         )
 
@@ -747,8 +741,7 @@ def _do_process(available_accounts, default_account, is_get_search):
             explanation='Candidates you copied in this window',
             date_display=date_display,
             resolved_gmail_query=f"DB copied_history: copied_at in window {time_window}",
-            include_excel=include_excel,
-            scan_summary={"pdf": 0, "docx": 0, "xlsx": 0, "xls": 0, "xlsx_candidates": 0, "source": "copied"}
+            scan_summary={"pdf": 0, "docx": 0, "source": "copied"}
         )
 
     # HISTORY SEARCH MODE: If user chose history OR if a Time Window filter is active (!= 'any')
@@ -768,7 +761,7 @@ def _do_process(available_accounts, default_account, is_get_search):
         db.cache_search_results(search_id, all_records)
         date_display = compute_date_display(time_window, date_from, date_to)
         search_source = "search_history"
-        scan_summary = {"pdf": 0, "docx": 0, "xlsx": 0, "xls": 0, "xlsx_candidates": 0, "source": "history"}
+        scan_summary = {"pdf": 0, "docx": 0, "source": "history"}
         resolved_gmail_query = f"DB search_history: searched_at >= {time_window}"
         logging.info(f"[search] mode={user_search_mode} show={show_mode} date_field=received_at range={date_from}..{date_to} mailbox={selected_account} jd={job_query} total={total_matches}")
 
@@ -796,7 +789,6 @@ def _do_process(available_accounts, default_account, is_get_search):
             search_source=search_source,
             date_display=date_display,
             resolved_gmail_query=resolved_gmail_query,
-            include_excel=include_excel,
             scan_summary=scan_summary
         )
 
@@ -808,7 +800,6 @@ def _do_process(available_accounts, default_account, is_get_search):
         date_preset=date_preset,
         date_from=date_from,
         date_to=date_to,
-        include_excel=include_excel,
         search_id=search_id
     )
     
@@ -838,7 +829,6 @@ def _do_process(available_accounts, default_account, is_get_search):
             search_source='gmail',
             date_display=date_display,
             resolved_gmail_query=resolved_gmail_query,
-            include_excel=include_excel,
             scan_summary=scan_summary
         )
 
@@ -948,7 +938,6 @@ def _do_process(available_accounts, default_account, is_get_search):
         show_mode=show_mode,
         date_display=date_display,
         resolved_gmail_query=resolved_gmail_query,
-        include_excel=include_excel,
         scan_summary=scan_summary
     )
 
@@ -1555,14 +1544,14 @@ def api_copied_history_export():
     
     for item in entries:
         row = [
-            f'"{str(item.get("id", "")).replace('"', '""')}"',
-            f'"{str(item.get("user_email", "")).replace('"', '""')}"',
-            f'"{str(item.get("mailbox_account", "")).replace('"', '""')}"',
-            f'"{str(item.get("candidate_name", "")).replace('"', '""')}"',
-            f'"{str(item.get("candidate_email", "")).replace('"', '""')}"',
-            f'"{str(item.get("candidate_phone", "")).replace('"', '""')}"',
-            f'"{str(item.get("job_description", "")).replace('"', '""')}"',
-            f'"{str(item.get("copied_at", "")).replace('"', '""')}"'
+            '"' + str(item.get("id", "")).replace('"', '""') + '"',
+            '"' + str(item.get("user_email", "")).replace('"', '""') + '"',
+            '"' + str(item.get("mailbox_account", "")).replace('"', '""') + '"',
+            '"' + str(item.get("candidate_name", "")).replace('"', '""') + '"',
+            '"' + str(item.get("candidate_email", "")).replace('"', '""') + '"',
+            '"' + str(item.get("candidate_phone", "")).replace('"', '""') + '"',
+            '"' + str(item.get("job_description", "")).replace('"', '""') + '"',
+            '"' + str(item.get("copied_at", "")).replace('"', '""') + '"'
         ]
         csv_lines.append(",".join(row))
         

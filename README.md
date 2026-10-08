@@ -67,4 +67,16 @@ Before using persistent status tracking or search history, run the SQL migration
    ```bash
    python app.py
    ```
+
+   **Running on Windows (Real-Time Unbuffered Terminal Logging)**:
+   ```powershell
+   python -u app.py
+   ```
+   The `-u` flag forces unbuffered output so search stage logs appear immediately in the terminal.
+
+   Watch logs live in a separate terminal:
+   ```powershell
+   Get-Content app.log -Wait -Tail 20
+   ```
+
    Open `http://127.0.0.1:5000` in your web browser.

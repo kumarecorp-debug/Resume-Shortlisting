@@ -73,6 +73,18 @@
             wrapper.appendChild(textarea);
         }
 
+        // Add Google Search Icon inside wrapper if not present
+        if (!wrapper.querySelector('.google-search-icon')) {
+            const iconSpan = document.createElement('span');
+            iconSpan.className = 'google-search-icon';
+            iconSpan.setAttribute('data-icon', 'search');
+            iconSpan.setAttribute('data-size', '18');
+            if (window.icon) {
+                iconSpan.innerHTML = window.icon('search', 18);
+            }
+            wrapper.insertBefore(iconSpan, textarea);
+        }
+
         // Create Autocomplete Suggestions Container if not exists
         if (!document.getElementById('search-suggestions-dropdown')) {
             const dropdown = document.createElement('div');
@@ -122,7 +134,7 @@
     }
 
     // ============================================================
-    // FEATURE C: Autocomplete Suggestions
+    // FEATURE C: Autocomplete Suggestions (Google Search UI/UX)
     // ============================================================
     async function fetchSuggestions(mailbox) {
         const now = Date.now();
@@ -150,23 +162,33 @@
         const selectAccount = document.getElementById('account_email');
         if (!textarea || !dropdown) return;
 
+        const wrapper = textarea.closest('.textarea-wrapper');
         const mailbox = selectAccount ? selectAccount.value : '';
         const items = await fetchSuggestions(mailbox);
         if (!items || items.length === 0) {
             dropdown.style.display = 'none';
+            if (wrapper) wrapper.classList.remove('dropdown-active');
             return;
         }
 
-        let html = '<div class="suggestions-header">📋 Recent searches</div>';
+        const clockSvg = window.icon ? window.icon('clock', 13) : '';
+        const historySvg = window.icon ? window.icon('history', 16) : `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/></svg>`;
+
+        let html = `<div class="suggestions-header">${clockSvg}<span>Recent searches</span></div>`;
         items.forEach((item, idx) => {
             const relTime = getRelativeTimeOrDate(item.last_searched_at);
+            const resCountStr = item.results_count !== undefined ? `${item.results_count} results` : '';
             const newBadge = item.new_count > 0 ? `<span class="suggest-new-badge">+${item.new_count}</span>` : '';
             html += `
                 <div class="suggestion-item" data-index="${idx}">
-                    <div class="suggest-jd">${escapeHtml(item.jd)}</div>
+                    <div class="suggest-left">
+                        <span class="suggest-icon">${historySvg}</span>
+                        <span class="suggest-jd">${escapeHtml(item.jd)}</span>
+                    </div>
                     <div class="suggest-meta">
-                        <span>· ${relTime}</span>
-                        <span>· ${item.results_count || 0} results</span>
+                        ${relTime ? `<span>${relTime}</span>` : ''}
+                        ${relTime && resCountStr ? `<span class="suggest-dot">•</span>` : ''}
+                        ${resCountStr ? `<span>${resCountStr}</span>` : ''}
                         ${newBadge}
                     </div>
                 </div>
@@ -174,13 +196,14 @@
         });
         dropdown.innerHTML = html;
         dropdown.style.display = 'block';
+        if (wrapper) wrapper.classList.add('dropdown-active');
 
         // Attach click handlers to items
         dropdown.querySelectorAll('.suggestion-item').forEach((row, i) => {
             row.addEventListener('click', () => {
                 const item = items[i];
                 textarea.value = item.jd;
-                dropdown.style.display = 'none';
+                hideSuggestions();
                 hidePopupA();
                 // Trigger search flow (with Feature B evaluation)
                 triggerSearchFlow();
@@ -191,6 +214,11 @@
     function hideSuggestions() {
         const dropdown = document.getElementById('search-suggestions-dropdown');
         if (dropdown) dropdown.style.display = 'none';
+        const textarea = document.getElementById('job_query');
+        if (textarea) {
+            const wrapper = textarea.closest('.textarea-wrapper');
+            if (wrapper) wrapper.classList.remove('dropdown-active');
+        }
     }
 
     // ============================================================
@@ -354,7 +382,8 @@
 
     function submitFormNormally() {
         const form = document.getElementById('search-form');
-        if (form) {
+        if (form && !window.__isFormSubmitting) {
+            window.__isFormSubmitting = true;
             pendingFormSubmit = true;
             form.submit();
         }
@@ -405,7 +434,10 @@
 
         if (form) {
             form.addEventListener('submit', function(e) {
-                if (pendingFormSubmit) return;
+                if (window.__isFormSubmitting || pendingFormSubmit) {
+                    if (!pendingFormSubmit) e.preventDefault();
+                    return;
+                }
                 e.preventDefault();
                 hideSuggestions();
                 hidePopupA();
