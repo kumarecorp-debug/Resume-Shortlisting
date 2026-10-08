@@ -878,10 +878,11 @@ def download_attachment_cached(service, message_id, attachment_id):
         return file_bytes
     return None
 
-def search_gmail_until_target(mailbox=None, jd=None, target_attachments=50, batch_size=50, max_emails=500, service=None, query=None, email_key=None, search_id=None):
+def search_gmail_until_target(mailbox=None, jd=None, target_attachments=50, batch_size=50, max_emails=500, service=None, query=None, email_key=None, search_id=None, exclude_copied_emails=None):
     """
     Fetch Gmail emails in batches until target_attachments resume files are downloaded.
     Deduplicates attachments by content hash and logs search progress.
+    Optionally skips messages matching exclude_copied_emails.
     """
     if email_key is None:
         email_key = mailbox if mailbox else "recruiter@ecorptrainings.com"
@@ -973,6 +974,12 @@ def search_gmail_until_target(mailbox=None, jd=None, target_attachments=50, batc
                 sender_header = next((h["value"] for h in headers if h["name"].lower() == "from"), "")
                 reply_to_header = next((h["value"] for h in headers if h["name"].lower() == "reply-to"), "")
                 internal_date_ms = full_msg.get("internalDate")
+
+                if exclude_copied_emails:
+                    header_emails = set(re.findall(r'[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}', f"{sender_header} {reply_to_header}".lower()))
+                    if header_emails and header_emails.issubset(exclude_copied_emails):
+                        logger.info(f"[search-SKIP] Skipping message {msg_id} (sender {header_emails} already in copied_history)")
+                        continue
 
                 attachments = []
                 def walk_parts(part_list):
@@ -1246,7 +1253,7 @@ def search_until_relevant(mailbox="recruiter@ecorptrainings.com", jd="", target_
     logger.info(f'[search-DONE] {meta}')
     return relevant, meta
 
-def main(job_query, account_email="recruiter@ecorptrainings.com", max_candidates=25, date_preset=None, date_from=None, date_to=None, search_id=None, fast_mode=False):
+def main(job_query, account_email="recruiter@ecorptrainings.com", max_candidates=25, date_preset=None, date_from=None, date_to=None, search_id=None, fast_mode=False, exclude_copied_emails=None):
     """
     Main entrypoint called from app.py or CLI.
     Fetches Gmail emails until max_candidates target attachments are downloaded.
@@ -1254,7 +1261,7 @@ def main(job_query, account_email="recruiter@ecorptrainings.com", max_candidates
     """
     acquired = _search_lock.acquire(blocking=True, timeout=120)
     try:
-        return _do_main(job_query, account_email=account_email, max_candidates=max_candidates, date_preset=date_preset, date_from=date_from, date_to=date_to, search_id=search_id, fast_mode=fast_mode)
+        return _do_main(job_query, account_email=account_email, max_candidates=max_candidates, date_preset=date_preset, date_from=date_from, date_to=date_to, search_id=search_id, fast_mode=fast_mode, exclude_copied_emails=exclude_copied_emails)
     finally:
         if acquired:
             try:
@@ -1262,7 +1269,7 @@ def main(job_query, account_email="recruiter@ecorptrainings.com", max_candidates
             except Exception:
                 pass
 
-def _do_main(job_query, account_email="recruiter@ecorptrainings.com", max_candidates=25, date_preset=None, date_from=None, date_to=None, search_id=None, fast_mode=False):
+def _do_main(job_query, account_email="recruiter@ecorptrainings.com", max_candidates=25, date_preset=None, date_from=None, date_to=None, search_id=None, fast_mode=False, exclude_copied_emails=None):
     if not job_query or not job_query.strip():
         print("Job Query / Job Description cannot be empty.")
         return
@@ -1320,8 +1327,9 @@ def _do_main(job_query, account_email="recruiter@ecorptrainings.com", max_candid
         email_key=email_key,
         target_attachments=target_candidates,
         batch_size=50,
-        max_emails=min(target_candidates * 5, MAX_EMAILS_TO_SCAN),
-        search_id=search_id
+        max_emails=min(target_candidates * 10, MAX_EMAILS_TO_SCAN) if exclude_copied_emails else min(target_candidates * 5, MAX_EMAILS_TO_SCAN),
+        search_id=search_id,
+        exclude_copied_emails=exclude_copied_emails
     )
 
     total_downloaded = len(downloaded_attachments)
@@ -1470,6 +1478,11 @@ def _do_main(job_query, account_email="recruiter@ecorptrainings.com", max_candid
                     continue
 
             dedup_key = candidate_data["Email"].lower()
+            if exclude_copied_emails and dedup_key in exclude_copied_emails:
+                logger.info(f"[search-EXCLUDE] Candidate {dedup_key} is in copied_history, skipping")
+                progress.increment()
+                continue
+
             if dedup_key not in seen_identifiers:
                 seen_identifiers.add(dedup_key)
                 all_candidates.append(candidate_data)

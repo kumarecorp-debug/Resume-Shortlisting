@@ -338,7 +338,7 @@ def compute_date_display(preset, df_str, dt_str):
         pass
     return None
 
-def execute_full_candidate_search(job_query, selected_account, max_candidates=25, date_preset=None, date_from=None, date_to=None, search_id=None):
+def execute_full_candidate_search(job_query, selected_account, max_candidates=25, date_preset=None, date_from=None, date_to=None, search_id=None, exclude_copied_emails=None):
     resume_folder = RS_Project.RESUME_FOLDER
     try:
         if not os.path.exists(resume_folder):
@@ -357,7 +357,7 @@ def execute_full_candidate_search(job_query, selected_account, max_candidates=25
     scan_summary = {'pdf': 0, 'docx': 0}
 
     try:
-        RS_Project.main(job_query, account_email=selected_account, max_candidates=max_candidates, date_preset=date_preset, date_from=date_from, date_to=date_to, search_id=search_id)
+        RS_Project.main(job_query, account_email=selected_account, max_candidates=max_candidates, date_preset=date_preset, date_from=date_from, date_to=date_to, search_id=search_id, exclude_copied_emails=exclude_copied_emails)
     except Exception as e:
         logging.error(f"Error in RS_Project.main: {e}")
 
@@ -515,10 +515,11 @@ def run_async_search(search_id, params):
         date_preset = params.get('date_preset', 'any')
         date_from = params.get('date_from', '')
         date_to = params.get('date_to', '')
-        fast_mode = params.get('fast_mode', False)
-
-        if fast_mode and max_candidates > 30:
-            max_candidates = 30
+        show_mode = params.get('show_mode', 'all')
+        copied_emails = None
+        if show_mode == 'not_copied' or params.get('exclude_copied'):
+            copied_emails = get_cached_copied_emails(selected_account)
+            logging.info(f"[search] Excluding {len(copied_emails)} copied emails from Gmail search for mailbox {selected_account}")
 
         df, scan_summary = execute_full_candidate_search(
             job_query,
@@ -527,7 +528,8 @@ def run_async_search(search_id, params):
             date_preset=date_preset,
             date_from=date_from,
             date_to=date_to,
-            search_id=search_id
+            search_id=search_id,
+            exclude_copied_emails=copied_emails
         )
 
         all_records = df.fillna("N/A").to_dict(orient='records') if not df.empty else []
