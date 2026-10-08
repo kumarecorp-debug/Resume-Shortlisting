@@ -271,8 +271,9 @@ def auto_authenticate_google(account_email="recruiter@ecorptrainings.com"):
                 client_file = fallback_client
 
     if not creds or not creds.valid:
-        if not os.path.exists(client_file):
-            raise FileNotFoundError(f"{client_fname} not found. Set {primary_env} in Vercel environment variables.")
+        is_cloud = bool(os.environ.get("RENDER") or os.environ.get("VERCEL") or os.environ.get("PORT"))
+        if is_cloud or not os.path.exists(client_file):
+            raise RuntimeError(f"Gmail token for '{email_key}' is missing or expired. Please set environment variable '{primary_env}' in your Render Dashboard Environment settings.")
         try:
             flow = InstalledAppFlow.from_client_secrets_file(client_file, SCOPES)
             try:
@@ -284,7 +285,7 @@ def auto_authenticate_google(account_email="recruiter@ecorptrainings.com"):
                 token.write(creds.to_json())
         except Exception as e:
             logger.error(f"Authentication failed for {email_key}: {e}")
-            raise
+            raise RuntimeError(f"Gmail authentication failed for '{email_key}': {e}. Please check environment variable '{primary_env}' on Render.")
 
     return build_gmail_service(creds)
 

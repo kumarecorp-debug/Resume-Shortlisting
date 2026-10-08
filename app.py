@@ -620,7 +620,28 @@ def process():
     is_get_search = request.method == 'GET' and (request.args.get('jd') or request.args.get('job_query'))
 
     if request.method == 'POST' or is_get_search:
-        return _do_process(available_accounts, default_account, is_get_search)
+        try:
+            return _do_process(available_accounts, default_account, is_get_search)
+        except Exception as e:
+            logging.error(f"Error in _do_process: {e}", exc_info=True)
+            flash(f"Search Error: {str(e)}", 'error')
+            return render_template(
+                'process.jinja',
+                job_query=request.form.get('job_query') or request.args.get('jd') or '',
+                job_role=None,
+                selected_account=default_account,
+                available_accounts=available_accounts,
+                table_data=[],
+                columns=[],
+                search_id=None,
+                total_matches=0,
+                page_size=25,
+                date_preset='any',
+                date_from='',
+                date_to='',
+                date_display=None,
+                scan_summary=None
+            )
 
     raw_acct = request.args.get('account_email') or request.args.get('mailbox') or session.get('selected_account') or default_account
     if isinstance(raw_acct, dict):
