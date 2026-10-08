@@ -774,6 +774,20 @@ def extract_candidate_entities_with_ai(resume_text, email_body, job_description,
 
     return candidate_data
 
+IS_RENDER = bool(os.environ.get("RENDER"))
+
+if IS_RENDER:
+    MAX_ATTACHMENTS_TO_DOWNLOAD = 50
+    ATTACHMENT_DOWNLOAD_DELAY = 0.3  # 300ms delay between download requests on Render
+    MAX_SEARCH_SECONDS = 480         # 8 minutes on Render (480s)
+    logger.warning("[startup] Running on Render — max search cap set to 8 minutes (480s)")
+else:
+    MAX_ATTACHMENTS_TO_DOWNLOAD = 200
+    ATTACHMENT_DOWNLOAD_DELAY = 0.1  # 100ms
+    MAX_SEARCH_SECONDS = 900         # 15 minutes locally (900s)
+
+_search_cancelled = {}
+
 class SearchProgress:
     def __init__(self, target, search_id=""):
         self.target = max(target, 1)
@@ -781,11 +795,13 @@ class SearchProgress:
         self.resumes_found = 0
         self.current = 0
         self.lock = threading.Lock()
-        self.status = "downloading"  # downloading | extracting | done | error
+        self.status = "downloading"  # downloading | extracting | scoring | done | error
+        self.stage = "downloading"
         self.search_id = search_id
         self.t_start = time.time()
+        self.message = ""
 
-    def set_stats(self, emails_scanned=None, resumes_found=None, status=None):
+    def set_stats(self, emails_scanned=None, resumes_found=None, status=None, stage=None, message=None):
         with self.lock:
             if emails_scanned is not None:
                 self.emails_scanned = emails_scanned
@@ -793,6 +809,10 @@ class SearchProgress:
                 self.resumes_found = resumes_found
             if status is not None:
                 self.status = status
+            if stage is not None:
+                self.stage = stage
+            if message is not None:
+                self.message = message
 
     def increment(self, step=1):
         with self.lock:
@@ -800,24 +820,41 @@ class SearchProgress:
             pct = int((self.current / self.target) * 100)
             logger.info(f"[search-PROGRESS] {self.current}/{self.target} ({pct}%)")
 
-    def done(self):
+    def done(self, message=""):
         with self.lock:
             self.current = self.target
             self.status = "done"
+            self.stage = "done"
+            if message:
+                self.message = message
+
+    @property
+    def elapsed_seconds(self):
+        return int(time.time() - self.t_start)
+
+    @property
+    def eta_seconds(self):
+        elapsed = self.elapsed_seconds
+        if self.status in ["done", "completed", "cancelled", "error"]:
+            return 0
+        if self.current > 0 and self.target > 0:
+            avg_sec = elapsed / self.current
+            rem_items = max(0, self.target - self.current)
+            return max(5, int(avg_sec * rem_items))
+        if self.resumes_found > 0 and self.target > 0:
+            avg_sec = elapsed / max(1, self.resumes_found)
+            rem_items = max(0, self.target - self.resumes_found)
+            return max(5, int(avg_sec * rem_items))
+        return max(5, MAX_SEARCH_SECONDS - elapsed)
 
 _searches = {}
 _attachment_cache = {}
 _search_cache = {}
 
 MAX_EMAILS_TO_SCAN = 500
-MAX_ATTACHMENTS_TO_DOWNLOAD = 200
-
-if os.environ.get("VERCEL"):
-    MAX_ATTACHMENTS_TO_DOWNLOAD = 50
 
 _search_lock = threading.Lock()
 _downloaded_messages = set()
-ATTACHMENT_DOWNLOAD_DELAY = 0.1  # 100ms delay between download requests (10/sec safe rate)
 
 def download_attachment_cached(service, message_id, attachment_id):
     cache_key = f"{message_id}:{attachment_id}"
@@ -868,8 +905,22 @@ def search_gmail_until_target(mailbox=None, jd=None, target_attachments=50, batc
     max_iterations = max(1, max_emails // batch_size)
 
     progress = _searches.get(search_id) if search_id and '_searches' in globals() else None
+    t_loop_start = time.time()
 
     while len(downloaded_files) < target_attachments and iteration < max_iterations:
+        elapsed_sec = time.time() - t_loop_start
+        if search_id and _search_cancelled.get(search_id):
+            logger.info(f"[search-CANCELLED] search_id={search_id} cancelled by user at {elapsed_sec:.1f}s")
+            if progress:
+                progress.set_stats(status="done", message="Search cancelled by user")
+            break
+
+        if elapsed_sec > MAX_SEARCH_SECONDS:
+            logger.warning(f"[search-TIMEOUT] search_id={search_id} reached {MAX_SEARCH_SECONDS}s limit. Returning {len(downloaded_files)} downloaded attachments.")
+            if progress:
+                progress.set_stats(message=f"⚠️ Reached {MAX_SEARCH_SECONDS // 60} min time limit. Processing partial results...")
+            break
+
         iteration += 1
         logger.info(
             f"[search-LOOP] iteration {iteration}: "
@@ -1301,8 +1352,21 @@ def _do_main(job_query, account_email="recruiter@ecorptrainings.com", max_candid
 
     BATCH_SIZE = getattr(ai_extractor, 'BATCH_SIZE', 5)
     total_batches = (len(items_to_extract) + BATCH_SIZE - 1) // BATCH_SIZE
+    is_cancelled = False
+    is_timed_out = False
 
     for batch_idx in range(total_batches):
+        elapsed_sec = time.time() - t_start
+        if search_id and _search_cancelled.get(search_id):
+            logger.info(f"[search-CANCELLED] batch {batch_idx+1}: search cancelled by user")
+            is_cancelled = True
+            break
+
+        if elapsed_sec > MAX_SEARCH_SECONDS:
+            logger.warning(f"[search-TIMEOUT] batch {batch_idx+1}: reached {MAX_SEARCH_SECONDS}s limit")
+            is_timed_out = True
+            break
+
         batch_items = items_to_extract[batch_idx * BATCH_SIZE : (batch_idx + 1) * BATCH_SIZE]
         batch_texts = []
 

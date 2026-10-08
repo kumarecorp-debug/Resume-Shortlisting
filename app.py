@@ -553,29 +553,48 @@ def run_async_search(search_id, params):
             "message": str(e)
         }
 
+_active_searches = {}
+_search_lock = threading.Lock()
+
 @app.route('/api/search/start', methods=['POST'])
 def api_search_start():
     params = request.get_json(force=True) or {}
-    search_id = str(uuid.uuid4())
-    t = threading.Thread(target=run_async_search, args=(search_id, params), daemon=True)
-    t.start()
-    return jsonify({"search_id": search_id})
+    search_id = params.get('search_id') or str(uuid.uuid4())
+    with _search_lock:
+        if search_id in _active_searches and _active_searches[search_id].is_alive():
+            logging.info(f"[search] Search thread already active for {search_id}")
+            return jsonify({"search_id": search_id, "status": "already_running"})
 
-_active_searches = {}
-_search_lock = threading.Lock()
+        t = threading.Thread(target=run_async_search, args=(search_id, params), daemon=True)
+        _active_searches[search_id] = t
+        t.start()
+    return jsonify({"search_id": search_id, "status": "started"})
+
+@app.route('/api/search/cancel/<search_id>', methods=['POST'])
+def api_search_cancel(search_id):
+    RS_Project._search_cancelled[search_id] = True
+    if search_id in RS_Project._searches:
+        RS_Project._searches[search_id].set_stats(status="cancelled", message="Search cancelled by user")
+    logging.info(f"[search-CANCEL] Cancellation requested for search_id={search_id}")
+    return jsonify({'ok': True, 'message': 'Search cancellation requested'})
 
 @app.route('/api/search/progress/<search_id>')
 def api_search_progress(search_id):
     async_prog = _search_progress_store.get(search_id)
-    if async_prog and async_prog.get("status") in ["error", "done"]:
+    if async_prog and async_prog.get("status") in ["error", "done", "cancelled"]:
         return jsonify({
             "status": async_prog.get("status"),
+            "stage": async_prog.get("stage", "done"),
+            "current": async_prog.get("current", 0),
+            "total": async_prog.get("total", 25),
+            "found": async_prog.get("current", 0),
+            "elapsed_seconds": async_prog.get("elapsed_seconds", 0),
+            "eta_seconds": 0,
             "target": async_prog.get("total", 25),
             "found_relevant": async_prog.get("current", 0),
             "resumes_extracted": async_prog.get("current", 0),
             "emails_scanned": async_prog.get("current", 0),
             "percentage": 100 if async_prog.get("status") == "done" else 0,
-            "eta_seconds": 0,
             "message": async_prog.get("message", "Search complete")
         })
 
@@ -585,42 +604,52 @@ def api_search_progress(search_id):
         resumes_found = getattr(prog, 'resumes_found', getattr(prog, 'current', 0))
         resumes_extracted = getattr(prog, 'current', 0)
         emails_scanned = getattr(prog, 'emails_scanned', 0)
+        status = getattr(prog, 'status', 'downloading')
+        stage = getattr(prog, 'stage', 'downloading')
+        elapsed = getattr(prog, 'elapsed_seconds', 0)
+        eta = getattr(prog, 'eta_seconds', 0)
+
         pct = int((resumes_extracted / target) * 100) if target > 0 else (int((resumes_found / target) * 50) if target > 0 else 0)
         custom_msg = getattr(prog, 'message', '')
         
-        if prog.status == "downloading":
-            rem_sec = max(5, int((target - max(resumes_found, 1)) * 1.5))
+        if status == "downloading":
             msg = custom_msg or f"Scanning Gmail & downloading attachments ({resumes_found}/{target} found, {emails_scanned} scanned)..."
-        elif prog.status == "extracting":
-            remaining_items = max(0, target - resumes_extracted)
-            rem_sec = max(5, int(remaining_items * 1.5))
-            msg = custom_msg or f"Found {resumes_found} relevant resumes, extracting details..."
-        elif prog.status == "error":
-            rem_sec = 0
-            msg = custom_msg or "Search encountered an error"
+        elif status == "extracting":
+            msg = custom_msg or f"Found {resumes_found} relevant resumes, extracting details... {resumes_extracted}/{target} ({pct}%)"
+        elif status in ["error", "cancelled"]:
+            msg = custom_msg or f"Search {status}"
         else:
-            rem_sec = 0
-            msg = "Search complete"
+            msg = custom_msg or "Search complete"
 
         return jsonify({
-            "status": prog.status,
+            "status": status,
+            "stage": stage,
+            "current": resumes_extracted,
+            "total": target,
+            "found": resumes_found,
+            "elapsed_seconds": elapsed,
+            "eta_seconds": eta,
             "target": target,
             "found_relevant": resumes_found,
             "resumes_extracted": resumes_extracted,
             "emails_scanned": emails_scanned,
             "percentage": min(pct, 100),
-            "eta_seconds": rem_sec,
             "message": msg
         })
 
     return jsonify({
         "status": "not_found",
+        "stage": "initializing",
+        "current": 0,
+        "total": 25,
+        "found": 0,
+        "elapsed_seconds": 0,
+        "eta_seconds": 0,
         "target": 25,
         "found_relevant": 0,
         "resumes_extracted": 0,
         "emails_scanned": 0,
         "percentage": 0,
-        "eta_seconds": 0,
         "message": "Connecting to Gmail..."
     })
 

@@ -649,7 +649,12 @@
                     📄 Extracted: <strong id="resumes-extracted">0</strong> resumes &nbsp;·&nbsp; 
                     📧 Scanned: <strong id="emails-scanned">0</strong> emails
                 </div>
-                <div id="progress-eta" style="color: #64748b; font-size: 0.84rem; font-weight: 600; margin-top: 4px;">⏳ <span id="progress-pct">0</span>% · ~0s remaining</div>
+                <div id="progress-eta" style="color: #64748b; font-size: 0.84rem; font-weight: 600; margin-top: 4px;">⏳ <span id="progress-pct">0</span>% · Elapsed: <strong>0s</strong> · Est. remaining: <strong>~0s</strong></div>
+                <div style="margin-top: 12px;">
+                    <button type="button" id="btn-cancel-search" onclick="cancelCurrentSearch()" style="background: #ef4444; color: #ffffff; border: none; padding: 6px 16px; border-radius: 6px; font-weight: 600; font-size: 0.84rem; cursor: pointer; transition: background 0.2s ease;">
+                        🛑 Cancel Search
+                    </button>
+                </div>
             </div>
         </div>
 
@@ -1317,6 +1322,24 @@
                 refreshBtn.addEventListener('click', refreshAllCounts);
             }
 
+            window.cancelCurrentSearch = async function() {
+                const searchMeta = document.getElementById('pagination-meta');
+                const searchId = searchMeta ? searchMeta.getAttribute('data-search-id') : '';
+                if (!searchId) return;
+
+                const cancelBtn = document.getElementById('btn-cancel-search');
+                if (cancelBtn) {
+                    cancelBtn.disabled = true;
+                    cancelBtn.innerText = '⌛ Cancelling...';
+                }
+
+                try {
+                    await fetch(`/api/search/cancel/${searchId}`, { method: 'POST' });
+                } catch(e) {
+                    console.error('[cancel] error:', e);
+                }
+            };
+
             function setupSearchProgressPolling() {
                 const searchMeta = document.getElementById('pagination-meta');
                 const searchId = searchMeta ? searchMeta.getAttribute('data-search-id') : '';
@@ -1369,7 +1392,15 @@
                                 if (resumesExtracted) resumesExtracted.innerText = res.resumes_extracted || 0;
                                 if (emailsScanned) emailsScanned.innerText = res.emails_scanned || 0;
                                 if (progressPct) progressPct.innerText = pct;
-                                if (progressEtaDiv) progressEtaDiv.innerHTML = `⏳ <span>${pct}</span>% · ~${res.eta_seconds || 0}s remaining`;
+                                const elapsedSec = res.elapsed_seconds || 0;
+                                const etaSec = res.eta_seconds || 0;
+                                const elapsedMin = Math.floor(elapsedSec / 60);
+                                const elapsedSecRem = elapsedSec % 60;
+                                const elapsedStr = elapsedMin > 0 ? `${elapsedMin}m ${elapsedSecRem}s` : `${elapsedSecRem}s`;
+                                const etaMin = Math.floor(etaSec / 60);
+                                const etaSecRem = etaSec % 60;
+                                const etaStr = etaMin > 0 ? `${etaMin}m ${etaSecRem}s` : `${etaSecRem}s`;
+                                if (progressEtaDiv) progressEtaDiv.innerHTML = `⏳ <span>${pct}</span>% · Elapsed: <strong>${elapsedStr}</strong> · Est. remaining: <strong>${etaStr}</strong>`;
                                 if (loadingMessage && res.message) loadingMessage.innerText = res.message;
                             }
                             if (res && res.status === 'done') {
@@ -1385,7 +1416,7 @@
                         } catch (e) {
                             console.error('[progress] poll error:', e);
                         }
-                    }, 800);
+                    }, 5000);
                 }
             }
 
