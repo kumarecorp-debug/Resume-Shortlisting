@@ -1335,10 +1335,33 @@
 
                     if (loadingBox) loadingBox.style.display = 'block';
 
+                    let notFoundCount = 0;
+
                     const pollInterval = setInterval(async () => {
                         try {
                             const res = await fetch(`/api/search/progress/${searchId}`).then(r => r.json());
                             if (res) {
+                                if (res.status === 'not_found') {
+                                    notFoundCount++;
+                                    if (notFoundCount > 15) {
+                                        // Check result endpoint directly
+                                        const resCheck = await fetch(`/api/search/result/${searchId}`).then(r => r.json());
+                                        if (resCheck && resCheck.status === 'done') {
+                                            clearInterval(pollInterval);
+                                            const jq = encodeURIComponent(searchMeta.getAttribute('data-job-query') || '');
+                                            const mb = encodeURIComponent(searchMeta.getAttribute('data-mailbox') || '');
+                                            window.location.href = `/process?search_id=${searchId}&jd=${jq}&account_email=${mb}&search_mode=live`;
+                                            return;
+                                        } else if (resCheck && resCheck.status === 'error') {
+                                            clearInterval(pollInterval);
+                                            if (loadingMessage) loadingMessage.innerText = `⚠️ Search Notice: ${resCheck.error || 'Search failed'}`;
+                                            return;
+                                        }
+                                    }
+                                } else {
+                                    notFoundCount = 0;
+                                }
+
                                 const pct = res.percentage || 0;
                                 if (progressFill) progressFill.style.width = pct + '%';
                                 if (targetCount) targetCount.innerText = res.target || 25;

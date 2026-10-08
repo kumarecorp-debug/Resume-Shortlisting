@@ -566,21 +566,38 @@ _search_lock = threading.Lock()
 
 @app.route('/api/search/progress/<search_id>')
 def api_search_progress(search_id):
+    async_prog = _search_progress_store.get(search_id)
+    if async_prog and async_prog.get("status") in ["error", "done"]:
+        return jsonify({
+            "status": async_prog.get("status"),
+            "target": async_prog.get("total", 25),
+            "found_relevant": async_prog.get("current", 0),
+            "resumes_extracted": async_prog.get("current", 0),
+            "emails_scanned": async_prog.get("current", 0),
+            "percentage": 100 if async_prog.get("status") == "done" else 0,
+            "eta_seconds": 0,
+            "message": async_prog.get("message", "Search complete")
+        })
+
     if search_id in RS_Project._searches:
         prog = RS_Project._searches[search_id]
         target = max(prog.target, 1)
-        found_relevant = getattr(prog, 'current', 0)
+        resumes_found = getattr(prog, 'resumes_found', getattr(prog, 'current', 0))
         resumes_extracted = getattr(prog, 'current', 0)
         emails_scanned = getattr(prog, 'emails_scanned', 0)
-        pct = int((resumes_extracted / target) * 100) if target > 0 else 0
+        pct = int((resumes_extracted / target) * 100) if target > 0 else (int((resumes_found / target) * 50) if target > 0 else 0)
+        custom_msg = getattr(prog, 'message', '')
         
         if prog.status == "downloading":
-            rem_sec = max(10, int((target - max(prog.resumes_found, 1)) * 1.5))
-            msg = f"Downloading attachments ({prog.resumes_found}/{target} found)"
+            rem_sec = max(5, int((target - max(resumes_found, 1)) * 1.5))
+            msg = custom_msg or f"Scanning Gmail & downloading attachments ({resumes_found}/{target} found, {emails_scanned} scanned)..."
         elif prog.status == "extracting":
             remaining_items = max(0, target - resumes_extracted)
             rem_sec = max(5, int(remaining_items * 1.5))
-            msg = f"Found {found_relevant} relevant (still searching...)"
+            msg = custom_msg or f"Found {resumes_found} relevant resumes, extracting details..."
+        elif prog.status == "error":
+            rem_sec = 0
+            msg = custom_msg or "Search encountered an error"
         else:
             rem_sec = 0
             msg = "Search complete"
@@ -588,13 +605,14 @@ def api_search_progress(search_id):
         return jsonify({
             "status": prog.status,
             "target": target,
-            "found_relevant": found_relevant,
+            "found_relevant": resumes_found,
             "resumes_extracted": resumes_extracted,
             "emails_scanned": emails_scanned,
             "percentage": min(pct, 100),
             "eta_seconds": rem_sec,
             "message": msg
         })
+
     return jsonify({
         "status": "not_found",
         "target": 25,
@@ -603,7 +621,7 @@ def api_search_progress(search_id):
         "emails_scanned": 0,
         "percentage": 0,
         "eta_seconds": 0,
-        "message": "Search initializing..."
+        "message": "Connecting to Gmail..."
     })
 
 @app.route('/api/search/result/<search_id>')

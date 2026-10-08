@@ -1239,20 +1239,26 @@ def _do_main(job_query, account_email="recruiter@ecorptrainings.com", max_candid
 
     if not search_id:
         search_id = str(uuid.uuid4())
-    logger.info(f"[search-NEW] search_id={search_id} jd={job_query}")
-    logger.info(f"[search-ENTRY] mailbox={email_key} jd={job_query} target={target_candidates} timestamp={time.time()}")
-    if email_key == 'recruiter@ecorptrainings.com' and job_query.lower() == 'java':
-        logger.info(f"[search-VERIFY] this is a fresh search for java")
-
-    t_start = time.time()
-    service = auto_authenticate_google(email_key)
-    
-    logger.info(f"[search-STEP] building Gmail query")
-    search_query = build_gmail_search_query(job_query, date_preset=date_preset, date_from=date_from, date_to=date_to)
-    logger.info(f"[search-STEP] query={search_query}")
-
+        
     progress = SearchProgress(target=target_candidates, search_id=search_id)
     _searches[search_id] = progress
+    progress.set_stats(status="downloading")
+
+    try:
+        logger.info(f"[search-NEW] search_id={search_id} jd={job_query}")
+        logger.info(f"[search-ENTRY] mailbox={email_key} jd={job_query} target={target_candidates} timestamp={time.time()}")
+
+        t_start = time.time()
+        service = auto_authenticate_google(email_key)
+        
+        logger.info(f"[search-STEP] building Gmail query")
+        search_query = build_gmail_search_query(job_query, date_preset=date_preset, date_from=date_from, date_to=date_to)
+        logger.info(f"[search-STEP] query={search_query}")
+    except Exception as e_init:
+        logger.error(f"[search-INIT-ERROR] {e_init}")
+        progress.set_stats(status="error")
+        progress.message = str(e_init)
+        raise e_init
 
     logger.info(f"[search-STEP] calling search_gmail_until_target")
     downloaded_attachments = search_gmail_until_target(
