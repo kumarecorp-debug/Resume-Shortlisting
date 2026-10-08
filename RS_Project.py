@@ -977,7 +977,7 @@ def search_gmail_until_target(mailbox=None, jd=None, target_attachments=50, batc
 
                 if exclude_copied_emails:
                     header_emails = set(re.findall(r'[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}', f"{sender_header} {reply_to_header}".lower()))
-                    if header_emails and header_emails.issubset(exclude_copied_emails):
+                    if header_emails and header_emails.intersection(exclude_copied_emails):
                         logger.info(f"[search-SKIP] Skipping message {msg_id} (sender {header_emails} already in copied_history)")
                         continue
 

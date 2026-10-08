@@ -517,7 +517,7 @@ def run_async_search(search_id, params):
         date_to = params.get('date_to', '')
         show_mode = params.get('show_mode', 'all')
         copied_emails = None
-        if show_mode == 'not_copied' or params.get('exclude_copied'):
+        if show_mode != 'copied':
             copied_emails = get_cached_copied_emails(selected_account)
             logging.info(f"[search] Excluding {len(copied_emails)} copied emails from Gmail search for mailbox {selected_account}")
 
@@ -882,6 +882,7 @@ def _do_process(available_accounts, default_account, is_get_search):
             'date_preset': time_window,
             'date_from': date_from,
             'date_to': date_to,
+            'show_mode': show_mode,
             'user_email': session.get('user', {}).get('email') if isinstance(session.get('user'), dict) else selected_account
         }
         t = threading.Thread(target=run_async_search, args=(search_id, params), daemon=True)
