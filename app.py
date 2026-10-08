@@ -526,7 +526,8 @@ def run_async_search(search_id, params):
             max_candidates=max_candidates,
             date_preset=date_preset,
             date_from=date_from,
-            date_to=date_to
+            date_to=date_to,
+            search_id=search_id
         )
 
         all_records = df.fillna("N/A").to_dict(orient='records') if not df.empty else []
@@ -813,16 +814,57 @@ def _do_process(available_accounts, default_account, is_get_search):
             scan_summary=scan_summary
         )
 
-    # LIVE GMAIL SEARCH MODE: Query Gmail API live
-    df, scan_summary = execute_full_candidate_search(
-        job_query, 
-        selected_account, 
-        max_candidates=max_candidates,
-        date_preset=date_preset,
-        date_from=date_from,
-        date_to=date_to,
-        search_id=search_id
-    )
+    # LIVE GMAIL SEARCH MODE: Check for completed async search or launch background search thread
+    req_search_id = request.args.get('search_id') or request.form.get('search_id')
+    
+    if req_search_id and req_search_id in _search_result_store:
+        cached_res = _search_result_store[req_search_id]
+        all_cands = cached_res.get('candidates', [])
+        scan_summary = cached_res.get('scan_summary', {"pdf": 0, "docx": 0})
+        df = pd.DataFrame(all_cands) if all_cands else pd.DataFrame()
+        search_id = req_search_id
+    else:
+        # Start async background search & immediately return page with live progress bar (< 50ms) to prevent Render proxy timeouts
+        search_id = str(uuid.uuid4())
+        params = {
+            'job_query': job_query,
+            'selected_account': selected_account,
+            'max_candidates': max_candidates,
+            'date_preset': time_window,
+            'date_from': date_from,
+            'date_to': date_to,
+            'user_email': session.get('user', {}).get('email') if isinstance(session.get('user'), dict) else selected_account
+        }
+        t = threading.Thread(target=run_async_search, args=(search_id, params), daemon=True)
+        t.start()
+
+        date_display = compute_date_display(time_window, date_from, date_to)
+        resolved_gmail_query = gmail_search.build_gmail_search_query(job_query, date_preset=time_window, date_from=date_from, date_to=date_to)
+
+        return render_template(
+            'process.jinja',
+            job_query=job_query,
+            job_role=job_query,
+            selected_account=selected_account,
+            available_accounts=available_accounts,
+            table_data=[],
+            columns=["Rank", "Name", "Gender", "Email", "Phone", "Experience", "Skill Set", "Matched Skills", "Match Score", "Match Reason"],
+            search_id=search_id,
+            is_async_searching=True,
+            total_matches=0,
+            max_candidates=max_candidates,
+            min_exp=min_exp,
+            time_window=time_window,
+            date_preset=date_preset,
+            date_from=date_from,
+            date_to=date_to,
+            show_mode=show_mode,
+            search_mode='live',
+            search_source='gmail',
+            date_display=date_display,
+            resolved_gmail_query=resolved_gmail_query,
+            scan_summary=None
+        )
     
     date_display = compute_date_display(time_window, date_from, date_to)
     resolved_gmail_query = gmail_search.build_gmail_search_query(job_query, date_preset=time_window, date_from=date_from, date_to=date_to)

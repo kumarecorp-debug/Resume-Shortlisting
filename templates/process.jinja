@@ -634,9 +634,9 @@
                 </div>
             </form>
 
-            <div id="loading-indicator" class="loader-box" style="display: none; background: #ffffff; border: 1.5px solid #cbd5e1; border-radius: 12px; padding: 24px; box-shadow: 0 4px 12px rgba(0,0,0,0.06); margin-top: 20px;">
+            <div id="loading-indicator" class="loader-box" style="{% if is_async_searching %}display: block;{% else %}display: none;{% endif %} background: #ffffff; border: 1.5px solid #cbd5e1; border-radius: 12px; padding: 24px; box-shadow: 0 4px 12px rgba(0,0,0,0.06); margin-top: 20px;">
                 <div class="spinner"></div>
-                <h4 id="loading-message" style="margin: 0; color: #1e293b; font-size: 1.1rem; font-weight: 700;">🔍 Searching Gmail...</h4>
+                <h4 id="loading-message" style="margin: 0; color: #1e293b; font-size: 1.1rem; font-weight: 700;">🔍 Searching Gmail & Extracting Resumes...</h4>
                 
                 <!-- Real-time Progress Bar -->
                 <div style="width: 100%; max-width: 480px; height: 10px; background: #e2e8f0; border-radius: 6px; overflow: hidden; margin: 14px auto 8px auto;">
@@ -653,8 +653,9 @@
             </div>
         </div>
 
+        <div id="pagination-meta" data-search-id="{{ search_id or '' }}" data-job-query="{{ job_query or '' }}" data-mailbox="{{ selected_account or '' }}" data-total="{{ total_matches or (table_data|length if table_data else 0) }}" data-offset="{{ table_data|length if table_data else 0 }}" data-limit="{{ page_size or 25 }}" data-min-exp="{{ min_exp if min_exp is not none else '' }}" data-hidden-exp="{{ hidden_by_experience or 0 }}" data-is-async="{{ 'true' if is_async_searching else 'false' }}"></div>
+
         {% if table_data is not none and table_data|length > 0 %}
-            <div id="pagination-meta" data-search-id="{{ search_id or '' }}" data-job-query="{{ job_query or '' }}" data-mailbox="{{ selected_account or '' }}" data-total="{{ total_matches or table_data|length }}" data-offset="{{ table_data|length }}" data-limit="{{ page_size or 25 }}" data-min-exp="{{ min_exp if min_exp is not none else '' }}" data-hidden-exp="{{ hidden_by_experience or 0 }}"></div>
 
             {% if scan_summary %}
                 <div style="background: #f0f9ff; border: 1px solid #bae6fd; color: #0369a1; padding: 10px 16px; border-radius: 8px; font-size: 0.9rem; font-weight: 600; margin-bottom: 14px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px;">
@@ -1316,53 +1317,69 @@
                 refreshBtn.addEventListener('click', refreshAllCounts);
             }
 
-                    if (searchForm) {
-                        searchForm.addEventListener('submit', function() {
-                            const submitBtn = searchForm.querySelector('button[type="submit"]');
-                            if (submitBtn) {
-                                submitBtn.disabled = true;
-                                submitBtn.style.opacity = '0.75';
-                                submitBtn.innerHTML = '⌛ Searching Mailbox & Extracting...';
-                            }
-                            const loadingBox = document.getElementById('loading-indicator');
-                            const progressFill = document.getElementById('progress-fill');
-                            const targetCount = document.getElementById('target-count');
-                            const foundRelevant = document.getElementById('found-relevant');
-                            const resumesExtracted = document.getElementById('resumes-extracted');
-                            const emailsScanned = document.getElementById('emails-scanned');
-                            const progressPct = document.getElementById('progress-pct');
-                            const progressEtaDiv = document.getElementById('progress-eta');
-                            const loadingMessage = document.getElementById('loading-message');
-                            const searchMeta = document.getElementById('pagination-meta');
-                            const searchId = searchMeta ? searchMeta.getAttribute('data-search-id') : '';
+            function setupSearchProgressPolling() {
+                const searchMeta = document.getElementById('pagination-meta');
+                const searchId = searchMeta ? searchMeta.getAttribute('data-search-id') : '';
+                const isAsync = searchMeta ? (searchMeta.getAttribute('data-is-async') === 'true') : false;
 
-                            if (loadingBox) loadingBox.style.display = 'block';
+                if (searchId && (isAsync || document.getElementById('loading-indicator')?.style.display !== 'none')) {
+                    const loadingBox = document.getElementById('loading-indicator');
+                    const progressFill = document.getElementById('progress-fill');
+                    const targetCount = document.getElementById('target-count');
+                    const foundRelevant = document.getElementById('found-relevant');
+                    const resumesExtracted = document.getElementById('resumes-extracted');
+                    const emailsScanned = document.getElementById('emails-scanned');
+                    const progressPct = document.getElementById('progress-pct');
+                    const progressEtaDiv = document.getElementById('progress-eta');
+                    const loadingMessage = document.getElementById('loading-message');
 
-                            if (searchId) {
-                                const pollInterval = setInterval(async () => {
-                                    try {
-                                        const res = await fetch(`/api/search/progress/${searchId}`).then(r => r.json());
-                                        if (res) {
-                                            const pct = res.percentage || 0;
-                                            if (progressFill) progressFill.style.width = pct + '%';
-                                            if (targetCount) targetCount.innerText = res.target || 25;
-                                            if (foundRelevant) foundRelevant.innerText = res.found_relevant || 0;
-                                            if (resumesExtracted) resumesExtracted.innerText = res.resumes_extracted || 0;
-                                            if (emailsScanned) emailsScanned.innerText = res.emails_scanned || 0;
-                                            if (progressPct) progressPct.innerText = pct;
-                                            if (progressEtaDiv) progressEtaDiv.innerHTML = `⏳ <span>${pct}</span>% · ~${res.eta_seconds || 0}s remaining`;
-                                            if (loadingMessage && res.message) loadingMessage.innerText = res.message;
-                                        }
-                                        if (res && res.status === 'done') {
-                                            clearInterval(pollInterval);
-                                        }
-                                    } catch (e) {
-                                        console.error('[progress] poll error:', e);
-                                    }
-                                }, 800);
+                    if (loadingBox) loadingBox.style.display = 'block';
+
+                    const pollInterval = setInterval(async () => {
+                        try {
+                            const res = await fetch(`/api/search/progress/${searchId}`).then(r => r.json());
+                            if (res) {
+                                const pct = res.percentage || 0;
+                                if (progressFill) progressFill.style.width = pct + '%';
+                                if (targetCount) targetCount.innerText = res.target || 25;
+                                if (foundRelevant) foundRelevant.innerText = res.found_relevant || 0;
+                                if (resumesExtracted) resumesExtracted.innerText = res.resumes_extracted || 0;
+                                if (emailsScanned) emailsScanned.innerText = res.emails_scanned || 0;
+                                if (progressPct) progressPct.innerText = pct;
+                                if (progressEtaDiv) progressEtaDiv.innerHTML = `⏳ <span>${pct}</span>% · ~${res.eta_seconds || 0}s remaining`;
+                                if (loadingMessage && res.message) loadingMessage.innerText = res.message;
                             }
-                        });
+                            if (res && res.status === 'done') {
+                                clearInterval(pollInterval);
+                                if (loadingMessage) loadingMessage.innerText = "✅ Search complete! Loading candidate table...";
+                                const jq = encodeURIComponent(searchMeta.getAttribute('data-job-query') || '');
+                                const mb = encodeURIComponent(searchMeta.getAttribute('data-mailbox') || '');
+                                window.location.href = `/process?search_id=${searchId}&jd=${jq}&account_email=${mb}&search_mode=live`;
+                            } else if (res && res.status === 'error') {
+                                clearInterval(pollInterval);
+                                if (loadingMessage) loadingMessage.innerText = `⚠️ Search Notice: ${res.message || 'Error occurred'}`;
+                            }
+                        } catch (e) {
+                            console.error('[progress] poll error:', e);
+                        }
+                    }, 800);
+                }
+            }
+
+            setupSearchProgressPolling();
+
+            if (searchForm) {
+                searchForm.addEventListener('submit', function() {
+                    const submitBtn = searchForm.querySelector('button[type="submit"]');
+                    if (submitBtn) {
+                        submitBtn.disabled = true;
+                        submitBtn.style.opacity = '0.75';
+                        submitBtn.innerHTML = '⌛ Searching Mailbox & Extracting...';
                     }
+                    const loadingBox = document.getElementById('loading-indicator');
+                    if (loadingBox) loadingBox.style.display = 'block';
+                });
+            }
         });
 
         document.addEventListener('visibilitychange', () => {
