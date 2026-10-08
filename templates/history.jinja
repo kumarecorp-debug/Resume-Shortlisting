@@ -3,182 +3,50 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Search History - AI Resume Shortlisting</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='index.css') }}">
-    <style>
-        html, body {
-            margin: 0;
-            padding: 0;
-            min-height: 100vh;
-            display: flex;
-            flex-direction: column;
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background-color: #f8fafc;
-        }
-        .container {
-            flex: 1;
-            max-width: 1350px;
-            margin: 0 auto;
-            padding: 20px;
-            width: 96%;
-        }
-        .card {
-            background: #ffffff;
-            border-radius: 12px;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.06);
-            padding: 28px;
-            margin-bottom: 24px;
-        }
-        .btn-primary {
-            background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
-            color: #ffffff;
-            font-size: 0.9rem;
-            font-weight: 600;
-            padding: 8px 16px;
-            border: none;
-            border-radius: 6px;
-            cursor: pointer;
-            text-decoration: none;
-            display: inline-flex;
-            align-items: center;
-            gap: 6px;
-            transition: all 0.2s;
-        }
-        .btn-primary:hover {
-            transform: translateY(-1px);
-            box-shadow: 0 4px 12px rgba(37,99,235,0.25);
-        }
-        .btn-secondary {
-            background: #f1f5f9;
-            color: #334155;
-            border: 1px solid #cbd5e1;
-            padding: 8px 14px;
-            border-radius: 6px;
-            font-size: 0.88rem;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.15s;
-        }
-        .btn-secondary:hover {
-            background: #e2e8f0;
-            color: #0f172a;
-        }
-        .filter-bar {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            gap: 12px;
-            flex-wrap: wrap;
-            background: #f1f5f9;
-            padding: 16px 20px;
-            border-radius: 10px;
-            border: 1.5px solid #cbd5e1;
-            margin-bottom: 20px;
-        }
-        .filter-group {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            flex-wrap: wrap;
-        }
-        .filter-input {
-            padding: 8px 12px;
-            border: 1.5px solid #cbd5e1;
-            border-radius: 6px;
-            font-size: 0.9rem;
-            outline: none;
-        }
-        .filter-input:focus {
-            border-color: #2563eb;
-        }
-        .table-wrapper {
-            max-height: 600px;
-            overflow-y: auto;
-            overflow-x: auto;
-            border-radius: 8px;
-            border: 1px solid #e2e8f0;
-        }
-        .history-table {
-            width: 100%;
-            border-collapse: collapse;
-            font-size: 0.92rem;
-            background: #ffffff;
-        }
-        .history-table th {
-            position: sticky;
-            top: 0;
-            z-index: 10;
-            background-color: #1e293b;
-            color: #ffffff;
-            text-align: left;
-            padding: 12px 14px;
-            font-weight: 600;
-            font-size: 0.9rem;
-        }
-        .history-table td {
-            padding: 12px 14px;
-            border-bottom: 1px solid #f1f5f9;
-            color: #334155;
-            vertical-align: middle;
-        }
-        .history-table tr:hover {
-            background-color: #f8fafc;
-        }
-        .badge-count {
-            background: #dcfce7;
-            color: #15803d;
-            font-weight: 700;
-            padding: 4px 10px;
-            border-radius: 12px;
-            font-size: 0.84rem;
-        }
-        .modal-overlay {
-            position: fixed;
-            top: 0; left: 0; right: 0; bottom: 0;
-            background: rgba(15,23,42,0.6);
-            display: none;
-            align-items: center;
-            justify-content: center;
-            z-index: 1000;
-        }
-        .modal-content {
-            background: #ffffff;
-            border-radius: 12px;
-            max-width: 700px;
-            width: 90%;
-            max-height: 80vh;
-            overflow-y: auto;
-            padding: 24px;
-            box-shadow: 0 10px 25px rgba(0,0,0,0.2);
-        }
-    </style>
+    <title>Search History — ResuMatch</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
 </head>
 <body>
-    <header style="text-align: center; padding: 24px 0 10px 0; position: relative;">
-        <div style="position: absolute; left: 24px; top: 20px;">
-            <a href="{{ url_for('process') }}" class="btn-secondary">
-                ← Back to Search
+    <nav class="navbar">
+        <div style="display: flex; align-items: center; gap: 12px;">
+            <a href="{{ url_for('process') }}" class="nav-btn" style="height: 32px; padding: 0 10px;">
+                <span data-icon="chevron-right" data-size="14" style="transform: rotate(180deg);"></span> Back
+            </a>
+            <a href="{{ url_for('process') }}" class="nav-brand">
+                <span class="nav-brand-logo" data-icon="target" data-size="18"></span>
+                <span>ResuMatch</span>
             </a>
         </div>
-        <div style="position: absolute; right: 24px; top: 20px; display: flex; align-items: center; gap: 10px;">
-            <span style="font-size: 0.88rem; color: #475569; background: #e2e8f0; padding: 6px 12px; border-radius: 20px; font-weight: 500;">
-                👤 {{ session['user']['email'] if session.get('user') else 'Authenticated User' }}
-            </span>
-            <a href="{{ url_for('logout') }}" style="background: #dc2626; color: white; padding: 6px 14px; border-radius: 6px; text-decoration: none; font-size: 0.88rem; font-weight: 600;">
-                Sign Out 🚪
+        <div class="nav-right">
+            <div class="user-menu-btn">
+                <span data-icon="user" data-size="14"></span>
+                <span>{{ session['user']['email'] if session.get('user') else 'Authenticated User' }}</span>
+            </div>
+            <a href="{{ url_for('logout') }}" class="nav-btn" style="background: rgba(239, 68, 68, 0.15); border-color: rgba(239, 68, 68, 0.25); color: #ef4444;">
+                <span data-icon="logout" data-size="14"></span> Sign Out
             </a>
         </div>
-        <h1 style="margin: 0; color: #0f172a;">Search History Log</h1>
-        <p style="color: #64748b; margin-top: 6px;">View, filter, and re-run past resume searches executed over the last 30 days</p>
-    </header>
+    </nav>
 
     <div class="container">
+        <div class="card" style="margin-bottom: 12px; padding: 14px 20px;">
+            <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px;">
+                <div>
+                    <h2 style="margin: 0; font-size: 16px; font-weight: 600; color: var(--text-primary); display: flex; align-items: center; gap: 8px;">
+                        <span data-icon="history" data-size="18"></span> Search History Log
+                    </h2>
+                    <p style="color: var(--text-secondary); margin: 2px 0 0 0; font-size: 12px;">View, filter, and re-run past searches executed over the last 30 days</p>
+                </div>
+            </div>
+        </div>
+
         <div class="card">
             <form method="GET" action="{{ url_for('search_history_page') }}" id="history-filter-form">
-                <div class="filter-bar">
-                    <div class="filter-group">
-                        <label for="account_email" style="font-weight: 700; color: #0f172a; font-size: 0.92rem;">📬 Mailbox:</label>
-                        <select name="account_email" id="account_email" class="filter-input" onchange="this.form.submit()">
+                <div class="form-row" style="margin-bottom: 12px; gap: 10px;">
+                    <div class="form-field-inline">
+                        <label for="account_email" class="field-label-sm"><span data-icon="mail" data-size="14"></span> Mailbox:</label>
+                        <select name="account_email" id="account_email" class="form-select-sm" onchange="this.form.submit()">
                             <option value="">All Mailboxes</option>
                             {% for acct in available_accounts %}
                                 <option value="{{ acct.email }}" {% if selected_account == acct.email %}selected{% endif %}>
@@ -186,36 +54,41 @@
                                 </option>
                             {% endfor %}
                         </select>
-
-                        <label for="from" style="font-weight: 700; color: #0f172a; font-size: 0.92rem; margin-left: 10px;">📅 From:</label>
-                        <input type="date" name="from" id="from" class="filter-input" value="{{ from_date }}">
-
-                        <label for="to" style="font-weight: 700; color: #0f172a; font-size: 0.92rem;">To:</label>
-                        <input type="date" name="to" id="to" class="filter-input" value="{{ to_date }}">
-
-                        <label for="search_text" style="font-weight: 700; color: #0f172a; font-size: 0.92rem; margin-left: 10px;">🔍 Search Query / Skill:</label>
-                        <input type="text" id="search_text" class="filter-input" placeholder="Type JD skill (e.g. Python, D365)..." oninput="filterHistoryTable()" style="width: 220px;">
-
-                        <button type="submit" class="btn-primary">Filter Date Range 🔍</button>
                     </div>
 
-                    <div class="filter-group">
-                        <span style="font-weight: 600; color: #64748b; font-size: 0.88rem;">Quick Filters:</span>
-                        <button type="button" class="btn-secondary" onclick="setQuickDays(7)">Last 7 Days</button>
-                        <button type="button" class="btn-secondary" onclick="setQuickDays(30)">Last 30 Days</button>
-                        <a href="{{ url_for('search_history_page') }}" class="btn-secondary">Reset All</a>
+                    <div class="form-field-inline">
+                        <label for="from" class="field-label-sm"><span data-icon="calendar" data-size="14"></span> From:</label>
+                        <input type="date" name="from" id="from" class="form-input-sm" value="{{ from_date }}">
+                        <label for="to" class="field-label-sm">To:</label>
+                        <input type="date" name="to" id="to" class="form-input-sm" value="{{ to_date }}">
                     </div>
+
+                    <div class="form-field-inline">
+                        <label for="search_text" class="field-label-sm"><span data-icon="search" data-size="14"></span> Filter:</label>
+                        <input type="text" id="search_text" class="form-input-sm" placeholder="Type JD keyword..." oninput="filterHistoryTable()" style="width: 180px;">
+                    </div>
+
+                    <button type="submit" class="btn-primary-lg" style="height: 36px; padding: 0 14px; font-size: 13px;">
+                        <span data-icon="filter" data-size="14"></span> Apply Filter
+                    </button>
+                </div>
+
+                <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 8px;">
+                    <span class="field-label-sm">Quick:</span>
+                    <button type="button" class="btn-secondary" style="height: 28px; padding: 0 10px; font-size: 12px;" onclick="setQuickDays(7)">Last 7 Days</button>
+                    <button type="button" class="btn-secondary" style="height: 28px; padding: 0 10px; font-size: 12px;" onclick="setQuickDays(30)">Last 30 Days</button>
+                    <a href="{{ url_for('search_history_page') }}" class="btn-secondary" style="height: 28px; padding: 0 10px; font-size: 12px; text-decoration: none;">Reset All</a>
                 </div>
             </form>
 
-            <div class="table-wrapper">
-                <table class="history-table">
+            <div class="table-wrapper" style="margin-top: 12px;">
+                <table class="results-table">
                     <thead>
                         <tr>
                             <th>Date & Time</th>
                             <th>Mailbox Account</th>
                             <th>Job Query / Description</th>
-                            <th style="text-align: center;">Batch Size</th>
+                            <th style="text-align: center;">Batch Limit</th>
                             <th style="text-align: center;">Candidates Found</th>
                             <th style="text-align: center;">Actions</th>
                         </tr>
@@ -224,33 +97,33 @@
                         {% if history_records and history_records|length > 0 %}
                             {% for rec in history_records %}
                                 <tr class="history-row" data-jd="{{ rec['job_description']|lower }}">
-                                    <td style="white-space: nowrap; font-weight: 600; color: #1e293b;">
+                                    <td style="white-space: nowrap; font-weight: 500; color: var(--text-primary);">
                                         {{ rec['formatted_time'] if rec.get('formatted_time') else rec['searched_at'][:16].replace('T', ' ') }}
                                     </td>
-                                    <td style="white-space: nowrap; font-weight: 500; color: #2563eb;">
+                                    <td style="white-space: nowrap; font-weight: 500; color: var(--accent);">
                                         {{ rec['mailbox_account'] }}
                                     </td>
-                                    <td style="max-width: 380px; word-break: break-word; font-size: 0.9rem;">
+                                    <td style="max-width: 360px; word-break: break-word;">
                                         <strong>{{ rec['job_description'][:100] }}</strong>{% if rec['job_description']|length > 100 %}...{% endif %}
                                     </td>
-                                    <td style="text-align: center; font-weight: 600;">
+                                    <td style="text-align: center; font-weight: 500;">
                                         {{ rec['batch_size'] }}
                                     </td>
                                     <td style="text-align: center;">
-                                        <span class="badge-count">{{ rec['results_count'] }} Candidates</span>
+                                        <span class="tag-score tag-score-high">{{ rec['results_count'] }} Candidates</span>
                                     </td>
                                     <td style="text-align: center; white-space: nowrap;">
-                                        <div style="display: flex; gap: 8px; justify-content: center;">
+                                        <div style="display: flex; gap: 6px; justify-content: center;">
                                             <form method="POST" action="{{ url_for('process') }}" style="display: inline;">
                                                 <input type="hidden" name="account_email" value="{{ rec['mailbox_account'] }}">
                                                 <input type="hidden" name="job_query" value="{{ rec['job_description'] }}">
                                                 <input type="hidden" name="max_candidates" value="{{ rec['batch_size'] }}">
-                                                <button type="submit" class="btn-primary" style="padding: 6px 12px; font-size: 0.82rem;">
-                                                    🔄 Re-run
+                                                <button type="submit" class="btn-primary-lg" style="height: 28px; padding: 0 10px; font-size: 12px;">
+                                                    <span data-icon="refresh-cw" data-size="12"></span> Re-run
                                                 </button>
                                             </form>
-                                            <button type="button" class="btn-secondary" style="padding: 6px 12px; font-size: 0.82rem;" onclick="viewHistoryItem('{{ rec['id'] }}')">
-                                                👁️ Details
+                                            <button type="button" class="btn-secondary" style="height: 28px; padding: 0 10px; font-size: 12px;" onclick="viewHistoryItem('{{ rec['id'] }}')">
+                                                <span data-icon="file-text" data-size="12"></span> Details
                                             </button>
                                         </div>
                                     </td>
@@ -258,7 +131,7 @@
                             {% endfor %}
                         {% else %}
                             <tr>
-                                <td colspan="6" style="text-align: center; padding: 40px; color: #64748b;">
+                                <td colspan="6" style="text-align: center; padding: 32px; color: var(--text-muted);">
                                     No search history records found for the selected filter date range.
                                 </td>
                             </tr>
@@ -270,21 +143,22 @@
     </div>
 
     <!-- Modal for Search History Details -->
-    <div id="details-modal" class="modal-overlay">
-        <div class="modal-content">
-            <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1.5px solid #e2e8f0; padding-bottom: 12px; margin-bottom: 16px;">
-                <h3 style="margin: 0; color: #0f172a;" id="modal-title">Search Details</h3>
-                <button type="button" onclick="closeModal()" style="background: none; border: none; font-size: 1.4rem; cursor: pointer;">✕</button>
+    <div id="details-modal" class="panel-overlay">
+        <div class="card" style="width: 100%; max-width: 520px; max-height: 80vh; overflow-y: auto; padding: 20px; border-radius: var(--radius-lg); margin: auto;">
+            <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border); padding-bottom: 10px; margin-bottom: 14px;">
+                <h3 style="margin: 0; font-size: 15px; font-weight: 600; color: var(--text-primary);" id="modal-title">Search Details</h3>
+                <button type="button" onclick="closeModal()" class="btn-ghost-icon"><span data-icon="x" data-size="16"></span></button>
             </div>
-            <div id="modal-body">
-                <p style="color: #64748b;">Loading candidate details...</p>
+            <div id="modal-body" style="font-size: 13px;">
+                <p style="color: var(--text-secondary);">Loading candidate details...</p>
             </div>
-            <div style="text-align: right; margin-top: 20px; border-top: 1px solid #e2e8f0; padding-top: 12px;">
-                <button type="button" class="btn-secondary" onclick="closeModal()">Close</button>
+            <div style="text-align: right; margin-top: 16px; border-top: 1px solid var(--border); padding-top: 10px;">
+                <button type="button" class="btn-primary-lg" style="height: 32px; padding: 0 14px; font-size: 13px;" onclick="closeModal()">Close</button>
             </div>
         </div>
     </div>
 
+    <script src="{{ url_for('static', filename='icons/icons.js') }}"></script>
     <script>
         function filterHistoryTable() {
             const query = (document.getElementById('search_text')?.value || '').toLowerCase().trim();
@@ -316,7 +190,8 @@
             const modal = document.getElementById('details-modal');
             const body = document.getElementById('modal-body');
             modal.style.display = 'flex';
-            body.innerHTML = '<p style="color: #64748b;">Fetching details...</p>';
+            modal.classList.add('active');
+            body.innerHTML = '<p style="color: var(--text-secondary);">Fetching details...</p>';
 
             fetch('/api/history/' + id)
                 .then(res => res.json())
@@ -325,7 +200,7 @@
                         const data = res.data;
                         let candHtml = '';
                         if (data.candidates_seen && data.candidates_seen.length > 0) {
-                            candHtml = '<ul style="padding-left: 20px; line-height: 1.6;">';
+                            candHtml = '<ul style="padding-left: 20px; line-height: 1.5; max-height: 220px; overflow-y: auto;">';
                             data.candidates_seen.forEach(c => {
                                 let cName = 'Candidate';
                                 let cEmail = 'N/A';
@@ -336,32 +211,34 @@
                                     cName = c.Name || c.name || (c.Email || c.email ? (c.Email || c.email).split('@')[0] : 'Candidate');
                                     cEmail = c.Email || c.email || 'N/A';
                                 }
-                                candHtml += `<li><strong>${cName}</strong> (${cEmail})</li>`;
+                                candHtml += `<li><strong style="color: var(--text-primary);">${cName}</strong> <span style="color: var(--text-secondary);">(${cEmail})</span></li>`;
                             });
                             candHtml += '</ul>';
                         } else {
-                            candHtml = '<p style="color: #94a3b8;">No candidate list cached for this search.</p>';
+                            candHtml = '<p style="color: var(--text-muted);">No candidate list cached for this search.</p>';
                         }
 
                         body.innerHTML = `
-                            <p><strong>Mailbox:</strong> ${data.mailbox_account}</p>
-                            <p><strong>Date & Time:</strong> ${data.searched_at}</p>
-                            <p><strong>Job Description:</strong> ${data.job_description}</p>
-                            <p><strong>Batch Limit:</strong> ${data.batch_size} | <strong>Found:</strong> ${data.results_count}</p>
-                            <h4 style="margin-top: 16px; color: #1e293b;">Candidates Returned (${data.results_count}):</h4>
+                            <p style="margin: 4px 0;"><strong>Mailbox:</strong> <span style="color: var(--accent);">${data.mailbox_account}</span></p>
+                            <p style="margin: 4px 0;"><strong>Date & Time:</strong> ${data.searched_at}</p>
+                            <p style="margin: 4px 0;"><strong>Job Description:</strong> "${data.job_description}"</p>
+                            <p style="margin: 4px 0;"><strong>Batch Limit:</strong> ${data.batch_size} &nbsp;·&nbsp; <strong>Found:</strong> ${data.results_count}</p>
+                            <h4 style="margin-top: 14px; margin-bottom: 6px; color: var(--text-primary); font-size: 13px;">Candidates Returned (${data.results_count}):</h4>
                             ${candHtml}
                         `;
                     } else {
-                        body.innerHTML = '<p style="color: #ef4444;">Failed to load search details.</p>';
+                        body.innerHTML = '<p style="color: var(--danger);">Failed to load search details.</p>';
                     }
                 })
                 .catch(err => {
-                    body.innerHTML = '<p style="color: #ef4444;">Error: ' + err + '</p>';
+                    body.innerHTML = '<p style="color: var(--danger);">Error: ' + err + '</p>';
                 });
         }
 
         function closeModal() {
-            document.getElementById('details-modal').style.display = 'none';
+            const modal = document.getElementById('details-modal');
+            modal.style.display = 'none';
+            modal.classList.remove('active');
         }
     </script>
 </body>
