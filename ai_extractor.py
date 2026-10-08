@@ -21,17 +21,31 @@ except ImportError:
     HAS_GEMINI = False
 
 # Gemini Models configuration
-GEMINI_PRIMARY_MODEL = os.getenv('GEMINI_PRIMARY_MODEL', 'gemini-3.5-flash')
-GEMINI_FALLBACK_1 = os.getenv('GEMINI_FALLBACK_MODEL_1', 'gemini-3.7-flash')
-GEMINI_FALLBACK_2 = os.getenv('GEMINI_FALLBACK_MODEL_2', 'gemini-flash-latest')
-GEMINI_FALLBACK_3 = os.getenv('GEMINI_FALLBACK_MODEL_3', 'gemini-3.5-flash-lite')
+VALID_GEMINI_MODELS = [
+    'gemini-2.5-flash',
+    'gemini-2.0-flash',
+    'gemini-1.5-flash',
+    'gemini-1.5-pro',
+    'gemini-2.5-pro',
+    'gemini-flash-latest'
+]
 
-GEMINI_MODELS = [
+GEMINI_PRIMARY_MODEL = os.getenv('GEMINI_PRIMARY_MODEL', 'gemini-2.5-flash')
+GEMINI_FALLBACK_1 = os.getenv('GEMINI_FALLBACK_MODEL_1', 'gemini-2.0-flash')
+GEMINI_FALLBACK_2 = os.getenv('GEMINI_FALLBACK_MODEL_2', 'gemini-1.5-flash')
+GEMINI_FALLBACK_3 = os.getenv('GEMINI_FALLBACK_MODEL_3', 'gemini-flash-latest')
+
+raw_gemini_models = [
     GEMINI_PRIMARY_MODEL,
     GEMINI_FALLBACK_1,
     GEMINI_FALLBACK_2,
     GEMINI_FALLBACK_3
 ]
+
+GEMINI_MODELS = [m for m in raw_gemini_models if m in VALID_GEMINI_MODELS]
+for default_m in ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-flash-latest']:
+    if default_m not in GEMINI_MODELS:
+        GEMINI_MODELS.append(default_m)
 
 # Configurable Parameters & Batch Sizes
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "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")
@@ -46,11 +60,12 @@ if HAS_GEMINI and gemini_key_check:
 else:
     BATCH_SIZE = BATCH_SIZE_GROQ
 
-# Verified Groq Preferred Models list (FIX 2)
+# Verified Groq Preferred Models list
 PREFERRED_GROQ_MODELS = [
-    'qwen/qwen3.8-27b',
-    'openai/gpt-oss-120b',
-    'openai/gpt-oss-20b',
+    'llama-3.3-70b-versatile',
+    'llama-3.1-8b-instant',
+    'mixtral-8x7b-32768',
+    'gemma2-9b-it'
 ]
 
 groq_client = None
