@@ -718,8 +718,6 @@ def process():
 def _do_process(available_accounts, default_account, is_get_search):
     import uuid
     job_query = (request.form.get('job_query') or request.args.get('jd') or request.args.get('job_query') or '').strip()
-    search_id = str(uuid.uuid4())
-    logging.info(f"[search-NEW] search_id={search_id} jd={job_query}")
     raw_acct = request.form.get('account_email') or request.form.get('mailbox') or request.args.get('account_email') or request.args.get('mailbox') or session.get('selected_account') or default_account
     if isinstance(raw_acct, dict):
         selected_account = raw_acct.get('email', default_account)
@@ -875,6 +873,7 @@ def _do_process(available_accounts, default_account, is_get_search):
     else:
         # Start async background search & immediately return page with live progress bar (< 50ms) to prevent Render proxy timeouts
         search_id = str(uuid.uuid4())
+        logging.info(f"[search-NEW] search_id={search_id} jd={job_query}")
         params = {
             'job_query': job_query,
             'selected_account': selected_account,

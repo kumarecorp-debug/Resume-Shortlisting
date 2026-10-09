@@ -13,26 +13,34 @@ load_dotenv()
 
 logger = logging.getLogger(__name__)
 
-# Try Gemini SDK import
+# Try new Google GenAI SDK first, fall back to legacy
+try:
+    from google import genai as new_genai
+    HAS_NEW_GENAI = True
+except ImportError:
+    HAS_NEW_GENAI = False
+
 try:
     import google.generativeai as genai
     HAS_GEMINI = True
 except ImportError:
     HAS_GEMINI = False
+    genai = None
 
-# Gemini Models configuration
+# Gemini Models configuration — updated for 2026 model availability
 VALID_GEMINI_MODELS = [
+    'gemini-3.8-flash',
+    'gemini-3.5-flash-lite',
     'gemini-2.5-flash',
     'gemini-2.0-flash',
     'gemini-1.5-flash',
     'gemini-1.5-pro',
-    'gemini-2.5-pro',
     'gemini-flash-latest'
 ]
 
-GEMINI_PRIMARY_MODEL = os.getenv('GEMINI_PRIMARY_MODEL', 'gemini-2.5-flash')
-GEMINI_FALLBACK_1 = os.getenv('GEMINI_FALLBACK_MODEL_1', 'gemini-2.0-flash')
-GEMINI_FALLBACK_2 = os.getenv('GEMINI_FALLBACK_MODEL_2', 'gemini-1.5-flash')
+GEMINI_PRIMARY_MODEL = os.getenv('GEMINI_PRIMARY_MODEL', 'gemini-3.8-flash')
+GEMINI_FALLBACK_1 = os.getenv('GEMINI_FALLBACK_MODEL_1', 'gemini-3.5-flash-lite')
+GEMINI_FALLBACK_2 = os.getenv('GEMINI_FALLBACK_MODEL_2', 'gemini-2.5-flash')
 GEMINI_FALLBACK_3 = os.getenv('GEMINI_FALLBACK_MODEL_3', 'gemini-flash-latest')
 
 raw_gemini_models = [
@@ -43,7 +51,7 @@ raw_gemini_models = [
 ]
 
 GEMINI_MODELS = [m for m in raw_gemini_models if m in VALID_GEMINI_MODELS]
-for default_m in ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-flash-latest']:
+for default_m in ['gemini-3.8-flash', 'gemini-3.5-flash-lite', 'gemini-2.5-flash', 'gemini-flash-latest']:
     if default_m not in GEMINI_MODELS:
         GEMINI_MODELS.append(default_m)
 
@@ -60,12 +68,16 @@ if HAS_GEMINI and gemini_key_check:
 else:
     BATCH_SIZE = BATCH_SIZE_GROQ
 
-# Verified Groq Preferred Models list
+# Groq Preferred Models — updated for 2026 (Qwen available on free tier)
+# Llama 3.x moved to enterprise-only; mixtral/gemma2 decommissioned
 PREFERRED_GROQ_MODELS = [
+    'qwen/qwen3.6-27b',
+    'qwen/qwen3.8-27b',
+    'openai/gpt-oss-20b',
+    'openai/gpt-oss-120b',
+    'meta-llama/llama-4-scout-17b-16e-instruct',
     'llama-3.3-70b-versatile',
     'llama-3.1-8b-instant',
-    'mixtral-8x7b-32768',
-    'gemma2-9b-it'
 ]
 
 groq_client = None
@@ -174,26 +186,50 @@ def get_batch_cache_key(resume_texts, jd):
 
 def call_gemini_with_fallback(prompt, status_callback=None):
     gemini_key = os.getenv("GEMINI_API_KEY", "").strip()
-    if not gemini_key or not HAS_GEMINI:
-        raise Exception("Gemini API key missing or SDK not available")
+    if not gemini_key:
+        raise Exception("Gemini API key missing")
+    if not HAS_NEW_GENAI and not HAS_GEMINI:
+        raise Exception("No Gemini SDK available")
 
-    genai.configure(api_key=gemini_key, transport='rest')
     last_error = None
 
     for model_name in GEMINI_MODELS:
         for attempt in range(2):
             try:
-                def _gen():
-                    model = genai.GenerativeModel(model_name)
-                    return model.generate_content(
-                        prompt,
-                        generation_config={"response_mime_type": "application/json"}
-                    )
+                # Prefer new SDK (google-genai)
+                if HAS_NEW_GENAI:
+                    def _gen(mn=model_name, key=gemini_key):
+                        client = new_genai.Client(api_key=key)
+                        response = client.models.generate_content(
+                            model=mn,
+                            contents=prompt,
+                            config=new_genai.types.GenerateContentConfig(
+                                response_mime_type='application/json'
+                            )
+                        )
+                        return response
+                else:
+                    genai.configure(api_key=gemini_key, transport='rest')
+                    def _gen(mn=model_name):
+                        model = genai.GenerativeModel(mn)
+                        return model.generate_content(
+                            prompt,
+                            generation_config={"response_mime_type": "application/json"}
+                        )
 
                 res = call_with_timeout(_gen, timeout_sec=60)
-                if res and res.text:
+                # Handle both SDK response formats
+                text = None
+                if hasattr(res, 'text') and res.text:
+                    text = res.text
+                elif hasattr(res, 'candidates') and res.candidates:
+                    try:
+                        text = res.candidates[0].content.parts[0].text
+                    except Exception:
+                        pass
+                if text:
                     logger.info(f'[gemini] succeeded via {model_name}')
-                    return res.text, model_name
+                    return text, model_name
             except Exception as e:
                 err_str = str(e).lower()
                 last_error = e
@@ -203,9 +239,14 @@ def call_gemini_with_fallback(prompt, status_callback=None):
                     break
 
                 if '429' in err_str or 'resourceexhausted' in err_str or 'quota' in err_str or 'rate' in err_str:
+                    # Extract retry delay
                     retry_after = 5
                     if hasattr(e, 'retry_delay') and hasattr(e.retry_delay, 'seconds'):
                         retry_after = e.retry_delay.seconds
+                    # If retry delay is huge (quota exhausted for the day), skip this model entirely
+                    if retry_after > 120:
+                        logger.warning(f"[gemini] model {model_name} daily quota exhausted (retry in {retry_after}s), skipping")
+                        break
                     logger.warning(f"[gemini] rate limited, waiting {retry_after}s for {model_name}")
                     if status_callback:
                         status_callback({'waiting': True, 'wait_seconds': retry_after + 2, 'waiting_message': f'Gemini rate limit — waiting {retry_after+2}s'})
@@ -225,18 +266,28 @@ def call_groq_with_fallback(messages, max_tokens=1500, timeout_sec=30, status_ca
     models_to_try = get_active_groq_models()
     last_error = None
 
+    # Models that support json_object response format
+    JSON_OBJECT_MODELS = {
+        'llama-3.3-70b-versatile', 'llama-3.1-8b-instant',
+        'mixtral-8x7b-32768', 'gemma2-9b-it'
+    }
+
     for model in models_to_try:
         for attempt in range(2):
             try:
                 _groq_limiter.acquire(status_callback=status_callback)
-                def _api_call(mod=model):
-                    return client.chat.completions.create(
-                        model=mod,
-                        messages=messages,
-                        temperature=0,
-                        response_format={'type': 'json_object'},
-                        max_tokens=max_tokens
-                    )
+                # Only use json_object mode for models that support it
+                use_json_format = model in JSON_OBJECT_MODELS
+                def _api_call(mod=model, use_json=use_json_format):
+                    kwargs = {
+                        'model': mod,
+                        'messages': messages,
+                        'temperature': 0,
+                        'max_tokens': max_tokens
+                    }
+                    if use_json:
+                        kwargs['response_format'] = {'type': 'json_object'}
+                    return client.chat.completions.create(**kwargs)
 
                 response = call_with_timeout(_api_call, timeout_sec=timeout_sec)
                 logger.info(f'[groq] succeeded via {model}')
@@ -346,10 +397,16 @@ def extract_batch(resume_texts, jd, status_callback=None):
     # 2. Try Gemini as OPTIONAL FALLBACK if Groq returned no candidates or failed
     if not raw_candidates:
         gemini_key = os.getenv("GEMINI_API_KEY", "").strip()
-        if HAS_GEMINI and gemini_key:
+        if gemini_key and (HAS_NEW_GENAI or HAS_GEMINI):
             try:
                 text_resp, used_model = call_gemini_with_fallback(prompt, status_callback=status_callback)
-                data = json.loads(text_resp)
+                # Strip markdown code fences if present
+                text_clean = text_resp.strip()
+                if text_clean.startswith('```'):
+                    import re as _re
+                    text_clean = _re.sub(r'^```[a-z]*\n?', '', text_clean)
+                    text_clean = _re.sub(r'\n?```$', '', text_clean).strip()
+                data = json.loads(text_clean)
                 raw_candidates = data.get('c', []) or data.get('candidates', [])
                 used_provider = f"gemini ({used_model})"
             except Exception as e_gemini:
