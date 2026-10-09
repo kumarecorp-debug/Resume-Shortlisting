@@ -584,7 +584,7 @@ def api_search_cancel(search_id):
 def api_search_progress(search_id):
     async_prog = _search_progress_store.get(search_id)
     if async_prog and async_prog.get("status") in ["error", "done", "cancelled"]:
-        return jsonify({
+        data = {
             "status": async_prog.get("status"),
             "stage": async_prog.get("stage", "done"),
             "current": async_prog.get("current", 0),
@@ -598,7 +598,9 @@ def api_search_progress(search_id):
             "emails_scanned": async_prog.get("current", 0),
             "percentage": 100 if async_prog.get("status") == "done" else 0,
             "message": async_prog.get("message", "Search complete")
-        })
+        }
+        logging.info(f"[progress-API] id={search_id} status={data.get('status')} progress={data.get('percentage')}")
+        return jsonify(data)
 
     if search_id in RS_Project._searches:
         prog = RS_Project._searches[search_id]
@@ -623,7 +625,7 @@ def api_search_progress(search_id):
         else:
             msg = custom_msg or "Search complete"
 
-        return jsonify({
+        data = {
             "status": status,
             "stage": stage,
             "current": resumes_extracted,
@@ -635,11 +637,13 @@ def api_search_progress(search_id):
             "found_relevant": resumes_found,
             "resumes_extracted": resumes_extracted,
             "emails_scanned": emails_scanned,
-            "percentage": min(pct, 100),
+            "percentage": 100 if status == "done" else min(pct, 100),
             "message": msg
-        })
+        }
+        logging.info(f"[progress-API] id={search_id} status={data.get('status')} progress={data.get('percentage')}")
+        return jsonify(data)
 
-    return jsonify({
+    data = {
         "status": "not_found",
         "stage": "initializing",
         "current": 0,
@@ -653,7 +657,9 @@ def api_search_progress(search_id):
         "emails_scanned": 0,
         "percentage": 0,
         "message": "Connecting to Gmail..."
-    })
+    }
+    logging.info(f"[progress-API] id={search_id} status={data.get('status')} progress={data.get('percentage')}")
+    return jsonify(data)
 
 @app.route('/api/search/result/<search_id>')
 def api_search_result(search_id):
