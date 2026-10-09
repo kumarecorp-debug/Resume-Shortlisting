@@ -902,9 +902,19 @@ def _do_process(available_accounts, default_account, is_get_search):
 
     # LIVE GMAIL SEARCH MODE: Check for completed async search or launch background search thread
     req_search_id = request.args.get('search_id') or request.form.get('search_id')
+    cached_res = None
+    if req_search_id:
+        if req_search_id in _search_result_store:
+            cached_res = _search_result_store[req_search_id]
+        else:
+            db_prog = get_search_progress(req_search_id)
+            if db_prog and db_prog.get("candidates") and len(db_prog.get("candidates")) > 0:
+                cached_res = {
+                    "candidates": db_prog.get("candidates", []),
+                    "scan_summary": {"pdf": 0, "docx": 0}
+                }
     
-    if req_search_id and req_search_id in _search_result_store:
-        cached_res = _search_result_store[req_search_id]
+    if cached_res:
         all_cands = cached_res.get('candidates', [])
         scan_summary = cached_res.get('scan_summary', {"pdf": 0, "docx": 0})
         df = pd.DataFrame(all_cands) if all_cands else pd.DataFrame()
