@@ -1385,11 +1385,11 @@
                                     notFoundCount = 0;
                                 }
 
-                                const pct = res.percentage || 0;
+                                const pct = res.progress !== undefined ? res.progress : (res.percentage || 0);
                                 if (progressFill) progressFill.style.width = pct + '%';
                                 if (targetCount) targetCount.innerText = res.target || 25;
-                                if (foundRelevant) foundRelevant.innerText = res.found_relevant || 0;
-                                if (resumesExtracted) resumesExtracted.innerText = res.resumes_extracted || 0;
+                                if (foundRelevant) foundRelevant.innerText = res.found_relevant || (res.candidates ? res.candidates.length : 0);
+                                if (resumesExtracted) resumesExtracted.innerText = res.resumes_extracted || (res.candidates ? res.candidates.length : 0);
                                 if (emailsScanned) emailsScanned.innerText = res.emails_scanned || 0;
                                 if (progressPct) progressPct.innerText = pct;
                                 const elapsedSec = res.elapsed_seconds || 0;
@@ -1403,11 +1403,13 @@
                                 if (progressEtaDiv) progressEtaDiv.innerHTML = `⏳ <span>${pct}</span>% · Elapsed: <strong>${elapsedStr}</strong> · Est. remaining: <strong>${etaStr}</strong>`;
                                 if (loadingMessage && res.message) loadingMessage.innerText = res.message;
                             }
-                            if (res && res.status === 'done') {
+                            if (res && (res.status === 'done' || res.progress === 100)) {
                                 clearInterval(pollInterval);
                                 if (progressFill) progressFill.style.width = '100%';
                                 if (progressPct) progressPct.innerText = '100';
-                                if (loadingMessage) loadingMessage.innerText = "✅ Search complete! Loading candidate table...";
+                                const cands = res.candidates || [];
+                                console.log("[poll] done with", cands.length, "candidates");
+                                if (loadingMessage) loadingMessage.innerText = `✅ Search complete! Loaded ${cands.length} candidates...`;
                                 const jq = encodeURIComponent(searchMeta.getAttribute('data-job-query') || '');
                                 const mb = encodeURIComponent(searchMeta.getAttribute('data-mailbox') || '');
                                 setTimeout(() => {
@@ -1415,7 +1417,7 @@
                                 }, 300);
                             } else if (res && res.status === 'error') {
                                 clearInterval(pollInterval);
-                                if (loadingMessage) loadingMessage.innerText = `⚠️ Search Notice: ${res.message || 'Error occurred'}`;
+                                if (loadingMessage) loadingMessage.innerText = `⚠️ Search Notice: ${res.error || res.message || 'Error occurred'}`;
                             }
                         } catch (e) {
                             console.error('[progress] poll error:', e);

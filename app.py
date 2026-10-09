@@ -78,12 +78,6 @@ def verify_ai_startup():
 
 verify_ai_startup()
 
-search_progress_store = {}
-
-@app.route('/api/search/progress/<search_id>', methods=['GET'])
-def get_search_progress(search_id):
-    prog = search_progress_store.get(search_id, {"current": 0, "total": 0, "status": "completed"})
-    return jsonify(prog)
 
 if not os.environ.get("VERCEL"):
     try:
@@ -497,7 +491,6 @@ def execute_full_candidate_search(job_query, selected_account, max_candidates=25
 
     return df, scan_summary
 
-_search_progress_store = defaultdict(dict)
 _search_result_store = {}
 
 def update_search_progress(search_id, data):
@@ -508,7 +501,10 @@ def update_search_progress(search_id, data):
                 "search_id": search_id,
                 "status": data.get("status", "running"),
                 "progress": data.get("progress", 0),
-                "message": data.get("message", ""),
+                "message": data.get("message"),
+                "candidates": data.get("candidates"),
+                "pagination_meta": data.get("pagination_meta"),
+                "error": data.get("error"),
                 "updated_at": "now()"
             }).execute()
     except Exception as e:
@@ -527,12 +523,6 @@ def get_search_progress(search_id):
 
 def run_async_search(search_id, params):
     t_start = time.time()
-    _search_progress_store[search_id] = {
-        "status": "processing",
-        "current": 0,
-        "total": 0,
-        "message": "Connecting to mailbox..."
-    }
     update_search_progress(search_id, {"status": "running", "progress": 0, "message": "Connecting to mailbox..."})
     try:
         job_query = params.get('job_query')
@@ -568,25 +558,18 @@ def run_async_search(search_id, params):
             "scan_summary": scan_summary,
             "elapsed": elapsed
         }
-        _search_progress_store[search_id] = {
-            "status": "done",
-            "current": len(all_records),
-            "total": len(all_records),
-            "message": "Search complete"
-        }
+        
+        logging.info(f"[search-DONE-STATUS] id={search_id} candidates={len(all_records)}")
         update_search_progress(search_id, {
             "status": "done",
             "progress": 100,
-            "message": f"Found {len(all_records)} candidates"
+            "message": f"Found {len(all_records)} candidates",
+            "candidates": all_records,
+            "pagination_meta": {"total": len(all_records), "elapsed": elapsed}
         })
-        logging.info(f"[search-DONE-STATUS] id={search_id} candidates={len(all_records)}")
     except Exception as e:
         logging.error(f"[search-ERROR] {e}")
-        _search_progress_store[search_id] = {
-            "status": "error",
-            "message": str(e)
-        }
-        update_search_progress(search_id, {"status": "error", "message": str(e)})
+        update_search_progress(search_id, {"status": "error", "error": str(e), "message": str(e)})
 
 _active_searches = {}
 _search_lock = threading.Lock()
@@ -613,130 +596,66 @@ def api_search_cancel(search_id):
     logging.info(f"[search-CANCEL] Cancellation requested for search_id={search_id}")
     return jsonify({'ok': True, 'message': 'Search cancellation requested'})
 
-@app.route('/api/search/progress/<search_id>')
+@app.route('/api/search/progress/<search_id>', methods=['GET'])
 def api_search_progress(search_id):
-    # 1. Check if Supabase store has progress status
-    db_prog = get_search_progress(search_id)
-    if db_prog and db_prog.get("status") in ["error", "done", "cancelled"]:
-        data = {
-            "status": db_prog.get("status"),
-            "stage": "done" if db_prog.get("status") == "done" else "error",
-            "current": db_prog.get("progress", 100),
-            "total": 25,
-            "found": db_prog.get("progress", 100),
-            "elapsed_seconds": 0,
-            "eta_seconds": 0,
-            "target": 25,
-            "found_relevant": db_prog.get("progress", 100),
-            "resumes_extracted": db_prog.get("progress", 100),
-            "emails_scanned": 0,
-            "percentage": 100 if db_prog.get("status") == "done" else 0,
-            "message": db_prog.get("message", "Search complete")
-        }
-        logging.info(f"[progress-API] id={search_id} status={data.get('status')} progress={data.get('percentage')}")
-        return jsonify(data)
+    try:
+        client = db.get_supabase()
+        if client:
+            result = client.table('search_progress')\
+                .select('*')\
+                .eq('search_id', search_id)\
+                .execute()
+            
+            if result.data and len(result.data) > 0:
+                row = result.data[0]
+                response = {
+                    "status": row.get("status") or "running",
+                    "progress": row.get("progress") or 0,
+                    "message": row.get("message"),
+                    "candidates": row.get("candidates") or [],
+                    "pagination_meta": row.get("pagination_meta") or {},
+                    "error": row.get("error"),
+                }
+                logging.info(
+                    f"[progress-API] id={search_id} status={response['status']} "
+                    f"progress={response['progress']} candidates={len(response['candidates'])}"
+                )
+                return jsonify(response), 200
 
-    # 2. Check result store
-    if search_id in _search_result_store and _search_result_store[search_id].get("status") == "done":
-        data = {
-            "status": "done",
-            "stage": "done",
-            "current": len(_search_result_store[search_id].get("candidates", [])),
-            "total": len(_search_result_store[search_id].get("candidates", [])),
-            "found": len(_search_result_store[search_id].get("candidates", [])),
-            "elapsed_seconds": _search_result_store[search_id].get("elapsed", 0),
-            "eta_seconds": 0,
-            "target": 25,
-            "found_relevant": len(_search_result_store[search_id].get("candidates", [])),
-            "resumes_extracted": len(_search_result_store[search_id].get("candidates", [])),
-            "emails_scanned": 0,
-            "percentage": 100,
-            "message": "Search complete"
-        }
-        logging.info(f"[progress-API] id={search_id} status={data.get('status')} progress={data.get('percentage')}")
-        return jsonify(data)
-
-    # 3. Check in-memory async progress store
-    async_prog = _search_progress_store.get(search_id)
-    if async_prog and async_prog.get("status") in ["error", "done", "cancelled"]:
-        data = {
-            "status": async_prog.get("status"),
-            "stage": async_prog.get("stage", "done"),
-            "current": async_prog.get("current", 0),
-            "total": async_prog.get("total", 25),
-            "found": async_prog.get("current", 0),
-            "elapsed_seconds": async_prog.get("elapsed_seconds", 0),
-            "eta_seconds": 0,
-            "target": async_prog.get("total", 25),
-            "found_relevant": async_prog.get("current", 0),
-            "resumes_extracted": async_prog.get("current", 0),
-            "emails_scanned": async_prog.get("current", 0),
-            "percentage": 100 if async_prog.get("status") == "done" else 0,
-            "message": async_prog.get("message", "Search complete")
-        }
-        logging.info(f"[progress-API] id={search_id} status={data.get('status')} progress={data.get('percentage')}")
-        return jsonify(data)
-
-    # 4. Check active RS_Project progress object
-    if search_id in RS_Project._searches:
-        prog = RS_Project._searches[search_id]
-        target = max(prog.target, 1)
-        resumes_found = getattr(prog, 'resumes_found', getattr(prog, 'current', 0))
-        resumes_extracted = getattr(prog, 'current', 0)
-        emails_scanned = getattr(prog, 'emails_scanned', 0)
-        status = getattr(prog, 'status', 'downloading')
-        stage = getattr(prog, 'stage', 'downloading')
-        elapsed = getattr(prog, 'elapsed_seconds', 0)
-        eta = getattr(prog, 'eta_seconds', 0)
-
-        if status == "done":
-            data = {
-                "status": "done",
-                "stage": "done",
-                "current": resumes_extracted,
-                "total": target,
-                "found": resumes_found,
-                "elapsed_seconds": elapsed,
-                "eta_seconds": 0,
-                "target": target,
-                "found_relevant": resumes_found,
-                "resumes_extracted": resumes_extracted,
-                "emails_scanned": emails_scanned,
-                "percentage": 100,
-                "message": getattr(prog, 'message', '') or "Search complete"
+        if search_id in _search_result_store:
+            res = _search_result_store[search_id]
+            cands = res.get("candidates", [])
+            response = {
+                "status": res.get("status", "done"),
+                "progress": 100,
+                "message": f"Found {len(cands)} candidates",
+                "candidates": cands,
+                "pagination_meta": res.get("pagination_meta", {}),
+                "error": None
             }
-            logging.info(f"[progress-API] id={search_id} status=done progress=100")
-            return jsonify(data)
+            logging.info(f"[progress-API] id={search_id} status=done (memory) candidates={len(cands)}")
+            return jsonify(response), 200
 
-        pct = int((resumes_extracted / target) * 100) if target > 0 else (int((resumes_found / target) * 50) if target > 0 else 0)
-        custom_msg = getattr(prog, 'message', '')
-        
-        if status == "downloading":
-            msg = custom_msg or f"Scanning Gmail & downloading attachments ({resumes_found}/{target} found, {emails_scanned} scanned)..."
-        elif status == "extracting":
-            msg = custom_msg or f"Found {resumes_found} relevant resumes, extracting details... {resumes_extracted}/{target} ({pct}%)"
-        elif status in ["error", "cancelled"]:
-            msg = custom_msg or f"Search {status}"
-        else:
-            msg = custom_msg or "Search complete"
+        if search_id in RS_Project._searches:
+            prog = RS_Project._searches[search_id]
+            status = getattr(prog, 'status', 'running')
+            pct = int((prog.current / max(prog.target, 1)) * 100)
+            response = {
+                "status": "done" if status == "done" else "running",
+                "progress": 100 if status == "done" else min(pct, 99),
+                "message": getattr(prog, 'message', '') or "Searching...",
+                "candidates": [],
+                "pagination_meta": {},
+                "error": None
+            }
+            logging.info(f"[progress-API] id={search_id} status={response['status']} progress={response['progress']}")
+            return jsonify(response), 200
 
-        data = {
-            "status": status,
-            "stage": stage,
-            "current": resumes_extracted,
-            "total": target,
-            "found": resumes_found,
-            "elapsed_seconds": elapsed,
-            "eta_seconds": eta,
-            "target": target,
-            "found_relevant": resumes_found,
-            "resumes_extracted": resumes_extracted,
-            "emails_scanned": emails_scanned,
-            "percentage": 100 if status == "done" else min(pct, 100),
-            "message": msg
-        }
-        logging.info(f"[progress-API] id={search_id} status={data.get('status')} progress={data.get('percentage')}")
-        return jsonify(data)
+        logging.info(f"[progress-API] id={search_id} NOT FOUND in Supabase")
+        return jsonify({"status": "running", "progress": 0, "candidates": []}), 200
+    except Exception as e:
+        logging.error(f"[progress-API] error for {search_id}: {e}", exc_info=True)
+        return jsonify({"status": "error", "error": str(e), "candidates": []}), 200
 
     data = {
         "status": "not_found",

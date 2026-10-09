@@ -57,16 +57,11 @@ for default_m in ['gemini-3.8-flash', 'gemini-3.5-flash-lite', 'gemini-2.5-flash
 
 # Configurable Parameters & Batch Sizes
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "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")
-MAX_RESUME_CHARS = int(os.environ.get("MAX_RESUME_CHARS", 4000))
-BATCH_SIZE_GEMINI = int(os.getenv('BATCH_SIZE_GEMINI', 10))
-BATCH_SIZE_GROQ = int(os.getenv('BATCH_SIZE_GROQ', 3))
-
-# Dynamic default batch size based on available provider
-gemini_key_check = os.getenv("GEMINI_API_KEY", "").strip()
-if HAS_GEMINI and gemini_key_check:
-    BATCH_SIZE = BATCH_SIZE_GEMINI
-else:
-    BATCH_SIZE = BATCH_SIZE_GROQ
+MAX_RESUME_CHARS = int(os.environ.get("MAX_RESUME_CHARS", 2500))
+MAX_CHARS_PER_RESUME = 2500
+BATCH_SIZE = 5
+BATCH_SIZE_GEMINI = 5
+BATCH_SIZE_GROQ = 5
 
 # Groq Preferred Models — updated for 2026 (Qwen available on free tier)
 # Llama 3.x moved to enterprise-only; mixtral/gemma2 decommissioned
