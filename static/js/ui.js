@@ -2,6 +2,78 @@
  * ResuMatch UI Controller (Toasts, Side Panels, Theme Toggle)
  */
 
+// ========== SEARCH PROGRESS POLLING ==========
+let pollingInterval = null;
+
+function startPolling(searchId) {
+    if (!searchId) {
+        console.error("[poll] startPolling called without searchId");
+        return;
+    }
+    
+    if (pollingInterval) {
+        clearInterval(pollingInterval);
+        pollingInterval = null;
+    }
+    
+    console.log("[poll] starting for", searchId);
+    let pollCount = 0;
+    
+    pollingInterval = setInterval(async () => {
+        pollCount++;
+        if (pollCount > 300) {
+            clearInterval(pollingInterval);
+            pollingInterval = null;
+            if (typeof stopLoadingSpinner === "function") stopLoadingSpinner();
+            alert("Search timed out after 10 minutes");
+            return;
+        }
+        
+        try {
+            const res = await fetch(`/api/search/progress/${searchId}`);
+            const data = await res.json();
+            
+            console.log(`[poll] #${pollCount} status=${data.status} progress=${data.progress} candidates=${(data.candidates||[]).length}`);
+            
+            if (typeof updateProgressBar === "function") {
+                updateProgressBar(data.progress || 0, data.message || "");
+            }
+            
+            if (data.status === "done") {
+                clearInterval(pollingInterval);
+                pollingInterval = null;
+                if (typeof stopLoadingSpinner === "function") stopLoadingSpinner();
+                
+                const candidates = data.candidates || [];
+                console.log("[poll] DONE with", candidates.length, "candidates");
+                
+                if (typeof renderCandidates === "function") {
+                    renderCandidates(candidates);
+                } else if (typeof window.renderResults === "function") {
+                    window.renderResults(candidates);
+                } else {
+                    console.warn("[poll] no render function found, showing alert");
+                    alert("Search complete: " + candidates.length + " candidates");
+                    console.log(candidates);
+                }
+                return;
+            }
+            
+            if (data.status === "error") {
+                clearInterval(pollingInterval);
+                pollingInterval = null;
+                if (typeof stopLoadingSpinner === "function") stopLoadingSpinner();
+                alert("Search failed: " + (data.error || "unknown error"));
+                return;
+            }
+        } catch (err) {
+            console.error("[poll] fetch error:", err);
+        }
+    }, 2000);
+}
+window.startPolling = startPolling;
+// ========== END POLLING ==========
+
 document.addEventListener('DOMContentLoaded', function() {
     // 1. Theme toggle persistence
     const savedTheme = localStorage.getItem('theme') || 'light';

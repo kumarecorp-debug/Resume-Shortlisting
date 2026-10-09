@@ -78,6 +78,8 @@ def verify_ai_startup():
 
 verify_ai_startup()
 
+_recent_requests = {}   # (mailbox, jd) -> timestamp
+
 
 if not os.environ.get("VERCEL"):
     try:
@@ -922,6 +924,14 @@ def _do_process(available_accounts, default_account, is_get_search):
     else:
         # Cancel any existing active search for the same mailbox+jd
         search_key = (selected_account, job_query)
+        now = time.time()
+        last = _recent_requests.get(search_key, 0)
+        if now - last < 5:
+            logging.warning(f"[process] DUPLICATE request for {search_key} within 5s, ignoring")
+            if request.is_json or request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                return jsonify({"status": "duplicate_ignored"}), 200
+        _recent_requests[search_key] = now
+
         existing_id = _active_searches_by_key.get(search_key)
         if existing_id:
             logging.info(f"[process] cancelling previous search {existing_id} for {search_key}")
