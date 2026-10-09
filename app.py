@@ -521,7 +521,18 @@ def get_search_progress(search_id):
         logging.debug(f"[search-progress-db] select skipped: {e}")
     return None
 
+_active_searches = {}
+_active_searches_by_key = {}
+_cancelled_searches = set()
+_search_lock = threading.Lock()
+_progress_cache = {}  # search_id -> (response, timestamp)
+CACHE_TTL = 1.0
+
 def run_async_search(search_id, params):
+    if search_id in _cancelled_searches:
+        logging.info(f"[search-CANCELLED] search_id={search_id} was cancelled before starting")
+        return
+
     t_start = time.time()
     update_search_progress(search_id, {"status": "running", "progress": 0, "message": "Connecting to mailbox..."})
     try:
@@ -548,6 +559,10 @@ def run_async_search(search_id, params):
             exclude_copied_emails=copied_emails
         )
 
+        if search_id in _cancelled_searches:
+            logging.info(f"[search-CANCELLED] search_id={search_id} cancelled during search")
+            return
+
         all_records = df.fillna("N/A").to_dict(orient='records') if not df.empty else []
         elapsed = round(time.time() - t_start, 1)
         logging.info(f"[search-STATS] search_id={search_id} total_time={elapsed}s candidates={len(all_records)}")
@@ -571,9 +586,6 @@ def run_async_search(search_id, params):
         logging.error(f"[search-ERROR] {e}")
         update_search_progress(search_id, {"status": "error", "error": str(e), "message": str(e)})
 
-_active_searches = {}
-_search_lock = threading.Lock()
-
 @app.route('/api/search/start', methods=['POST'])
 def api_search_start():
     params = request.get_json(force=True) or {}
@@ -590,6 +602,7 @@ def api_search_start():
 
 @app.route('/api/search/cancel/<search_id>', methods=['POST'])
 def api_search_cancel(search_id):
+    _cancelled_searches.add(search_id)
     RS_Project._search_cancelled[search_id] = True
     if search_id in RS_Project._searches:
         RS_Project._searches[search_id].set_stats(status="cancelled", message="Search cancelled by user")
@@ -598,7 +611,13 @@ def api_search_cancel(search_id):
 
 @app.route('/api/search/progress/<search_id>', methods=['GET'])
 def api_search_progress(search_id):
+    now = time.time()
+    cached = _progress_cache.get(search_id)
+    if cached and (now - cached[1]) < CACHE_TTL:
+        return jsonify(cached[0]), 200
+
     try:
+        response = None
         client = db.get_supabase()
         if client:
             result = client.table('search_progress')\
@@ -616,13 +635,8 @@ def api_search_progress(search_id):
                     "pagination_meta": row.get("pagination_meta") or {},
                     "error": row.get("error"),
                 }
-                logging.info(
-                    f"[progress-API] id={search_id} status={response['status']} "
-                    f"progress={response['progress']} candidates={len(response['candidates'])}"
-                )
-                return jsonify(response), 200
 
-        if search_id in _search_result_store:
+        if not response and search_id in _search_result_store:
             res = _search_result_store[search_id]
             cands = res.get("candidates", [])
             response = {
@@ -633,10 +647,8 @@ def api_search_progress(search_id):
                 "pagination_meta": res.get("pagination_meta", {}),
                 "error": None
             }
-            logging.info(f"[progress-API] id={search_id} status=done (memory) candidates={len(cands)}")
-            return jsonify(response), 200
 
-        if search_id in RS_Project._searches:
+        if not response and search_id in RS_Project._searches:
             prog = RS_Project._searches[search_id]
             status = getattr(prog, 'status', 'running')
             pct = int((prog.current / max(prog.target, 1)) * 100)
@@ -648,14 +660,21 @@ def api_search_progress(search_id):
                 "pagination_meta": {},
                 "error": None
             }
-            logging.info(f"[progress-API] id={search_id} status={response['status']} progress={response['progress']}")
-            return jsonify(response), 200
 
-        logging.info(f"[progress-API] id={search_id} NOT FOUND in Supabase")
-        return jsonify({"status": "running", "progress": 0, "candidates": []}), 200
+        if not response:
+            response = {"status": "running", "progress": 0, "candidates": []}
+
+        logging.info(
+            f"[progress-API] id={search_id} status={response['status']} "
+            f"progress={response['progress']} candidates={len(response.get('candidates', []))}"
+        )
+        _progress_cache[search_id] = (response, now)
+        return jsonify(response), 200
     except Exception as e:
-        logging.error(f"[progress-API] error for {search_id}: {e}", exc_info=True)
-        return jsonify({"status": "error", "error": str(e), "candidates": []}), 200
+        logging.error(f"[progress-API] error for {search_id}: {e}")
+        if cached:
+            return jsonify(cached[0]), 200
+        return jsonify({"status": "running", "progress": 0, "candidates": []}), 200
 
     data = {
         "status": "not_found",
@@ -891,8 +910,17 @@ def _do_process(available_accounts, default_account, is_get_search):
         df = pd.DataFrame(all_cands) if all_cands else pd.DataFrame()
         search_id = req_search_id
     else:
-        # Start async background search & immediately return page with live progress bar (< 50ms) to prevent Render proxy timeouts
+        # Cancel any existing active search for the same mailbox+jd
+        search_key = (selected_account, job_query)
+        existing_id = _active_searches_by_key.get(search_key)
+        if existing_id:
+            logging.info(f"[process] cancelling previous search {existing_id} for {search_key}")
+            _cancelled_searches.add(existing_id)
+            RS_Project._search_cancelled[existing_id] = True
+            _active_searches_by_key.pop(search_key, None)
+
         search_id = str(uuid.uuid4())
+        _active_searches_by_key[search_key] = search_id
         logging.info(f"[search-NEW] search_id={search_id} jd={job_query}")
         params = {
             'job_query': job_query,

@@ -56,12 +56,25 @@ for default_m in ['gemini-3.8-flash', 'gemini-3.5-flash-lite', 'gemini-2.5-flash
         GEMINI_MODELS.append(default_m)
 
 # Configurable Parameters & Batch Sizes
-GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "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")
+GROQ_API_KEY_1 = os.environ.get("GROQ_API_KEY_1", os.environ.get("GROQ_API_KEY", "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"))
+GROQ_API_KEY_2 = os.environ.get("GROQ_API_KEY_2", GROQ_API_KEY_1)
+GROQ_KEYS = [k for k in [GROQ_API_KEY_1, GROQ_API_KEY_2] if k and k.strip()]
+
+_key_idx = 0
+_key_lock = threading.Lock()
+
+def get_next_groq_key():
+    global _key_idx
+    with _key_lock:
+        key = GROQ_KEYS[_key_idx % len(GROQ_KEYS)]
+        _key_idx += 1
+        return key
+
 MAX_RESUME_CHARS = int(os.environ.get("MAX_RESUME_CHARS", 2500))
 MAX_CHARS_PER_RESUME = 2500
-BATCH_SIZE = 5
-BATCH_SIZE_GEMINI = 5
-BATCH_SIZE_GROQ = 5
+BATCH_SIZE = 2
+BATCH_SIZE_GEMINI = 2
+BATCH_SIZE_GROQ = 2
 
 # Groq Preferred Models — updated for 2026 (Qwen available on free tier)
 # Llama 3.x moved to enterprise-only; mixtral/gemma2 decommissioned
@@ -78,19 +91,17 @@ PREFERRED_GROQ_MODELS = [
 groq_client = None
 
 def get_groq_client():
-    global groq_client
-    api_k = os.environ.get("GROQ_API_KEY", GROQ_API_KEY)
-    if not groq_client and api_k:
-        try:
-            from groq import Groq
-            groq_client = Groq(
-                api_key=api_k,
-                max_retries=0,
-                timeout=20.0
-            )
-        except Exception as e:
-            logger.warning(f"[groq] Client init error: {e}")
-    return groq_client
+    key = get_next_groq_key()
+    try:
+        from groq import Groq
+        return Groq(
+            api_key=key,
+            max_retries=0,
+            timeout=20.0
+        )
+    except Exception as e:
+        logger.warning(f"[groq] Client init error: {e}")
+        return None
 
 ACTIVE_GROQ_MODELS = []
 

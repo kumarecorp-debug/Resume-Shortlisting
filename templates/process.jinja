@@ -1359,8 +1359,16 @@
                     if (loadingBox) loadingBox.style.display = 'block';
 
                     let notFoundCount = 0;
+                    let pollCount = 0;
+                    const MAX_POLLS = 150; // 5 minutes max (150 x 2s)
 
                     const pollInterval = setInterval(async () => {
+                        pollCount++;
+                        if (pollCount > MAX_POLLS) {
+                            clearInterval(pollInterval);
+                            if (loadingMessage) loadingMessage.innerText = "⚠️ Search timed out after 5 minutes. Please try searching again.";
+                            return;
+                        }
                         try {
                             const res = await fetch(`/api/search/progress/${searchId}`).then(r => r.json());
                             if (res) {
