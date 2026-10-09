@@ -500,6 +500,31 @@ def execute_full_candidate_search(job_query, selected_account, max_candidates=25
 _search_progress_store = defaultdict(dict)
 _search_result_store = {}
 
+def update_search_progress(search_id, data):
+    try:
+        client = db.get_supabase()
+        if client:
+            client.table('search_progress').upsert({
+                "search_id": search_id,
+                "status": data.get("status", "running"),
+                "progress": data.get("progress", 0),
+                "message": data.get("message", ""),
+                "updated_at": "now()"
+            }).execute()
+    except Exception as e:
+        logging.debug(f"[search-progress-db] upsert skipped: {e}")
+
+def get_search_progress(search_id):
+    try:
+        client = db.get_supabase()
+        if client:
+            r = client.table('search_progress').select('*').eq('search_id', search_id).execute()
+            if r.data and len(r.data) > 0:
+                return r.data[0]
+    except Exception as e:
+        logging.debug(f"[search-progress-db] select skipped: {e}")
+    return None
+
 def run_async_search(search_id, params):
     t_start = time.time()
     _search_progress_store[search_id] = {
@@ -508,6 +533,7 @@ def run_async_search(search_id, params):
         "total": 0,
         "message": "Connecting to mailbox..."
     }
+    update_search_progress(search_id, {"status": "running", "progress": 0, "message": "Connecting to mailbox..."})
     try:
         job_query = params.get('job_query')
         selected_account = params.get('selected_account', 'recruiter@ecorptrainings.com')
@@ -548,12 +574,19 @@ def run_async_search(search_id, params):
             "total": len(all_records),
             "message": "Search complete"
         }
+        update_search_progress(search_id, {
+            "status": "done",
+            "progress": 100,
+            "message": f"Found {len(all_records)} candidates"
+        })
+        logging.info(f"[search-DONE-STATUS] id={search_id} candidates={len(all_records)}")
     except Exception as e:
         logging.error(f"[search-ERROR] {e}")
         _search_progress_store[search_id] = {
             "status": "error",
             "message": str(e)
         }
+        update_search_progress(search_id, {"status": "error", "message": str(e)})
 
 _active_searches = {}
 _search_lock = threading.Lock()
@@ -582,6 +615,48 @@ def api_search_cancel(search_id):
 
 @app.route('/api/search/progress/<search_id>')
 def api_search_progress(search_id):
+    # 1. Check if Supabase store has progress status
+    db_prog = get_search_progress(search_id)
+    if db_prog and db_prog.get("status") in ["error", "done", "cancelled"]:
+        data = {
+            "status": db_prog.get("status"),
+            "stage": "done" if db_prog.get("status") == "done" else "error",
+            "current": db_prog.get("progress", 100),
+            "total": 25,
+            "found": db_prog.get("progress", 100),
+            "elapsed_seconds": 0,
+            "eta_seconds": 0,
+            "target": 25,
+            "found_relevant": db_prog.get("progress", 100),
+            "resumes_extracted": db_prog.get("progress", 100),
+            "emails_scanned": 0,
+            "percentage": 100 if db_prog.get("status") == "done" else 0,
+            "message": db_prog.get("message", "Search complete")
+        }
+        logging.info(f"[progress-API] id={search_id} status={data.get('status')} progress={data.get('percentage')}")
+        return jsonify(data)
+
+    # 2. Check result store
+    if search_id in _search_result_store and _search_result_store[search_id].get("status") == "done":
+        data = {
+            "status": "done",
+            "stage": "done",
+            "current": len(_search_result_store[search_id].get("candidates", [])),
+            "total": len(_search_result_store[search_id].get("candidates", [])),
+            "found": len(_search_result_store[search_id].get("candidates", [])),
+            "elapsed_seconds": _search_result_store[search_id].get("elapsed", 0),
+            "eta_seconds": 0,
+            "target": 25,
+            "found_relevant": len(_search_result_store[search_id].get("candidates", [])),
+            "resumes_extracted": len(_search_result_store[search_id].get("candidates", [])),
+            "emails_scanned": 0,
+            "percentage": 100,
+            "message": "Search complete"
+        }
+        logging.info(f"[progress-API] id={search_id} status={data.get('status')} progress={data.get('percentage')}")
+        return jsonify(data)
+
+    # 3. Check in-memory async progress store
     async_prog = _search_progress_store.get(search_id)
     if async_prog and async_prog.get("status") in ["error", "done", "cancelled"]:
         data = {
@@ -602,6 +677,7 @@ def api_search_progress(search_id):
         logging.info(f"[progress-API] id={search_id} status={data.get('status')} progress={data.get('percentage')}")
         return jsonify(data)
 
+    # 4. Check active RS_Project progress object
     if search_id in RS_Project._searches:
         prog = RS_Project._searches[search_id]
         target = max(prog.target, 1)
@@ -612,6 +688,25 @@ def api_search_progress(search_id):
         stage = getattr(prog, 'stage', 'downloading')
         elapsed = getattr(prog, 'elapsed_seconds', 0)
         eta = getattr(prog, 'eta_seconds', 0)
+
+        if status == "done":
+            data = {
+                "status": "done",
+                "stage": "done",
+                "current": resumes_extracted,
+                "total": target,
+                "found": resumes_found,
+                "elapsed_seconds": elapsed,
+                "eta_seconds": 0,
+                "target": target,
+                "found_relevant": resumes_found,
+                "resumes_extracted": resumes_extracted,
+                "emails_scanned": emails_scanned,
+                "percentage": 100,
+                "message": getattr(prog, 'message', '') or "Search complete"
+            }
+            logging.info(f"[progress-API] id={search_id} status=done progress=100")
+            return jsonify(data)
 
         pct = int((resumes_extracted / target) * 100) if target > 0 else (int((resumes_found / target) * 50) if target > 0 else 0)
         custom_msg = getattr(prog, 'message', '')
@@ -2116,4 +2211,4 @@ def debug_extract_text(filename):
     })
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run(debug=True, use_reloader=False, host='127.0.0.1', port=5000)
