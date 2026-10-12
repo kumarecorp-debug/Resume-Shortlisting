@@ -56,25 +56,29 @@ for default_m in ['gemini-3.8-flash', 'gemini-3.5-flash-lite', 'gemini-2.5-flash
         GEMINI_MODELS.append(default_m)
 
 # Configurable Parameters & Batch Sizes
-GROQ_API_KEY_1 = os.environ.get("GROQ_API_KEY_1", os.environ.get("GROQ_API_KEY", "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"))
+AI_PROVIDER = os.environ.get("AI_PROVIDER", "gemini").strip().lower()
+GROQ_API_KEY_1 = os.environ.get("GROQ_API_KEY_1", os.environ.get("GROQ_API_KEY", ""))
 GROQ_API_KEY_2 = os.environ.get("GROQ_API_KEY_2", GROQ_API_KEY_1)
 GROQ_KEYS = [k for k in [GROQ_API_KEY_1, GROQ_API_KEY_2] if k and k.strip()]
 
 _key_idx = 0
 _key_lock = threading.Lock()
+_groq_disabled = False
 
 def get_next_groq_key():
     global _key_idx
     with _key_lock:
+        if not GROQ_KEYS:
+            return None
         key = GROQ_KEYS[_key_idx % len(GROQ_KEYS)]
         _key_idx += 1
         return key
 
 MAX_RESUME_CHARS = int(os.environ.get("MAX_RESUME_CHARS", 2500))
 MAX_CHARS_PER_RESUME = 2500
-BATCH_SIZE = 2
-BATCH_SIZE_GEMINI = 2
-BATCH_SIZE_GROQ = 2
+BATCH_SIZE_GEMINI = int(os.environ.get("BATCH_SIZE_GEMINI", 5))
+BATCH_SIZE_GROQ = int(os.environ.get("BATCH_SIZE_GROQ", 2))
+BATCH_SIZE = BATCH_SIZE_GEMINI if AI_PROVIDER == "gemini" else BATCH_SIZE_GROQ
 
 # Groq Preferred Models — updated for 2026 (Qwen available on free tier)
 # Llama 3.x moved to enterprise-only; mixtral/gemma2 decommissioned
@@ -91,7 +95,11 @@ PREFERRED_GROQ_MODELS = [
 groq_client = None
 
 def get_groq_client():
+    if _groq_disabled:
+        return None
     key = get_next_groq_key()
+    if not key:
+        return None
     try:
         from groq import Groq
         return Groq(
@@ -107,7 +115,10 @@ ACTIVE_GROQ_MODELS = []
 
 def discover_groq_models():
     """Query Groq API and filter against working preferred models."""
-    global ACTIVE_GROQ_MODELS
+    global ACTIVE_GROQ_MODELS, _groq_disabled
+    if _groq_disabled or AI_PROVIDER == "gemini":
+        ACTIVE_GROQ_MODELS = list(PREFERRED_GROQ_MODELS)
+        return ACTIVE_GROQ_MODELS
     client = get_groq_client()
     if not client:
         ACTIVE_GROQ_MODELS = list(PREFERRED_GROQ_MODELS)
@@ -122,7 +133,12 @@ def discover_groq_models():
         ACTIVE_GROQ_MODELS = chain
         logger.info(f'[groq-startup] Active Groq models: {ACTIVE_GROQ_MODELS}')
     except Exception as e:
-        logger.warning(f'[groq-startup] Model discovery error ({e}), using default preferred list')
+        err_s = str(e).lower()
+        if '401' in err_s or 'invalid_api_key' in err_s or 'invalid api key' in err_s:
+            _groq_disabled = True
+            logger.warning("[groq-startup] Groq API key is invalid (401), disabling Groq provider.")
+        else:
+            logger.warning(f'[groq-startup] Model discovery error ({e}), using default preferred list')
         ACTIVE_GROQ_MODELS = list(PREFERRED_GROQ_MODELS)
     return ACTIVE_GROQ_MODELS
 
@@ -265,6 +281,10 @@ def call_gemini_with_fallback(prompt, status_callback=None):
     raise Exception(f"All Gemini models failed: {last_error}")
 
 def call_groq_with_fallback(messages, max_tokens=1500, timeout_sec=30, status_callback=None):
+    global _groq_disabled
+    if _groq_disabled:
+        raise Exception("Groq provider is disabled due to invalid API key")
+
     client = get_groq_client()
     if not client:
         raise Exception("Groq client not initialized")
@@ -302,6 +322,11 @@ def call_groq_with_fallback(messages, max_tokens=1500, timeout_sec=30, status_ca
                 err_str = str(e)
                 err_lower = err_str.lower()
                 last_error = e
+
+                if '401' in err_lower or 'invalid' in err_lower or 'api_key' in err_lower:
+                    _groq_disabled = True
+                    logger.warning(f"[groq] Invalid API Key (401), disabling Groq provider immediately.")
+                    raise Exception(f"Groq disabled: {e}")
 
                 if 'rate limit' in err_lower or '429' in err_lower or 'too many requests' in err_lower:
                     match = re.search(r'try again in (\d+\.?\d*)s', err_str, re.IGNORECASE)
@@ -384,29 +409,14 @@ def extract_batch(resume_texts, jd, status_callback=None):
 
     raw_candidates = []
     used_provider = "none"
+    use_gemini_first = (AI_PROVIDER == "gemini" or _groq_disabled)
 
-    # 1. Try Groq as PRIMARY extractor
-    messages = [
-        {'role': 'system', 'content': BATCH_SYSTEM_PROMPT},
-        {'role': 'user', 'content': f"Target JD: {jd}\n\nResumes:\n{combined}"}
-    ]
-    try:
-        response, used_model = call_groq_with_fallback(messages, max_tokens=1500, status_callback=status_callback)
-        content = response.choices[0].message.content
-        data = json.loads(content)
-        raw_candidates = data.get('c', []) or data.get('candidates', [])
-        used_provider = f"groq ({used_model})"
-    except Exception as e_groq:
-        logger.warning(f"[groq] Groq primary extraction failed ({e_groq}), falling back to Gemini")
-        raw_candidates = []
-
-    # 2. Try Gemini as OPTIONAL FALLBACK if Groq returned no candidates or failed
-    if not raw_candidates:
+    # 1. Primary Extraction
+    if use_gemini_first:
         gemini_key = os.getenv("GEMINI_API_KEY", "").strip()
         if gemini_key and (HAS_NEW_GENAI or HAS_GEMINI):
             try:
                 text_resp, used_model = call_gemini_with_fallback(prompt, status_callback=status_callback)
-                # Strip markdown code fences if present
                 text_clean = text_resp.strip()
                 if text_clean.startswith('```'):
                     import re as _re
@@ -416,8 +426,57 @@ def extract_batch(resume_texts, jd, status_callback=None):
                 raw_candidates = data.get('c', []) or data.get('candidates', [])
                 used_provider = f"gemini ({used_model})"
             except Exception as e_gemini:
-                logger.error(f"[gemini] Gemini fallback extraction failed: {e_gemini}")
+                logger.warning(f"[gemini] Gemini primary extraction note: {e_gemini}")
                 raw_candidates = []
+    elif not _groq_disabled:
+        messages = [
+            {'role': 'system', 'content': BATCH_SYSTEM_PROMPT},
+            {'role': 'user', 'content': f"Target JD: {jd}\n\nResumes:\n{combined}"}
+        ]
+        try:
+            response, used_model = call_groq_with_fallback(messages, max_tokens=1500, status_callback=status_callback)
+            content = response.choices[0].message.content
+            data = json.loads(content)
+            raw_candidates = data.get('c', []) or data.get('candidates', [])
+            used_provider = f"groq ({used_model})"
+        except Exception as e_groq:
+            logger.warning(f"[groq] Groq primary extraction failed ({e_groq}), falling back to Gemini")
+            raw_candidates = []
+
+    # 2. Fallback Extraction
+    if not raw_candidates:
+        if use_gemini_first and not _groq_disabled:
+            # Fallback to Groq
+            messages = [
+                {'role': 'system', 'content': BATCH_SYSTEM_PROMPT},
+                {'role': 'user', 'content': f"Target JD: {jd}\n\nResumes:\n{combined}"}
+            ]
+            try:
+                response, used_model = call_groq_with_fallback(messages, max_tokens=1500, status_callback=status_callback)
+                content = response.choices[0].message.content
+                data = json.loads(content)
+                raw_candidates = data.get('c', []) or data.get('candidates', [])
+                used_provider = f"groq ({used_model})"
+            except Exception as e_groq:
+                logger.warning(f"[groq] Groq fallback failed: {e_groq}")
+                raw_candidates = []
+        elif not use_gemini_first:
+            # Fallback to Gemini
+            gemini_key = os.getenv("GEMINI_API_KEY", "").strip()
+            if gemini_key and (HAS_NEW_GENAI or HAS_GEMINI):
+                try:
+                    text_resp, used_model = call_gemini_with_fallback(prompt, status_callback=status_callback)
+                    text_clean = text_resp.strip()
+                    if text_clean.startswith('```'):
+                        import re as _re
+                        text_clean = _re.sub(r'^```[a-z]*\n?', '', text_clean)
+                        text_clean = _re.sub(r'\n?```$', '', text_clean).strip()
+                    data = json.loads(text_clean)
+                    raw_candidates = data.get('c', []) or data.get('candidates', [])
+                    used_provider = f"gemini ({used_model})"
+                except Exception as e_gemini:
+                    logger.error(f"[gemini] Gemini fallback extraction failed: {e_gemini}")
+                    raw_candidates = []
         else:
             if not gemini_key:
                 logger.warning("[gemini] GEMINI_API_KEY missing — skipped fallback")

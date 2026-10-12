@@ -791,12 +791,12 @@ IS_RENDER = bool(os.environ.get("RENDER"))
 
 if IS_RENDER:
     MAX_ATTACHMENTS_TO_DOWNLOAD = 50
-    ATTACHMENT_DOWNLOAD_DELAY = 0.3  # 300ms delay between download requests on Render
+    ATTACHMENT_DOWNLOAD_DELAY = 0.25  # 250ms safe delay between download requests
     MAX_SEARCH_SECONDS = 480         # 8 minutes on Render (480s)
     logger.warning("[startup] Running on Render — max search cap set to 8 minutes (480s)")
 else:
     MAX_ATTACHMENTS_TO_DOWNLOAD = 200
-    ATTACHMENT_DOWNLOAD_DELAY = 0.1  # 100ms
+    ATTACHMENT_DOWNLOAD_DELAY = 0.25  # 250ms safe delay between download requests to prevent Gmail 403
     MAX_SEARCH_SECONDS = 900         # 15 minutes locally (900s)
 
 _search_cancelled = {}
