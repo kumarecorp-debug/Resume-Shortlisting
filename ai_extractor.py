@@ -29,19 +29,19 @@ except ImportError:
 
 # Gemini Models configuration — updated for 2026 model availability
 VALID_GEMINI_MODELS = [
-    'gemini-3.8-flash',
     'gemini-3.5-flash-lite',
     'gemini-2.5-flash',
+    'gemini-flash-latest',
+    'gemini-3.8-flash',
     'gemini-2.0-flash',
     'gemini-1.5-flash',
-    'gemini-1.5-pro',
-    'gemini-flash-latest'
+    'gemini-1.5-pro'
 ]
 
-GEMINI_PRIMARY_MODEL = os.getenv('GEMINI_PRIMARY_MODEL', 'gemini-3.8-flash')
-GEMINI_FALLBACK_1 = os.getenv('GEMINI_FALLBACK_MODEL_1', 'gemini-3.5-flash-lite')
-GEMINI_FALLBACK_2 = os.getenv('GEMINI_FALLBACK_MODEL_2', 'gemini-2.5-flash')
-GEMINI_FALLBACK_3 = os.getenv('GEMINI_FALLBACK_MODEL_3', 'gemini-flash-latest')
+GEMINI_PRIMARY_MODEL = os.getenv('GEMINI_PRIMARY_MODEL', 'gemini-3.5-flash-lite')
+GEMINI_FALLBACK_1 = os.getenv('GEMINI_FALLBACK_MODEL_1', 'gemini-2.5-flash')
+GEMINI_FALLBACK_2 = os.getenv('GEMINI_FALLBACK_MODEL_2', 'gemini-flash-latest')
+GEMINI_FALLBACK_3 = os.getenv('GEMINI_FALLBACK_MODEL_3', 'gemini-3.8-flash')
 
 raw_gemini_models = [
     GEMINI_PRIMARY_MODEL,
@@ -51,7 +51,7 @@ raw_gemini_models = [
 ]
 
 GEMINI_MODELS = [m for m in raw_gemini_models if m in VALID_GEMINI_MODELS]
-for default_m in ['gemini-3.8-flash', 'gemini-3.5-flash-lite', 'gemini-2.5-flash', 'gemini-flash-latest']:
+for default_m in ['gemini-3.5-flash-lite', 'gemini-2.5-flash', 'gemini-flash-latest', 'gemini-3.8-flash']:
     if default_m not in GEMINI_MODELS:
         GEMINI_MODELS.append(default_m)
 
@@ -76,7 +76,7 @@ def get_next_groq_key():
 
 MAX_RESUME_CHARS = int(os.environ.get("MAX_RESUME_CHARS", 2500))
 MAX_CHARS_PER_RESUME = 2500
-BATCH_SIZE_GEMINI = int(os.environ.get("BATCH_SIZE_GEMINI", 5))
+BATCH_SIZE_GEMINI = int(os.environ.get("BATCH_SIZE_GEMINI", 10))
 BATCH_SIZE_GROQ = int(os.environ.get("BATCH_SIZE_GROQ", 2))
 BATCH_SIZE = BATCH_SIZE_GEMINI if AI_PROVIDER == "gemini" else BATCH_SIZE_GROQ
 

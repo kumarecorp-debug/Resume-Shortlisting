@@ -21,10 +21,10 @@ except ImportError:
     HAS_GEMINI = False
 
 # Gemini Models configuration
-GEMINI_PRIMARY_MODEL = os.getenv('GEMINI_PRIMARY_MODEL', 'gemini-3.5-flash')
-GEMINI_FALLBACK_1 = os.getenv('GEMINI_FALLBACK_MODEL_1', 'gemini-3.7-flash')
+GEMINI_PRIMARY_MODEL = os.getenv('GEMINI_PRIMARY_MODEL', 'gemini-3.5-flash-lite')
+GEMINI_FALLBACK_1 = os.getenv('GEMINI_FALLBACK_MODEL_1', 'gemini-2.5-flash')
 GEMINI_FALLBACK_2 = os.getenv('GEMINI_FALLBACK_MODEL_2', 'gemini-flash-latest')
-GEMINI_FALLBACK_3 = os.getenv('GEMINI_FALLBACK_MODEL_3', 'gemini-3.5-flash-lite')
+GEMINI_FALLBACK_3 = os.getenv('GEMINI_FALLBACK_MODEL_3', 'gemini-3.8-flash')
 
 GEMINI_MODELS = [
     GEMINI_PRIMARY_MODEL,

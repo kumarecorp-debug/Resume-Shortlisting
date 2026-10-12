@@ -1291,7 +1291,7 @@ def _do_main(job_query, account_email="recruiter@ecorptrainings.com", max_candid
     seen_identifiers = set()
     scan_summary = {'pdf': 0, 'docx': 0}
 
-    BATCH_SIZE = getattr(ai_extractor, 'BATCH_SIZE', 5)
+    BATCH_SIZE = getattr(ai_extractor, 'BATCH_SIZE', 10)
     total_batches = (len(items_to_extract) + BATCH_SIZE - 1) // BATCH_SIZE
 
     for batch_idx in range(total_batches):
