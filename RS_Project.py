@@ -253,9 +253,22 @@ def auto_authenticate_google(account_email="recruiter@ecorptrainings.com"):
         try:
             creds = Credentials.from_authorized_user_file(token_file, SCOPES)
             if creds and creds.expired and creds.refresh_token:
-                creds.refresh(Request())
-                with open(token_file, 'w', encoding='utf-8') as token:
-                    token.write(creds.to_json())
+                # Retry token refresh up to 3 times for transient SSL/network drops
+                refresh_success = False
+                for attempt in range(3):
+                    try:
+                        creds.refresh(Request())
+                        with open(token_file, 'w', encoding='utf-8') as token:
+                            token.write(creds.to_json())
+                        refresh_success = True
+                        break
+                    except Exception as ref_err:
+                        err_str = str(ref_err).lower()
+                        if ('ssl' in err_str or 'connection' in err_str or 'timeout' in err_str or 'remote' in err_str) and attempt < 2:
+                            logger.warning(f"Transient network error refreshing token (attempt {attempt+1}/3): {ref_err}. Retrying in 2s...")
+                            time.sleep(2)
+                        else:
+                            raise ref_err
             if creds and creds.valid:
                 return build_gmail_service(creds)
         except Exception as e:
