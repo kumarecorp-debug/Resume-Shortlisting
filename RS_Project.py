@@ -203,7 +203,9 @@ def build_gmail_service(creds):
         logger.warning(f"Requests-based transport setup failed ({e}), falling back to default build")
         return build('gmail', 'v1', credentials=creds)
 
-def auto_authenticate_google(account_email="recruiter@ecorptrainings.com"):
+_google_auth_lock = threading.Lock()
+
+def auto_authenticate_google(account_email="recruiter@ecorptrainings.com", allow_interactive=True):
     """Authenticates with Google Gmail API for specified mailbox."""
     if isinstance(account_email, dict):
         account_email = account_email.get("email", "recruiter@ecorptrainings.com")
@@ -214,95 +216,97 @@ def auto_authenticate_google(account_email="recruiter@ecorptrainings.com"):
     token_fname = acct_config["token_file"]
     primary_env = acct_config.get("env_var", "")
     SCOPES = ['https://www.googleapis.com/auth/gmail.readonly']
-    creds = None
 
-    username_prefix = email_key.split('@')[0].replace('.', '_').upper()
-    env_token_keys = [
-        primary_env,
-        f"GOOGLE_TOKEN_{username_prefix}_JSON",
-        f"TOKEN_{username_prefix}_JSON",
-        f"GMAIL_TOKEN_{username_prefix}",
-        "GOOGLE_TOKEN_JSON",
-        "GMAIL_TOKEN_JSON"
-    ]
-    seen = set()
-    env_token_keys = [k for k in env_token_keys if k and not (k in seen or seen.add(k))]
+    with _google_auth_lock:
+        creds = None
 
-    for env_k in env_token_keys:
-        env_token_str = os.environ.get(env_k, "").strip()
-        if env_token_str:
+        username_prefix = email_key.split('@')[0].replace('.', '_').upper()
+        env_token_keys = [
+            primary_env,
+            f"GOOGLE_TOKEN_{username_prefix}_JSON",
+            f"TOKEN_{username_prefix}_JSON",
+            f"GMAIL_TOKEN_{username_prefix}",
+            "GOOGLE_TOKEN_JSON",
+            "GMAIL_TOKEN_JSON"
+        ]
+        seen = set()
+        env_token_keys = [k for k in env_token_keys if k and not (k in seen or seen.add(k))]
+
+        for env_k in env_token_keys:
+            env_token_str = os.environ.get(env_k, "").strip()
+            if env_token_str:
+                try:
+                    token_data = json.loads(env_token_str)
+                    creds = Credentials.from_authorized_user_info(token_data, SCOPES)
+                    if creds and creds.expired and creds.refresh_token:
+                        creds.refresh(Request())
+                    if creds and creds.valid:
+                        logger.info(f"Successfully authenticated {email_key} via {env_k}")
+                        return build_gmail_service(creds)
+                except Exception as e:
+                    logger.warning(f"Failed to load token from environment variable {env_k}: {e}")
+                    creds = None
+
+        token_file = os.path.join(SCRIPT_DIR, token_fname)
+        if not os.path.exists(token_file):
+            parent_token = os.path.join(os.path.dirname(SCRIPT_DIR), token_fname)
+            if os.path.exists(parent_token):
+                token_file = parent_token
+
+        if os.path.exists(token_file):
             try:
-                token_data = json.loads(env_token_str)
-                creds = Credentials.from_authorized_user_info(token_data, SCOPES)
+                creds = Credentials.from_authorized_user_file(token_file, SCOPES)
                 if creds and creds.expired and creds.refresh_token:
-                    creds.refresh(Request())
+                    # Retry token refresh up to 3 times for transient SSL/network drops
+                    refresh_success = False
+                    for attempt in range(3):
+                        try:
+                            creds.refresh(Request())
+                            with open(token_file, 'w', encoding='utf-8') as token:
+                                token.write(creds.to_json())
+                            refresh_success = True
+                            break
+                        except Exception as ref_err:
+                            err_str = str(ref_err).lower()
+                            if ('ssl' in err_str or 'connection' in err_str or 'timeout' in err_str or 'remote' in err_str) and attempt < 2:
+                                logger.warning(f"Transient network error refreshing token (attempt {attempt+1}/3): {ref_err}. Retrying in 2s...")
+                                time.sleep(2)
+                            else:
+                                raise ref_err
                 if creds and creds.valid:
-                    logger.info(f"Successfully authenticated {email_key} via {env_k}")
                     return build_gmail_service(creds)
             except Exception as e:
-                logger.warning(f"Failed to load token from environment variable {env_k}: {e}")
+                logger.warning(f"Existing token file for {email_key} invalid: {e}")
                 creds = None
 
-    token_file = os.path.join(SCRIPT_DIR, token_fname)
-    if not os.path.exists(token_file):
-        parent_token = os.path.join(os.path.dirname(SCRIPT_DIR), token_fname)
-        if os.path.exists(parent_token):
-            token_file = parent_token
+        client_file = os.path.join(SCRIPT_DIR, client_fname)
+        if not os.path.exists(client_file):
+            parent_client = os.path.join(os.path.dirname(SCRIPT_DIR), client_fname)
+            if os.path.exists(parent_client):
+                client_file = parent_client
+            else:
+                fallback_client = os.path.join(SCRIPT_DIR, "client.json")
+                if os.path.exists(fallback_client):
+                    client_file = fallback_client
 
-    if os.path.exists(token_file):
-        try:
-            creds = Credentials.from_authorized_user_file(token_file, SCOPES)
-            if creds and creds.expired and creds.refresh_token:
-                # Retry token refresh up to 3 times for transient SSL/network drops
-                refresh_success = False
-                for attempt in range(3):
-                    try:
-                        creds.refresh(Request())
-                        with open(token_file, 'w', encoding='utf-8') as token:
-                            token.write(creds.to_json())
-                        refresh_success = True
-                        break
-                    except Exception as ref_err:
-                        err_str = str(ref_err).lower()
-                        if ('ssl' in err_str or 'connection' in err_str or 'timeout' in err_str or 'remote' in err_str) and attempt < 2:
-                            logger.warning(f"Transient network error refreshing token (attempt {attempt+1}/3): {ref_err}. Retrying in 2s...")
-                            time.sleep(2)
-                        else:
-                            raise ref_err
-            if creds and creds.valid:
-                return build_gmail_service(creds)
-        except Exception as e:
-            logger.warning(f"Existing token file for {email_key} invalid: {e}")
-            creds = None
-
-    client_file = os.path.join(SCRIPT_DIR, client_fname)
-    if not os.path.exists(client_file):
-        parent_client = os.path.join(os.path.dirname(SCRIPT_DIR), client_fname)
-        if os.path.exists(parent_client):
-            client_file = parent_client
-        else:
-            fallback_client = os.path.join(SCRIPT_DIR, "client.json")
-            if os.path.exists(fallback_client):
-                client_file = fallback_client
-
-    if not creds or not creds.valid:
-        is_cloud = bool(os.environ.get("RENDER") or os.environ.get("VERCEL") or os.environ.get("PORT"))
-        if is_cloud or not os.path.exists(client_file):
-            raise RuntimeError(f"Gmail token for '{email_key}' is missing or expired. Please set environment variable '{primary_env}' in your Render Dashboard Environment settings.")
-        try:
-            flow = InstalledAppFlow.from_client_secrets_file(client_file, SCOPES)
+        if not creds or not creds.valid:
+            is_cloud = bool(os.environ.get("RENDER") or os.environ.get("VERCEL") or os.environ.get("PORT"))
+            if is_cloud or not os.path.exists(client_file) or not allow_interactive:
+                raise RuntimeError(f"Gmail token for '{email_key}' is missing or expired. (Interactive OAuth disabled or running in cloud).")
             try:
-                creds = flow.run_local_server(port=0, prompt='consent')
-            except Exception:
-                creds = flow.run_local_server(port=8090, prompt='consent')
-                
-            with open(token_file, 'w', encoding='utf-8') as token:
-                token.write(creds.to_json())
-        except Exception as e:
-            logger.error(f"Authentication failed for {email_key}: {e}")
-            raise RuntimeError(f"Gmail authentication failed for '{email_key}': {e}. Please check environment variable '{primary_env}' on Render.")
+                flow = InstalledAppFlow.from_client_secrets_file(client_file, SCOPES)
+                try:
+                    creds = flow.run_local_server(port=0, prompt='consent')
+                except Exception:
+                    creds = flow.run_local_server(port=8090, prompt='consent')
+                    
+                with open(token_file, 'w', encoding='utf-8') as token:
+                    token.write(creds.to_json())
+            except Exception as e:
+                logger.error(f"Authentication failed for {email_key}: {e}")
+                raise RuntimeError(f"Gmail authentication failed for '{email_key}': {e}. Please check environment variable '{primary_env}' on Render.")
 
-    return build_gmail_service(creds)
+        return build_gmail_service(creds)
 
 def decode_base64(data):
     missing_padding = len(data) % 4

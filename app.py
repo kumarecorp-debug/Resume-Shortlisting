@@ -1427,7 +1427,7 @@ def api_history_delta():
     new_count = 0
     total_count = rec.get('results_count', 0)
     try:
-        service = RS_Project.auto_authenticate_google(account_email=mailbox)
+        service = RS_Project.auto_authenticate_google(account_email=mailbox, allow_interactive=False)
         res = service.users().messages().list(userId='me', q=full_query, maxResults=100).execute()
         msgs = res.get('messages', [])
         new_count = len(msgs)
@@ -1688,7 +1688,7 @@ def api_gmail_count():
     try:
         from gmail_search import build_gmail_search_query
         query = build_gmail_search_query(jd, date_preset=preset, date_from=df, date_to=dt)
-        service = RS_Project.auto_authenticate_google(mailbox.lower().strip())
+        service = RS_Project.auto_authenticate_google(mailbox.lower().strip(), allow_interactive=False)
         res = service.users().messages().list(userId='me', q=query, maxResults=100).execute()
         count = len(res.get('messages', []))
         return jsonify({'count': count})
@@ -2095,7 +2095,7 @@ def gmail_count():
         elif "has:attachment" not in query:
             query = f"has:attachment {query}".strip()
 
-        service = RS_Project.auto_authenticate_google(mailbox)
+        service = RS_Project.auto_authenticate_google(mailbox, allow_interactive=False)
         results = service.users().messages().list(
             userId='me', q=query, maxResults=1
         ).execute()
