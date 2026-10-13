@@ -802,6 +802,14 @@ function applyTableFilters() {
             showByTab = false;
         }
 
+        // Exclude 0 score or no-match candidates completely
+        const matchedSkillsCell = row.querySelector('.cand-matched-skills') || (row.cells && row.cells.length > 7 ? row.cells[7] : null);
+        const matchedSkillsText = matchedSkillsCell ? matchedSkillsCell.textContent.trim().toLowerCase() : '';
+        if (scoreVal <= 0 || matchedSkillsText === 'no match' || matchedSkillsText === 'none') {
+            row.style.display = 'none';
+            return;
+        }
+
         // Strong match filter (FIX 4)
         let showByStrong = true;
         if (strongOnly && scoreVal < 80) {

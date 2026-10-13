@@ -1371,9 +1371,26 @@ def _do_main(job_query, account_email="recruiter@ecorptrainings.com", max_candid
             except Exception:
                 cand_score = float(det_score)
 
-            cand_matched_skills = ai_data.get("matched_skills") or det_matched_skills
-            cand_reason = ai_data.get("match_reason") or det_reason
+            # If AI explicitly evaluated the resume and gave match_score = 0 or "No match",
+            # respect the AI evaluation! Do not overwrite with deterministic false positives.
+            ai_reason = str(ai_data.get("match_reason") or "").strip()
+            ai_ms = str(ai_data.get("matched_skills") or "").strip()
+            if cand_score <= 0 or ai_reason.lower() in ["no match", "none"] or ai_ms.lower() in ["no match", "none"]:
+                cand_score = 0
+                cand_matched_skills = "No match"
+                cand_reason = "No match"
+            else:
+                cand_matched_skills = ai_data.get("matched_skills") or det_matched_skills
+                cand_reason = ai_data.get("match_reason") or det_reason
+
             cand_gender = ai_data.get("gender") or "Unknown"
+
+            # Filter out non-matching candidates: Do NOT extract candidates with 0 score or no matching skills
+            cand_matched_str = str(cand_matched_skills).strip().lower()
+            if cand_score <= 0 or cand_matched_str in ["no match", "none", "", "n/a", "no target jd skills detected in resume."]:
+                logger.info(f"[search-SKIP] Candidate {cand_name} has 0 matching skills, excluding")
+                progress.increment()
+                continue
 
             candidate_data = {
                 "Name": cand_name,
@@ -1409,7 +1426,6 @@ def _do_main(job_query, account_email="recruiter@ecorptrainings.com", max_candid
             progress.increment()
 
     # PART 4 — Score classification & deduplication
-    MIN_MATCH_SCORE = int(os.environ.get("MIN_MATCH_SCORE", 40))
     all_candidates_dedup = dedupe_by_name(all_candidates)
     removed_dups = len(all_candidates) - len(all_candidates_dedup)
     logger.info(f'[search-DEDUP] {removed_dups} duplicates removed')
@@ -1417,28 +1433,26 @@ def _do_main(job_query, account_email="recruiter@ecorptrainings.com", max_candid
     relevant = []
     for candidate in all_candidates_dedup:
         score = float(str(candidate.get("Match Score", 0)).replace('%', ''))
-        if score >= MIN_MATCH_SCORE:
+        matched_sk = str(candidate.get("Matched Skills", "")).strip().lower()
+        if score > 0 and matched_sk not in ["no match", "none", "", "n/a"]:
             relevant.append(candidate)
         else:
-            logger.info(f'[search-SCORE] below threshold {candidate.get("Name")} (score={score})')
-
-    hidden_count = len(all_candidates_dedup) - len(relevant)
-    logger.info(f'[search-SCORE] {len(relevant)} relevant, {hidden_count} below score {MIN_MATCH_SCORE}')
+            logger.info(f'[search-SCORE] excluding zero/no-match {candidate.get("Name")} (score={score})')
 
     # Sort all candidates by score DESC so top matches appear first
-    all_candidates_dedup.sort(key=lambda c: float(str(c.get("Match Score", 0)).replace('%', '')), reverse=True)
-    candidates = all_candidates_dedup
+    relevant.sort(key=lambda c: float(str(c.get("Match Score", 0)).replace('%', '')), reverse=True)
+    candidates = relevant
 
     progress.done()
     elapsed = round(time.time() - t_start, 1)
-    logger.info(f'[search-DONE] target={target_candidates} found={len(relevant)} total_extracted={len(candidates)} emails={progress.emails_scanned} duration={elapsed}s')
+    logger.info(f'[search-DONE] target={target_candidates} found={len(candidates)} total_extracted={len(candidates)} emails={progress.emails_scanned} duration={elapsed}s')
 
     summary_data = {
         'pdf': scan_summary.get('pdf', 0),
         'docx': scan_summary.get('docx', 0),
         'total_scanned': len(candidates),
-        'matched': len(relevant),
-        'hidden_below_score': hidden_count
+        'matched': len(candidates),
+        'hidden_below_score': 0
     }
     with open(summary_file_path, "w") as f_sum:
         json.dump(summary_data, f_sum)
