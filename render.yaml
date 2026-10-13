@@ -2,6 +2,7 @@ services:
   - type: web
     name: resume-shortlisting
     env: python
+    autoDeploy: true
     buildCommand: pip install -r requirements.txt
     startCommand: gunicorn --timeout 300 --workers 2 --threads 4 app:app
     envVars:
