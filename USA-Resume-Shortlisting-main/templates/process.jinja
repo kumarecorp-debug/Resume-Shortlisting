@@ -852,14 +852,14 @@
 
 
             </div>
-        {% elif job_query %}
+        {% elif job_query and not is_async_searching %}
             <div class="card" style="text-align: center; padding: 56px 24px; background: var(--bg-card); border-radius: var(--radius-lg); border: 1px solid var(--border);">
                 <div style="font-size: 3rem; margin-bottom: 16px;">🔍</div>
                 <h3 style="color: var(--text-primary); font-size: 1.25rem; font-weight: 700; margin-bottom: 8px;">No candidates found</h3>
                 <p style="color: var(--text-secondary); max-width: 460px; margin: 0 auto 20px auto;">Try broadening your keywords, changing the mailbox, or removing the experience filter.</p>
                 <button type="button" class="btn-search-primary" style="width: auto; padding: 8px 24px; display: inline-flex;" onclick="document.getElementById('job_query').focus()">Try a different search</button>
             </div>
-        {% else %}
+        {% elif not is_async_searching %}
             <div class="card" style="text-align: center; padding: 56px 24px; background: #ffffff; border-radius: 12px; border: 1px solid #e2e8f0; margin-top: 20px;">
                 <div style="margin-bottom: 16px; display: flex; justify-content: center; color: #94a3b8;">
                     <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
