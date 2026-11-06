@@ -59,8 +59,8 @@ def serve_static_fallback(filename):
     return send_from_directory(static_dir, filename)
 
 # Supabase Authentication Setup
-SUPABASE_URL = os.environ.get("SUPABASE_URL", "https://fvbctgxwjrctcssckggp.supabase.co")
-SUPABASE_KEY = os.environ.get("SUPABASE_ANON_KEY") or os.environ.get("SUPABASE_KEY", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ2YmN0Z3h3anJjdGNzc2NrZ2dwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTAxNDc1MDUsImV4cCI6MjEwNTcyMzUwNX0.Nz0G-FmUDvzKOVTmIhu8EFpYjH5EDjZO-JuSwylRCVU")
+SUPABASE_URL = os.environ.get("SUPABASE_URL", "https://crwlyyfqbnonvgabdunf.supabase.co")
+SUPABASE_KEY = os.environ.get("SUPABASE_ANON_KEY") or os.environ.get("SUPABASE_KEY", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNyd2x5eWZxYm5vbnZnYWJkdW5mIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTM4NTczMDAsImV4cCI6MjEwOTQzMzMwMH0.w7xaznpr5OtDw-lYByMmbPGDoeDvvHgKNqd6ul9ceMw")
 supabase_client: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -620,23 +620,26 @@ def api_search_progress(search_id):
 
     try:
         response = None
-        client = db.get_supabase()
-        if client:
-            result = client.table('search_progress')\
-                .select('*')\
-                .eq('search_id', search_id)\
-                .execute()
-            
-            if result.data and len(result.data) > 0:
-                row = result.data[0]
-                response = {
-                    "status": row.get("status") or "running",
-                    "progress": row.get("progress") or 0,
-                    "message": row.get("message"),
-                    "candidates": row.get("candidates") or [],
-                    "pagination_meta": row.get("pagination_meta") or {},
-                    "error": row.get("error"),
-                }
+        try:
+            client = db.get_supabase()
+            if client:
+                result = client.table('search_progress')\
+                    .select('*')\
+                    .eq('search_id', search_id)\
+                    .execute()
+                
+                if result.data and len(result.data) > 0:
+                    row = result.data[0]
+                    response = {
+                        "status": row.get("status") or "running",
+                        "progress": row.get("progress") or 0,
+                        "message": row.get("message"),
+                        "candidates": row.get("candidates") or [],
+                        "pagination_meta": row.get("pagination_meta") or {},
+                        "error": row.get("error"),
+                    }
+        except Exception as e_sb:
+            logging.debug(f"[progress-API] supabase table lookup skipped: {e_sb}")
 
         if not response and search_id in _search_result_store:
             res = _search_result_store[search_id]

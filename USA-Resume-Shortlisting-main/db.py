@@ -9,8 +9,8 @@ except ImportError:
     SUPABASE_AVAILABLE = False
     Client = None
 
-SUPABASE_URL = os.environ.get("SUPABASE_URL", "https://fvbctgxwjrctcssckggp.supabase.co")
-SUPABASE_KEY = os.environ.get("SUPABASE_ANON_KEY") or os.environ.get("SUPABASE_KEY", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ2YmN0Z3h3anJjdGNzc2NrZ2dwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTAxNDc1MDUsImV4cCI6MjEwNTcyMzUwNX0.Nz0G-FmUDvzKOVTmIhu8EFpYjH5EDjZO-JuSwylRCVU")
+SUPABASE_URL = os.environ.get("SUPABASE_URL", "https://crwlyyfqbnonvgabdunf.supabase.co")
+SUPABASE_KEY = os.environ.get("SUPABASE_ANON_KEY") or os.environ.get("SUPABASE_KEY", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNyd2x5eWZxYm5vbnZnYWJkdW5mIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTM4NTczMDAsImV4cCI6MjEwOTQzMzMwMH0.w7xaznpr5OtDw-lYByMmbPGDoeDvvHgKNqd6ul9ceMw")
 
 _supabase_client = None
 

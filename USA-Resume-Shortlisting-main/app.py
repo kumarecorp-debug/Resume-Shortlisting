@@ -59,8 +59,8 @@ def serve_static_fallback(filename):
     return send_from_directory(static_dir, filename)
 
 # Supabase Authentication Setup
-SUPABASE_URL = os.environ.get("SUPABASE_URL", "https://fvbctgxwjrctcssckggp.supabase.co")
-SUPABASE_KEY = os.environ.get("SUPABASE_ANON_KEY") or os.environ.get("SUPABASE_KEY", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ2YmN0Z3h3anJjdGNzc2NrZ2dwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTAxNDc1MDUsImV4cCI6MjEwNTcyMzUwNX0.Nz0G-FmUDvzKOVTmIhu8EFpYjH5EDjZO-JuSwylRCVU")
+SUPABASE_URL = os.environ.get("SUPABASE_URL", "https://crwlyyfqbnonvgabdunf.supabase.co")
+SUPABASE_KEY = os.environ.get("SUPABASE_ANON_KEY") or os.environ.get("SUPABASE_KEY", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNyd2x5eWZxYm5vbnZnYWJkdW5mIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTM4NTczMDAsImV4cCI6MjEwOTQzMzMwMH0.w7xaznpr5OtDw-lYByMmbPGDoeDvvHgKNqd6ul9ceMw")
 supabase_client: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -78,12 +78,8 @@ def verify_ai_startup():
 
 verify_ai_startup()
 
-search_progress_store = {}
+_recent_requests = {}   # (mailbox, jd) -> timestamp
 
-@app.route('/api/search/progress/<search_id>', methods=['GET'])
-def get_search_progress(search_id):
-    prog = search_progress_store.get(search_id, {"current": 0, "total": 0, "status": "completed"})
-    return jsonify(prog)
 
 if not os.environ.get("VERCEL"):
     try:
@@ -338,7 +334,7 @@ def compute_date_display(preset, df_str, dt_str):
         pass
     return None
 
-def execute_full_candidate_search(job_query, selected_account, max_candidates=25, date_preset=None, date_from=None, date_to=None, search_id=None):
+def execute_full_candidate_search(job_query, selected_account, max_candidates=25, date_preset=None, date_from=None, date_to=None, search_id=None, exclude_copied_emails=None):
     resume_folder = RS_Project.RESUME_FOLDER
     try:
         if not os.path.exists(resume_folder):
@@ -357,7 +353,7 @@ def execute_full_candidate_search(job_query, selected_account, max_candidates=25
     scan_summary = {'pdf': 0, 'docx': 0}
 
     try:
-        RS_Project.main(job_query, account_email=selected_account, max_candidates=max_candidates, date_preset=date_preset, date_from=date_from, date_to=date_to, search_id=search_id)
+        RS_Project.main(job_query, account_email=selected_account, max_candidates=max_candidates, date_preset=date_preset, date_from=date_from, date_to=date_to, search_id=search_id, exclude_copied_emails=exclude_copied_emails)
     except Exception as e:
         logging.error(f"Error in RS_Project.main: {e}")
 
@@ -497,17 +493,50 @@ def execute_full_candidate_search(job_query, selected_account, max_candidates=25
 
     return df, scan_summary
 
-_search_progress_store = defaultdict(dict)
 _search_result_store = {}
 
+def update_search_progress(search_id, data):
+    try:
+        client = db.get_supabase()
+        if client:
+            client.table('search_progress').upsert({
+                "search_id": search_id,
+                "status": data.get("status", "running"),
+                "progress": data.get("progress", 0),
+                "message": data.get("message"),
+                "candidates": data.get("candidates"),
+                "pagination_meta": data.get("pagination_meta"),
+                "error": data.get("error"),
+                "updated_at": "now()"
+            }).execute()
+    except Exception as e:
+        logging.debug(f"[search-progress-db] upsert skipped: {e}")
+
+def get_search_progress(search_id):
+    try:
+        client = db.get_supabase()
+        if client:
+            r = client.table('search_progress').select('*').eq('search_id', search_id).execute()
+            if r.data and len(r.data) > 0:
+                return r.data[0]
+    except Exception as e:
+        logging.debug(f"[search-progress-db] select skipped: {e}")
+    return None
+
+_active_searches = {}
+_active_searches_by_key = {}
+_cancelled_searches = set()
+_search_lock = threading.Lock()
+_progress_cache = {}  # search_id -> (response, timestamp)
+CACHE_TTL = 1.0
+
 def run_async_search(search_id, params):
+    if search_id in _cancelled_searches:
+        logging.info(f"[search-CANCELLED] search_id={search_id} was cancelled before starting")
+        return
+
     t_start = time.time()
-    _search_progress_store[search_id] = {
-        "status": "processing",
-        "current": 0,
-        "total": 0,
-        "message": "Connecting to mailbox..."
-    }
+    update_search_progress(search_id, {"status": "running", "progress": 0, "message": "Connecting to mailbox..."})
     try:
         job_query = params.get('job_query')
         selected_account = params.get('selected_account', 'recruiter@ecorptrainings.com')
@@ -515,10 +544,11 @@ def run_async_search(search_id, params):
         date_preset = params.get('date_preset', 'any')
         date_from = params.get('date_from', '')
         date_to = params.get('date_to', '')
-        fast_mode = params.get('fast_mode', False)
-
-        if fast_mode and max_candidates > 30:
-            max_candidates = 30
+        show_mode = params.get('show_mode', 'all')
+        copied_emails = None
+        if show_mode != 'copied':
+            copied_emails = get_cached_copied_emails(selected_account)
+            logging.info(f"[search] Excluding {len(copied_emails)} copied emails from Gmail search for mailbox {selected_account}")
 
         df, scan_summary = execute_full_candidate_search(
             job_query,
@@ -526,8 +556,14 @@ def run_async_search(search_id, params):
             max_candidates=max_candidates,
             date_preset=date_preset,
             date_from=date_from,
-            date_to=date_to
+            date_to=date_to,
+            search_id=search_id,
+            exclude_copied_emails=copied_emails
         )
+
+        if search_id in _cancelled_searches:
+            logging.info(f"[search-CANCELLED] search_id={search_id} cancelled during search")
+            return
 
         all_records = df.fillna("N/A").to_dict(orient='records') if not df.empty else []
         elapsed = round(time.time() - t_start, 1)
@@ -539,71 +575,129 @@ def run_async_search(search_id, params):
             "scan_summary": scan_summary,
             "elapsed": elapsed
         }
-        _search_progress_store[search_id] = {
+        
+        logging.info(f"[search-DONE-STATUS] id={search_id} candidates={len(all_records)}")
+        update_search_progress(search_id, {
             "status": "done",
-            "current": len(all_records),
-            "total": len(all_records),
-            "message": "Search complete"
-        }
+            "progress": 100,
+            "message": f"Found {len(all_records)} candidates",
+            "candidates": all_records,
+            "pagination_meta": {"total": len(all_records), "elapsed": elapsed}
+        })
     except Exception as e:
         logging.error(f"[search-ERROR] {e}")
-        _search_progress_store[search_id] = {
-            "status": "error",
-            "message": str(e)
-        }
+        update_search_progress(search_id, {"status": "error", "error": str(e), "message": str(e)})
 
 @app.route('/api/search/start', methods=['POST'])
 def api_search_start():
     params = request.get_json(force=True) or {}
-    search_id = str(uuid.uuid4())
-    t = threading.Thread(target=run_async_search, args=(search_id, params), daemon=True)
-    t.start()
-    return jsonify({"search_id": search_id})
+    search_id = params.get('search_id') or str(uuid.uuid4())
+    with _search_lock:
+        if search_id in _active_searches and _active_searches[search_id].is_alive():
+            logging.info(f"[search] Search thread already active for {search_id}")
+            return jsonify({"search_id": search_id, "status": "already_running"})
 
-_active_searches = {}
-_search_lock = threading.Lock()
+        t = threading.Thread(target=run_async_search, args=(search_id, params), daemon=True)
+        _active_searches[search_id] = t
+        t.start()
+    return jsonify({"search_id": search_id, "status": "started"})
 
-@app.route('/api/search/progress/<search_id>')
-def api_search_progress(search_id):
+@app.route('/api/search/cancel/<search_id>', methods=['POST'])
+def api_search_cancel(search_id):
+    _cancelled_searches.add(search_id)
+    RS_Project._search_cancelled[search_id] = True
     if search_id in RS_Project._searches:
-        prog = RS_Project._searches[search_id]
-        target = max(prog.target, 1)
-        found_relevant = getattr(prog, 'current', 0)
-        resumes_extracted = getattr(prog, 'current', 0)
-        emails_scanned = getattr(prog, 'emails_scanned', 0)
-        pct = int((resumes_extracted / target) * 100) if target > 0 else 0
-        
-        if prog.status == "downloading":
-            rem_sec = max(10, int((target - max(prog.resumes_found, 1)) * 1.5))
-            msg = f"Downloading attachments ({prog.resumes_found}/{target} found)"
-        elif prog.status == "extracting":
-            remaining_items = max(0, target - resumes_extracted)
-            rem_sec = max(5, int(remaining_items * 1.5))
-            msg = f"Found {found_relevant} relevant (still searching...)"
-        else:
-            rem_sec = 0
-            msg = "Search complete"
+        RS_Project._searches[search_id].set_stats(status="cancelled", message="Search cancelled by user")
+    logging.info(f"[search-CANCEL] Cancellation requested for search_id={search_id}")
+    return jsonify({'ok': True, 'message': 'Search cancellation requested'})
 
-        return jsonify({
-            "status": prog.status,
-            "target": target,
-            "found_relevant": found_relevant,
-            "resumes_extracted": resumes_extracted,
-            "emails_scanned": emails_scanned,
-            "percentage": min(pct, 100),
-            "eta_seconds": rem_sec,
-            "message": msg
-        })
-    return jsonify({
+@app.route('/api/search/progress/<search_id>', methods=['GET'])
+def api_search_progress(search_id):
+    now = time.time()
+    cached = _progress_cache.get(search_id)
+    if cached and (now - cached[1]) < CACHE_TTL:
+        return jsonify(cached[0]), 200
+
+    try:
+        response = None
+        try:
+            client = db.get_supabase()
+            if client:
+                result = client.table('search_progress')\
+                    .select('*')\
+                    .eq('search_id', search_id)\
+                    .execute()
+                
+                if result.data and len(result.data) > 0:
+                    row = result.data[0]
+                    response = {
+                        "status": row.get("status") or "running",
+                        "progress": row.get("progress") or 0,
+                        "message": row.get("message"),
+                        "candidates": row.get("candidates") or [],
+                        "pagination_meta": row.get("pagination_meta") or {},
+                        "error": row.get("error"),
+                    }
+        except Exception as e_sb:
+            logging.debug(f"[progress-API] supabase table lookup skipped: {e_sb}")
+
+        if not response and search_id in _search_result_store:
+            res = _search_result_store[search_id]
+            cands = res.get("candidates", [])
+            response = {
+                "status": res.get("status", "done"),
+                "progress": 100,
+                "message": f"Found {len(cands)} candidates",
+                "candidates": cands,
+                "pagination_meta": res.get("pagination_meta", {}),
+                "error": None
+            }
+
+        if not response and search_id in RS_Project._searches:
+            prog = RS_Project._searches[search_id]
+            status = getattr(prog, 'status', 'running')
+            pct = int((prog.current / max(prog.target, 1)) * 100)
+            response = {
+                "status": "done" if status == "done" else "running",
+                "progress": 100 if status == "done" else min(pct, 99),
+                "message": getattr(prog, 'message', '') or "Searching...",
+                "candidates": [],
+                "pagination_meta": {},
+                "error": None
+            }
+
+        if not response:
+            response = {"status": "running", "progress": 0, "candidates": []}
+
+        logging.info(
+            f"[progress-API] id={search_id} status={response['status']} "
+            f"progress={response['progress']} candidates={len(response.get('candidates', []))}"
+        )
+        _progress_cache[search_id] = (response, now)
+        return jsonify(response), 200
+    except Exception as e:
+        logging.error(f"[progress-API] error for {search_id}: {e}")
+        if cached:
+            return jsonify(cached[0]), 200
+        return jsonify({"status": "running", "progress": 0, "candidates": []}), 200
+
+    data = {
         "status": "not_found",
+        "stage": "initializing",
+        "current": 0,
+        "total": 25,
+        "found": 0,
+        "elapsed_seconds": 0,
+        "eta_seconds": 0,
         "target": 25,
         "found_relevant": 0,
         "resumes_extracted": 0,
         "emails_scanned": 0,
         "percentage": 0,
-        "eta_seconds": 0,
-        "message": "Search initializing..."
-    })
+        "message": "Connecting to Gmail..."
+    }
+    logging.info(f"[progress-API] id={search_id} status={data.get('status')} progress={data.get('percentage')}")
+    return jsonify(data)
 
 @app.route('/api/search/result/<search_id>')
 def api_search_result(search_id):
@@ -620,7 +714,28 @@ def process():
     is_get_search = request.method == 'GET' and (request.args.get('jd') or request.args.get('job_query'))
 
     if request.method == 'POST' or is_get_search:
-        return _do_process(available_accounts, default_account, is_get_search)
+        try:
+            return _do_process(available_accounts, default_account, is_get_search)
+        except Exception as e:
+            logging.error(f"Error in _do_process: {e}", exc_info=True)
+            flash(f"Search Error: {str(e)}", 'error')
+            return render_template(
+                'process.jinja',
+                job_query=request.form.get('job_query') or request.args.get('jd') or '',
+                job_role=None,
+                selected_account=default_account,
+                available_accounts=available_accounts,
+                table_data=[],
+                columns=[],
+                search_id=None,
+                total_matches=0,
+                page_size=25,
+                date_preset='any',
+                date_from='',
+                date_to='',
+                date_display=None,
+                scan_summary=None
+            )
 
     raw_acct = request.args.get('account_email') or request.args.get('mailbox') or session.get('selected_account') or default_account
     if isinstance(raw_acct, dict):
@@ -647,8 +762,6 @@ def process():
 def _do_process(available_accounts, default_account, is_get_search):
     import uuid
     job_query = (request.form.get('job_query') or request.args.get('jd') or request.args.get('job_query') or '').strip()
-    search_id = str(uuid.uuid4())
-    logging.info(f"[search-NEW] search_id={search_id} jd={job_query}")
     raw_acct = request.form.get('account_email') or request.form.get('mailbox') or request.args.get('account_email') or request.args.get('mailbox') or session.get('selected_account') or default_account
     if isinstance(raw_acct, dict):
         selected_account = raw_acct.get('email', default_account)
@@ -792,16 +905,86 @@ def _do_process(available_accounts, default_account, is_get_search):
             scan_summary=scan_summary
         )
 
-    # LIVE GMAIL SEARCH MODE: Query Gmail API live
-    df, scan_summary = execute_full_candidate_search(
-        job_query, 
-        selected_account, 
-        max_candidates=max_candidates,
-        date_preset=date_preset,
-        date_from=date_from,
-        date_to=date_to,
-        search_id=search_id
-    )
+    # LIVE GMAIL SEARCH MODE: Check for completed async search or launch background search thread
+    req_search_id = request.args.get('search_id') or request.form.get('search_id')
+    cached_res = None
+    if req_search_id:
+        if req_search_id in _search_result_store:
+            cached_res = _search_result_store[req_search_id]
+        else:
+            db_prog = get_search_progress(req_search_id)
+            if db_prog and db_prog.get("candidates") and len(db_prog.get("candidates")) > 0:
+                cached_res = {
+                    "candidates": db_prog.get("candidates", []),
+                    "scan_summary": {"pdf": 0, "docx": 0}
+                }
+    
+    if cached_res:
+        all_cands = cached_res.get('candidates', [])
+        scan_summary = cached_res.get('scan_summary', {"pdf": 0, "docx": 0})
+        df = pd.DataFrame(all_cands) if all_cands else pd.DataFrame()
+        search_id = req_search_id
+    else:
+        # Cancel any existing active search for the same mailbox+jd
+        search_key = (selected_account, job_query)
+        now = time.time()
+        last = _recent_requests.get(search_key, 0)
+        if now - last < 5:
+            logging.warning(f"[process] DUPLICATE request for {search_key} within 5s, ignoring")
+            if request.is_json or request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                return jsonify({"status": "duplicate_ignored"}), 200
+        _recent_requests[search_key] = now
+
+        existing_id = _active_searches_by_key.get(search_key)
+        if existing_id:
+            logging.info(f"[process] cancelling previous search {existing_id} for {search_key}")
+            _cancelled_searches.add(existing_id)
+            RS_Project._search_cancelled[existing_id] = True
+            _active_searches_by_key.pop(search_key, None)
+
+        search_id = str(uuid.uuid4())
+        _active_searches_by_key[search_key] = search_id
+        logging.info(f"[search-NEW] search_id={search_id} jd={job_query}")
+        params = {
+            'job_query': job_query,
+            'selected_account': selected_account,
+            'max_candidates': max_candidates,
+            'date_preset': time_window,
+            'date_from': date_from,
+            'date_to': date_to,
+            'show_mode': show_mode,
+            'user_email': session.get('user', {}).get('email') if isinstance(session.get('user'), dict) else selected_account
+        }
+        t = threading.Thread(target=run_async_search, args=(search_id, params), daemon=True)
+        t.start()
+
+        date_display = compute_date_display(time_window, date_from, date_to)
+        resolved_gmail_query = gmail_search.build_gmail_search_query(job_query, date_preset=time_window, date_from=date_from, date_to=date_to)
+
+        return render_template(
+            'process.jinja',
+            job_query=job_query,
+            job_role=job_query,
+            selected_account=selected_account,
+            available_accounts=available_accounts,
+            table_data=[],
+            columns=["Rank", "Name", "Gender", "Email", "Phone", "Experience", "Skill Set", "Matched Skills", "Match Score", "Match Reason"],
+            search_id=search_id,
+            is_async_searching=True,
+            total_matches=0,
+            max_candidates=max_candidates,
+            min_exp=min_exp,
+            time_window=time_window,
+            date_preset=date_preset,
+            date_from=date_from,
+            date_to=date_to,
+            show_mode=show_mode,
+            search_mode='live',
+            search_source='gmail',
+            date_display=date_display,
+            resolved_gmail_query=resolved_gmail_query,
+            scan_summary=None
+        )
     
     date_display = compute_date_display(time_window, date_from, date_to)
     resolved_gmail_query = gmail_search.build_gmail_search_query(job_query, date_preset=time_window, date_from=date_from, date_to=date_to)
@@ -1247,7 +1430,7 @@ def api_history_delta():
     new_count = 0
     total_count = rec.get('results_count', 0)
     try:
-        service = RS_Project.auto_authenticate_google(account_email=mailbox)
+        service = RS_Project.auto_authenticate_google(account_email=mailbox, allow_interactive=False)
         res = service.users().messages().list(userId='me', q=full_query, maxResults=100).execute()
         msgs = res.get('messages', [])
         new_count = len(msgs)
@@ -1508,7 +1691,7 @@ def api_gmail_count():
     try:
         from gmail_search import build_gmail_search_query
         query = build_gmail_search_query(jd, date_preset=preset, date_from=df, date_to=dt)
-        service = RS_Project.auto_authenticate_google(mailbox.lower().strip())
+        service = RS_Project.auto_authenticate_google(mailbox.lower().strip(), allow_interactive=False)
         res = service.users().messages().list(userId='me', q=query, maxResults=100).execute()
         count = len(res.get('messages', []))
         return jsonify({'count': count})
@@ -1915,7 +2098,7 @@ def gmail_count():
         elif "has:attachment" not in query:
             query = f"has:attachment {query}".strip()
 
-        service = RS_Project.auto_authenticate_google(mailbox)
+        service = RS_Project.auto_authenticate_google(mailbox, allow_interactive=False)
         results = service.users().messages().list(
             userId='me', q=query, maxResults=1
         ).execute()
@@ -1998,4 +2181,4 @@ def debug_extract_text(filename):
     })
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run(debug=True, use_reloader=False, host='127.0.0.1', port=5000)
