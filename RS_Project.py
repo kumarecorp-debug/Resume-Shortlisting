@@ -49,21 +49,30 @@ logger = logging.getLogger(__name__)
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 if os.environ.get("VERCEL") or os.environ.get("AWS_LAMBDA_FUNCTION_NAME"):
     RESUME_FOLDER = os.path.join(tempfile.gettempdir(), "Resumes")
+    GMAIL_CACHE_DIR = os.path.join(tempfile.gettempdir(), "cache", "gmail_queries")
 else:
     try:
         RESUME_FOLDER = os.path.join(SCRIPT_DIR, "Resumes")
-        os.makedirs(RESUME_FOLDER, exist_ok=True)
     except Exception:
         RESUME_FOLDER = os.path.join(tempfile.gettempdir(), "Resumes")
+    try:
+        GMAIL_CACHE_DIR = os.path.join(SCRIPT_DIR, "cache", "gmail_queries")
+    except Exception:
+        GMAIL_CACHE_DIR = os.path.join(tempfile.gettempdir(), "cache", "gmail_queries")
 
-os.makedirs(RESUME_FOLDER, exist_ok=True)
+try:
+    os.makedirs(RESUME_FOLDER, exist_ok=True)
+except Exception:
+    pass
 
 OUTPUT_CSV = os.path.join(RESUME_FOLDER, "resume_analysis.csv")
 CLIENT_SECRET_FILE = os.path.join(SCRIPT_DIR, "client.json")
 TOKEN_FILE = os.path.join(SCRIPT_DIR, "token.json")
 
-GMAIL_CACHE_DIR = os.path.join(SCRIPT_DIR, "cache", "gmail_queries")
-os.makedirs(GMAIL_CACHE_DIR, exist_ok=True)
+try:
+    os.makedirs(GMAIL_CACHE_DIR, exist_ok=True)
+except Exception:
+    pass
 
 try:
     load_dotenv(os.path.join(SCRIPT_DIR, ".env"))
@@ -262,8 +271,11 @@ def auto_authenticate_google(account_email="recruiter@ecorptrainings.com", allow
                     for attempt in range(3):
                         try:
                             creds.refresh(Request())
-                            with open(token_file, 'w', encoding='utf-8') as token:
-                                token.write(creds.to_json())
+                            try:
+                                with open(token_file, 'w', encoding='utf-8') as token:
+                                    token.write(creds.to_json())
+                            except Exception as write_err:
+                                logger.warning(f"Could not persist refreshed token to disk (likely serverless): {write_err}")
                             refresh_success = True
                             break
                         except Exception as ref_err:
