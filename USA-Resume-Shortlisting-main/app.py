@@ -955,36 +955,57 @@ def _do_process(available_accounts, default_account, is_get_search):
             'show_mode': show_mode,
             'user_email': session.get('user', {}).get('email') if isinstance(session.get('user'), dict) else selected_account
         }
-        t = threading.Thread(target=run_async_search, args=(search_id, params), daemon=True)
-        t.start()
 
-        date_display = compute_date_display(time_window, date_from, date_to)
-        resolved_gmail_query = gmail_search.build_gmail_search_query(job_query, date_preset=time_window, date_from=date_from, date_to=date_to)
+        is_serverless = bool(os.environ.get("VERCEL") or os.environ.get("AWS_LAMBDA_FUNCTION_NAME"))
 
-        return render_template(
-            'process.jinja',
-            job_query=job_query,
-            job_role=job_query,
-            selected_account=selected_account,
-            available_accounts=available_accounts,
-            table_data=[],
-            columns=["Rank", "Name", "Gender", "Email", "Phone", "Experience", "Skill Set", "Matched Skills", "Match Score", "Match Reason"],
-            search_id=search_id,
-            is_async_searching=True,
-            total_matches=0,
-            max_candidates=max_candidates,
-            min_exp=min_exp,
-            time_window=time_window,
-            date_preset=date_preset,
-            date_from=date_from,
-            date_to=date_to,
-            show_mode=show_mode,
-            search_mode='live',
-            search_source='gmail',
-            date_display=date_display,
-            resolved_gmail_query=resolved_gmail_query,
-            scan_summary=None
-        )
+        if is_serverless:
+            # On Vercel / serverless: execute synchronously because background threads are frozen once HTTP response finishes
+            copied_emails = None
+            if show_mode != 'copied':
+                copied_emails = get_cached_copied_emails(selected_account)
+                logging.info(f"[search] Excluding {len(copied_emails)} copied emails from Gmail search for mailbox {selected_account}")
+            df, scan_summary = execute_full_candidate_search(
+                job_query,
+                selected_account,
+                max_candidates=max_candidates,
+                date_preset=time_window,
+                date_from=date_from,
+                date_to=date_to,
+                search_id=search_id,
+                exclude_copied_emails=copied_emails
+            )
+        else:
+            # On Render / persistent server: use async background thread and real-time polling
+            t = threading.Thread(target=run_async_search, args=(search_id, params), daemon=True)
+            t.start()
+
+            date_display = compute_date_display(time_window, date_from, date_to)
+            resolved_gmail_query = gmail_search.build_gmail_search_query(job_query, date_preset=time_window, date_from=date_from, date_to=date_to)
+
+            return render_template(
+                'process.jinja',
+                job_query=job_query,
+                job_role=job_query,
+                selected_account=selected_account,
+                available_accounts=available_accounts,
+                table_data=[],
+                columns=["Rank", "Name", "Gender", "Email", "Phone", "Experience", "Skill Set", "Matched Skills", "Match Score", "Match Reason"],
+                search_id=search_id,
+                is_async_searching=True,
+                total_matches=0,
+                max_candidates=max_candidates,
+                min_exp=min_exp,
+                time_window=time_window,
+                date_preset=date_preset,
+                date_from=date_from,
+                date_to=date_to,
+                show_mode=show_mode,
+                search_mode='live',
+                search_source='gmail',
+                date_display=date_display,
+                resolved_gmail_query=resolved_gmail_query,
+                scan_summary=None
+            )
     
     date_display = compute_date_display(time_window, date_from, date_to)
     resolved_gmail_query = gmail_search.build_gmail_search_query(job_query, date_preset=time_window, date_from=date_from, date_to=date_to)
