@@ -91,7 +91,9 @@ KNOWN_SKILLS = [
     "numpy", "scikit-learn", "tensorflow", "pytorch", "tableau", "power bi",
     "linux", "git", "jira", "agile", "scrum", "devops", "microservices",
     "sap", "grc", "hana", "basis", "abap", "ui5", "fiori", "capm", "scm", "fusion",
-    "hcm", "oic", "faw", "fdi", "bip", "otbi", "plsql", "pl/sql", "toad", "rice"
+    "hcm", "oic", "faw", "fdi", "bip", "otbi", "plsql", "pl/sql", "toad", "rice",
+    "ai", "genai", "artificial intelligence", "luster", "lustre", "weka", "storage",
+    "san", "nas", "salesforce", "sfdc", "developer", "engineer"
 ]
 
 # Supported Gmail Accounts Configuration
@@ -234,7 +236,9 @@ def auto_authenticate_google(account_email="recruiter@ecorptrainings.com", allow
             primary_env,
             f"GOOGLE_TOKEN_{username_prefix}_JSON",
             f"TOKEN_{username_prefix}_JSON",
-            f"GMAIL_TOKEN_{username_prefix}"
+            f"GMAIL_TOKEN_{username_prefix}",
+            "GOOGLE_TOKEN_JSON",
+            "GMAIL_TOKEN_JSON"
         ]
         seen = set()
         env_token_keys = [k for k in env_token_keys if k and not (k in seen or seen.add(k))]
@@ -264,9 +268,25 @@ def auto_authenticate_google(account_email="recruiter@ecorptrainings.com", allow
             try:
                 creds = Credentials.from_authorized_user_file(token_file, SCOPES)
                 if creds and creds.expired and creds.refresh_token:
-                    creds.refresh(Request())
-                    with open(token_file, 'w', encoding='utf-8') as token:
-                        token.write(creds.to_json())
+                    # Retry token refresh up to 3 times for transient SSL/network drops
+                    refresh_success = False
+                    for attempt in range(3):
+                        try:
+                            creds.refresh(Request())
+                            try:
+                                with open(token_file, 'w', encoding='utf-8') as token:
+                                    token.write(creds.to_json())
+                            except Exception as write_err:
+                                logger.warning(f"Could not persist refreshed token to disk (likely serverless): {write_err}")
+                            refresh_success = True
+                            break
+                        except Exception as ref_err:
+                            err_str = str(ref_err).lower()
+                            if ('ssl' in err_str or 'connection' in err_str or 'timeout' in err_str or 'remote' in err_str) and attempt < 2:
+                                logger.warning(f"Transient network error refreshing token (attempt {attempt+1}/3): {ref_err}. Retrying in 2s...")
+                                time.sleep(2)
+                            else:
+                                raise ref_err
                 if creds and creds.valid:
                     return build_gmail_service(creds)
             except Exception as e:
@@ -580,6 +600,30 @@ def extract_experience_from_text(text):
 
     return "2.0 years"
 
+SYNONYM_DICT = {
+    'ai': ['ai', 'artificial intelligence', 'genai', 'generative ai', 'llm', 'machine learning', 'ml', 'deep learning'],
+    'ml': ['ml', 'machine learning', 'deep learning'],
+    'genai': ['genai', 'generative ai', 'llm', 'large language model'],
+    'luster': ['luster', 'lustre'],
+    'lustre': ['lustre', 'luster'],
+    'weka': ['weka', 'wekafs', 'weka.io'],
+    'storage': ['storage', 'nas', 'san', 'nvme', 'file system', 'filesystem', 'cloud storage', 's3'],
+    'k8s': ['k8s', 'kubernetes'],
+    'kubernetes': ['kubernetes', 'k8s'],
+    'js': ['js', 'javascript'],
+    'javascript': ['javascript', 'js'],
+    'ts': ['ts', 'typescript'],
+    'typescript': ['typescript', 'ts'],
+    'py': ['py', 'python'],
+    'python': ['python', 'py'],
+    'react': ['react', 'react.js', 'reactjs'],
+    'node': ['node', 'node.js', 'nodejs'],
+    'sfdc': ['sfdc', 'salesforce'],
+    'salesforce': ['salesforce', 'sfdc'],
+    'developer': ['developer', 'dev', 'programmer', 'software engineer', 'engineer'],
+    'engineer': ['engineer', 'engineering', 'developer'],
+}
+
 def extract_skills_from_text(text, job_description=""):
     text_lower = text.lower()
     found_skills = []
@@ -587,14 +631,20 @@ def extract_skills_from_text(text, job_description=""):
     for skill in KNOWN_SKILLS:
         pattern = r'\b' + re.escape(skill) + r'\b'
         if re.search(pattern, text_lower):
-            found_skills.append(skill.title())
+            found_skills.append(skill.upper() if len(skill) <= 4 else skill.title())
             
     clean_query = re.sub(r'\b(?:AND|OR)\b', ' ', job_description, flags=re.IGNORECASE)
     jd_tokens = re.findall(r'[a-zA-Z0-9+#.]+', clean_query.lower())
     for token in jd_tokens:
-        if len(token) > 2 and token not in ["and", "for", "with", "the", "developer", "engineer", "consultant"]:
-            if re.search(r'\b' + re.escape(token) + r'\b', text_lower):
-                title_t = token.title()
+        if len(token) >= 2 and token not in ["and", "for", "with", "the", "in", "on", "to", "at", "a", "an"]:
+            variants = SYNONYM_DICT.get(token, [token])
+            matched = False
+            for v in variants:
+                if re.search(r'\b' + re.escape(v) + r'\b', text_lower):
+                    matched = True
+                    break
+            if matched:
+                title_t = token.upper() if len(token) <= 4 else token.title()
                 if title_t not in found_skills:
                     found_skills.append(title_t)
                 
@@ -610,12 +660,19 @@ def extract_matched_skills_and_score(resume_text, job_description):
     text_lower = resume_text.lower()
     raw_query = job_description.strip()
     words = re.findall(r'\b[A-Za-z0-9+#.]+\b', raw_query)
-    stop_tokens = {"and", "or", "the", "for", "with", "in", "on", "to", "at", "a", "an", "is", "are", "we", "need", "developer", "engineer", "consultant"}
+    stop_tokens = {"and", "or", "the", "for", "with", "in", "on", "to", "at", "a", "an", "is", "are", "we", "need", "require", "required"}
 
-    cleaned_terms = [w for w in words if w.lower() not in stop_tokens and len(w) > 1]
+    cleaned_terms = [w for w in words if w.lower() not in stop_tokens and len(w) >= 2]
     matched_set = []
     for term in cleaned_terms:
-        if re.search(r'\b' + re.escape(term.lower()) + r'\b', text_lower):
+        term_low = term.lower()
+        variants = SYNONYM_DICT.get(term_low, [term_low])
+        matched = False
+        for v in variants:
+            if re.search(r'\b' + re.escape(v) + r'\b', text_lower):
+                matched = True
+                break
+        if matched:
             t_case = term.upper() if len(term) <= 4 else term.title()
             if t_case not in matched_set:
                 matched_set.append(t_case)
@@ -785,6 +842,20 @@ def extract_candidate_entities_with_ai(resume_text, email_body, job_description,
 
     return candidate_data
 
+IS_RENDER = bool(os.environ.get("RENDER"))
+
+if IS_RENDER:
+    MAX_ATTACHMENTS_TO_DOWNLOAD = 50
+    ATTACHMENT_DOWNLOAD_DELAY = 0.25  # 250ms safe delay between download requests
+    MAX_SEARCH_SECONDS = 480         # 8 minutes on Render (480s)
+    logger.warning("[startup] Running on Render — max search cap set to 8 minutes (480s)")
+else:
+    MAX_ATTACHMENTS_TO_DOWNLOAD = 200
+    ATTACHMENT_DOWNLOAD_DELAY = 0.25  # 250ms safe delay between download requests to prevent Gmail 403
+    MAX_SEARCH_SECONDS = 900         # 15 minutes locally (900s)
+
+_search_cancelled = {}
+
 class SearchProgress:
     def __init__(self, target, search_id=""):
         self.target = max(target, 1)
@@ -792,11 +863,13 @@ class SearchProgress:
         self.resumes_found = 0
         self.current = 0
         self.lock = threading.Lock()
-        self.status = "downloading"  # downloading | extracting | done | error
+        self.status = "downloading"  # downloading | extracting | scoring | done | error
+        self.stage = "downloading"
         self.search_id = search_id
         self.t_start = time.time()
+        self.message = ""
 
-    def set_stats(self, emails_scanned=None, resumes_found=None, status=None):
+    def set_stats(self, emails_scanned=None, resumes_found=None, status=None, stage=None, message=None):
         with self.lock:
             if emails_scanned is not None:
                 self.emails_scanned = emails_scanned
@@ -804,6 +877,10 @@ class SearchProgress:
                 self.resumes_found = resumes_found
             if status is not None:
                 self.status = status
+            if stage is not None:
+                self.stage = stage
+            if message is not None:
+                self.message = message
 
     def increment(self, step=1):
         with self.lock:
@@ -811,24 +888,41 @@ class SearchProgress:
             pct = int((self.current / self.target) * 100)
             logger.info(f"[search-PROGRESS] {self.current}/{self.target} ({pct}%)")
 
-    def done(self):
+    def done(self, message=""):
         with self.lock:
             self.current = self.target
             self.status = "done"
+            self.stage = "done"
+            if message:
+                self.message = message
+
+    @property
+    def elapsed_seconds(self):
+        return int(time.time() - self.t_start)
+
+    @property
+    def eta_seconds(self):
+        elapsed = self.elapsed_seconds
+        if self.status in ["done", "completed", "cancelled", "error"]:
+            return 0
+        if self.current > 0 and self.target > 0:
+            avg_sec = elapsed / self.current
+            rem_items = max(0, self.target - self.current)
+            return max(5, int(avg_sec * rem_items))
+        if self.resumes_found > 0 and self.target > 0:
+            avg_sec = elapsed / max(1, self.resumes_found)
+            rem_items = max(0, self.target - self.resumes_found)
+            return max(5, int(avg_sec * rem_items))
+        return max(5, MAX_SEARCH_SECONDS - elapsed)
 
 _searches = {}
 _attachment_cache = {}
 _search_cache = {}
 
 MAX_EMAILS_TO_SCAN = 500
-MAX_ATTACHMENTS_TO_DOWNLOAD = 200
-
-if os.environ.get("VERCEL"):
-    MAX_ATTACHMENTS_TO_DOWNLOAD = 50
 
 _search_lock = threading.Lock()
 _downloaded_messages = set()
-ATTACHMENT_DOWNLOAD_DELAY = 0.1  # 100ms delay between download requests (10/sec safe rate)
 
 def download_attachment_cached(service, message_id, attachment_id):
     cache_key = f"{message_id}:{attachment_id}"
@@ -852,10 +946,11 @@ def download_attachment_cached(service, message_id, attachment_id):
         return file_bytes
     return None
 
-def search_gmail_until_target(mailbox=None, jd=None, target_attachments=50, batch_size=50, max_emails=500, service=None, query=None, email_key=None, search_id=None):
+def search_gmail_until_target(mailbox=None, jd=None, target_attachments=50, batch_size=50, max_emails=500, service=None, query=None, email_key=None, search_id=None, exclude_copied_emails=None):
     """
     Fetch Gmail emails in batches until target_attachments resume files are downloaded.
     Deduplicates attachments by content hash and logs search progress.
+    Optionally skips messages matching exclude_copied_emails.
     """
     if email_key is None:
         email_key = mailbox if mailbox else "recruiter@ecorptrainings.com"
@@ -879,8 +974,22 @@ def search_gmail_until_target(mailbox=None, jd=None, target_attachments=50, batc
     max_iterations = max(1, max_emails // batch_size)
 
     progress = _searches.get(search_id) if search_id and '_searches' in globals() else None
+    t_loop_start = time.time()
 
     while len(downloaded_files) < target_attachments and iteration < max_iterations:
+        elapsed_sec = time.time() - t_loop_start
+        if search_id and _search_cancelled.get(search_id):
+            logger.info(f"[search-CANCELLED] search_id={search_id} cancelled by user at {elapsed_sec:.1f}s")
+            if progress:
+                progress.set_stats(status="done", message="Search cancelled by user")
+            break
+
+        if elapsed_sec > MAX_SEARCH_SECONDS:
+            logger.warning(f"[search-TIMEOUT] search_id={search_id} reached {MAX_SEARCH_SECONDS}s limit. Returning {len(downloaded_files)} downloaded attachments.")
+            if progress:
+                progress.set_stats(message=f"⚠️ Reached {MAX_SEARCH_SECONDS // 60} min time limit. Processing partial results...")
+            break
+
         iteration += 1
         logger.info(
             f"[search-LOOP] iteration {iteration}: "
@@ -933,6 +1042,12 @@ def search_gmail_until_target(mailbox=None, jd=None, target_attachments=50, batc
                 sender_header = next((h["value"] for h in headers if h["name"].lower() == "from"), "")
                 reply_to_header = next((h["value"] for h in headers if h["name"].lower() == "reply-to"), "")
                 internal_date_ms = full_msg.get("internalDate")
+
+                if exclude_copied_emails:
+                    header_emails = set(re.findall(r'[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}', f"{sender_header} {reply_to_header}".lower()))
+                    if header_emails and header_emails.intersection(exclude_copied_emails):
+                        logger.info(f"[search-SKIP] Skipping message {msg_id} (sender {header_emails} already in copied_history)")
+                        continue
 
                 attachments = []
                 def walk_parts(part_list):
@@ -1206,7 +1321,7 @@ def search_until_relevant(mailbox="recruiter@ecorptrainings.com", jd="", target_
     logger.info(f'[search-DONE] {meta}')
     return relevant, meta
 
-def main(job_query, account_email="recruiter@ecorptrainings.com", max_candidates=25, date_preset=None, date_from=None, date_to=None, search_id=None, fast_mode=False):
+def main(job_query, account_email="recruiter@ecorptrainings.com", max_candidates=25, date_preset=None, date_from=None, date_to=None, search_id=None, fast_mode=False, exclude_copied_emails=None):
     """
     Main entrypoint called from app.py or CLI.
     Fetches Gmail emails until max_candidates target attachments are downloaded.
@@ -1214,7 +1329,7 @@ def main(job_query, account_email="recruiter@ecorptrainings.com", max_candidates
     """
     acquired = _search_lock.acquire(blocking=True, timeout=120)
     try:
-        return _do_main(job_query, account_email=account_email, max_candidates=max_candidates, date_preset=date_preset, date_from=date_from, date_to=date_to, search_id=search_id, fast_mode=fast_mode)
+        return _do_main(job_query, account_email=account_email, max_candidates=max_candidates, date_preset=date_preset, date_from=date_from, date_to=date_to, search_id=search_id, fast_mode=fast_mode, exclude_copied_emails=exclude_copied_emails)
     finally:
         if acquired:
             try:
@@ -1222,7 +1337,7 @@ def main(job_query, account_email="recruiter@ecorptrainings.com", max_candidates
             except Exception:
                 pass
 
-def _do_main(job_query, account_email="recruiter@ecorptrainings.com", max_candidates=25, date_preset=None, date_from=None, date_to=None, search_id=None, fast_mode=False):
+def _do_main(job_query, account_email="recruiter@ecorptrainings.com", max_candidates=25, date_preset=None, date_from=None, date_to=None, search_id=None, fast_mode=False, exclude_copied_emails=None):
     if not job_query or not job_query.strip():
         print("Job Query / Job Description cannot be empty.")
         return
@@ -1252,20 +1367,26 @@ def _do_main(job_query, account_email="recruiter@ecorptrainings.com", max_candid
 
     if not search_id:
         search_id = str(uuid.uuid4())
-    logger.info(f"[search-NEW] search_id={search_id} jd={job_query}")
-    logger.info(f"[search-ENTRY] mailbox={email_key} jd={job_query} target={target_candidates} timestamp={time.time()}")
-    if email_key == 'recruiter@ecorptrainings.com' and job_query.lower() == 'java':
-        logger.info(f"[search-VERIFY] this is a fresh search for java")
-
-    t_start = time.time()
-    service = auto_authenticate_google(email_key)
-    
-    logger.info(f"[search-STEP] building Gmail query")
-    search_query = build_gmail_search_query(job_query, date_preset=date_preset, date_from=date_from, date_to=date_to)
-    logger.info(f"[search-STEP] query={search_query}")
-
+        
     progress = SearchProgress(target=target_candidates, search_id=search_id)
     _searches[search_id] = progress
+    progress.set_stats(status="downloading")
+
+    try:
+        logger.info(f"[search-NEW] search_id={search_id} jd={job_query}")
+        logger.info(f"[search-ENTRY] mailbox={email_key} jd={job_query} target={target_candidates} timestamp={time.time()}")
+
+        t_start = time.time()
+        service = auto_authenticate_google(email_key)
+        
+        logger.info(f"[search-STEP] building Gmail query")
+        search_query = build_gmail_search_query(job_query, date_preset=date_preset, date_from=date_from, date_to=date_to)
+        logger.info(f"[search-STEP] query={search_query}")
+    except Exception as e_init:
+        logger.error(f"[search-INIT-ERROR] {e_init}")
+        progress.set_stats(status="error")
+        progress.message = str(e_init)
+        raise e_init
 
     logger.info(f"[search-STEP] calling search_gmail_until_target")
     downloaded_attachments = search_gmail_until_target(
@@ -1274,8 +1395,9 @@ def _do_main(job_query, account_email="recruiter@ecorptrainings.com", max_candid
         email_key=email_key,
         target_attachments=target_candidates,
         batch_size=50,
-        max_emails=min(target_candidates * 5, MAX_EMAILS_TO_SCAN),
-        search_id=search_id
+        max_emails=min(target_candidates * 10, MAX_EMAILS_TO_SCAN) if exclude_copied_emails else min(target_candidates * 5, MAX_EMAILS_TO_SCAN),
+        search_id=search_id,
+        exclude_copied_emails=exclude_copied_emails
     )
 
     total_downloaded = len(downloaded_attachments)
@@ -1306,8 +1428,21 @@ def _do_main(job_query, account_email="recruiter@ecorptrainings.com", max_candid
 
     BATCH_SIZE = getattr(ai_extractor, 'BATCH_SIZE', 10)
     total_batches = (len(items_to_extract) + BATCH_SIZE - 1) // BATCH_SIZE
+    is_cancelled = False
+    is_timed_out = False
 
     for batch_idx in range(total_batches):
+        elapsed_sec = time.time() - t_start
+        if search_id and _search_cancelled.get(search_id):
+            logger.info(f"[search-CANCELLED] batch {batch_idx+1}: search cancelled by user")
+            is_cancelled = True
+            break
+
+        if elapsed_sec > MAX_SEARCH_SECONDS:
+            logger.warning(f"[search-TIMEOUT] batch {batch_idx+1}: reached {MAX_SEARCH_SECONDS}s limit")
+            is_timed_out = True
+            break
+
         batch_items = items_to_extract[batch_idx * BATCH_SIZE : (batch_idx + 1) * BATCH_SIZE]
         batch_texts = []
 
@@ -1380,14 +1515,19 @@ def _do_main(job_query, account_email="recruiter@ecorptrainings.com", max_candid
             except Exception:
                 cand_score = float(det_score)
 
-            # If AI explicitly evaluated the resume and gave match_score = 0 or "No match",
-            # respect the AI evaluation! Do not overwrite with deterministic false positives.
+            det_has_match = (det_score >= 30 and str(det_matched_skills).strip().lower() not in ["none", "no match", ""])
             ai_reason = str(ai_data.get("match_reason") or "").strip()
             ai_ms = str(ai_data.get("matched_skills") or "").strip()
             if cand_score <= 0 or ai_reason.lower() in ["no match", "none"] or ai_ms.lower() in ["no match", "none"]:
-                cand_score = 0
-                cand_matched_skills = "No match"
-                cand_reason = "No match"
+                if det_has_match:
+                    logger.info(f"[search-RESCUE] Rescuing {cand_name} via deterministic match: {det_matched_skills} (score={det_score})")
+                    cand_score = det_score
+                    cand_matched_skills = det_matched_skills
+                    cand_reason = det_reason
+                else:
+                    cand_score = 0
+                    cand_matched_skills = "No match"
+                    cand_reason = "No match"
             else:
                 cand_matched_skills = ai_data.get("matched_skills") or det_matched_skills
                 cand_reason = ai_data.get("match_reason") or det_reason
@@ -1428,6 +1568,11 @@ def _do_main(job_query, account_email="recruiter@ecorptrainings.com", max_candid
                     continue
 
             dedup_key = candidate_data["Email"].lower()
+            if exclude_copied_emails and dedup_key in exclude_copied_emails:
+                logger.info(f"[search-EXCLUDE] Candidate {dedup_key} is in copied_history, skipping")
+                progress.increment()
+                continue
+
             if dedup_key not in seen_identifiers:
                 seen_identifiers.add(dedup_key)
                 all_candidates.append(candidate_data)

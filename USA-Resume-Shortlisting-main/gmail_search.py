@@ -84,6 +84,24 @@ def detect_search_mode(term):
 
     return 'keyword'
 
+GMAIL_SYNONYMS = {
+    'luster': '(luster OR lustre)',
+    'lustre': '(lustre OR luster)',
+    'weka': '(weka OR wekafs)',
+    'wekafs': '(wekafs OR weka)',
+    'ai': '(ai OR "artificial intelligence" OR genai)',
+    'k8s': '(k8s OR kubernetes)',
+    'kubernetes': '(kubernetes OR k8s)',
+    'sfdc': '(sfdc OR salesforce)',
+    'salesforce': '(salesforce OR sfdc)',
+    'react': '(react OR reactjs)',
+    'node': '(node OR nodejs)',
+}
+
+def expand_token_with_synonyms(token):
+    tok_low = token.lower()
+    return GMAIL_SYNONYMS.get(tok_low, token)
+
 def build_gmail_search_query(job_description, days_back=None, date_preset=None, date_from=None, date_to=None, **kwargs):
     """
     Constructs an optimized Gmail search query matching Gmail UI search semantics.
@@ -129,7 +147,7 @@ def build_gmail_search_query(job_description, days_back=None, date_preset=None, 
                         branches = [b.strip() for b in re.split(r'\bOR\b', normalized_jd, flags=re.IGNORECASE) if b.strip()]
                         valid_branches = []
                         for branch in branches:
-                            branch_tokens = [t for t in re.findall(r'[a-zA-Z0-9+#.]+', branch) if t.lower() not in STOP_WORDS and t.lower() != "and"]
+                            branch_tokens = [expand_token_with_synonyms(t) for t in re.findall(r'[a-zA-Z0-9+#.]+', branch) if t.lower() not in STOP_WORDS and t.lower() != "and"]
                             if branch_tokens:
                                 valid_branches.append(" ".join(branch_tokens))
                         if len(valid_branches) > 1:
@@ -143,11 +161,11 @@ def build_gmail_search_query(job_description, days_back=None, date_preset=None, 
                         branches = [b.strip() for b in re.split(r'\bAND\b', normalized_jd, flags=re.IGNORECASE) if b.strip()]
                         valid_tokens = []
                         for branch in branches:
-                            branch_tokens = [t for t in re.findall(r'[a-zA-Z0-9+#.]+', branch) if t.lower() not in STOP_WORDS]
+                            branch_tokens = [expand_token_with_synonyms(t) for t in re.findall(r'[a-zA-Z0-9+#.]+', branch) if t.lower() not in STOP_WORDS]
                             if branch_tokens:
                                 valid_tokens.append(" ".join(branch_tokens))
                         if len(valid_tokens) > 1:
-                            kw_query = "(" + " OR ".join(valid_tokens) + ")"
+                            kw_query = "(" + " AND ".join(valid_tokens) + ")"
                         elif valid_tokens:
                             kw_query = valid_tokens[0]
                         else:
@@ -160,14 +178,10 @@ def build_gmail_search_query(job_description, days_back=None, date_preset=None, 
                         if not tokens:
                             tokens = words
 
-                        expanded_tokens = []
-                        for t in tokens:
-                            expanded_tokens.append(t)
-                            if t.upper() == "SFDC" and "Salesforce" not in expanded_tokens:
-                                expanded_tokens.append("Salesforce")
+                        expanded_tokens = [expand_token_with_synonyms(t) for t in tokens]
 
                         if len(expanded_tokens) > 1:
-                            kw_query = "(" + " OR ".join(expanded_tokens) + ")"
+                            kw_query = "(" + " AND ".join(expanded_tokens) + ")"
                         elif len(expanded_tokens) == 1:
                             kw_query = expanded_tokens[0]
                         else:

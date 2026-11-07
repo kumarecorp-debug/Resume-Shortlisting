@@ -91,7 +91,9 @@ KNOWN_SKILLS = [
     "numpy", "scikit-learn", "tensorflow", "pytorch", "tableau", "power bi",
     "linux", "git", "jira", "agile", "scrum", "devops", "microservices",
     "sap", "grc", "hana", "basis", "abap", "ui5", "fiori", "capm", "scm", "fusion",
-    "hcm", "oic", "faw", "fdi", "bip", "otbi", "plsql", "pl/sql", "toad", "rice"
+    "hcm", "oic", "faw", "fdi", "bip", "otbi", "plsql", "pl/sql", "toad", "rice",
+    "ai", "genai", "artificial intelligence", "luster", "lustre", "weka", "storage",
+    "san", "nas", "salesforce", "sfdc", "developer", "engineer"
 ]
 
 # Supported Gmail Accounts Configuration
@@ -598,6 +600,30 @@ def extract_experience_from_text(text):
 
     return "2.0 years"
 
+SYNONYM_DICT = {
+    'ai': ['ai', 'artificial intelligence', 'genai', 'generative ai', 'llm', 'machine learning', 'ml', 'deep learning'],
+    'ml': ['ml', 'machine learning', 'deep learning'],
+    'genai': ['genai', 'generative ai', 'llm', 'large language model'],
+    'luster': ['luster', 'lustre'],
+    'lustre': ['lustre', 'luster'],
+    'weka': ['weka', 'wekafs', 'weka.io'],
+    'storage': ['storage', 'nas', 'san', 'nvme', 'file system', 'filesystem', 'cloud storage', 's3'],
+    'k8s': ['k8s', 'kubernetes'],
+    'kubernetes': ['kubernetes', 'k8s'],
+    'js': ['js', 'javascript'],
+    'javascript': ['javascript', 'js'],
+    'ts': ['ts', 'typescript'],
+    'typescript': ['typescript', 'ts'],
+    'py': ['py', 'python'],
+    'python': ['python', 'py'],
+    'react': ['react', 'react.js', 'reactjs'],
+    'node': ['node', 'node.js', 'nodejs'],
+    'sfdc': ['sfdc', 'salesforce'],
+    'salesforce': ['salesforce', 'sfdc'],
+    'developer': ['developer', 'dev', 'programmer', 'software engineer', 'engineer'],
+    'engineer': ['engineer', 'engineering', 'developer'],
+}
+
 def extract_skills_from_text(text, job_description=""):
     text_lower = text.lower()
     found_skills = []
@@ -605,14 +631,20 @@ def extract_skills_from_text(text, job_description=""):
     for skill in KNOWN_SKILLS:
         pattern = r'\b' + re.escape(skill) + r'\b'
         if re.search(pattern, text_lower):
-            found_skills.append(skill.title())
+            found_skills.append(skill.upper() if len(skill) <= 4 else skill.title())
             
     clean_query = re.sub(r'\b(?:AND|OR)\b', ' ', job_description, flags=re.IGNORECASE)
     jd_tokens = re.findall(r'[a-zA-Z0-9+#.]+', clean_query.lower())
     for token in jd_tokens:
-        if len(token) > 2 and token not in ["and", "for", "with", "the", "developer", "engineer", "consultant"]:
-            if re.search(r'\b' + re.escape(token) + r'\b', text_lower):
-                title_t = token.title()
+        if len(token) >= 2 and token not in ["and", "for", "with", "the", "in", "on", "to", "at", "a", "an"]:
+            variants = SYNONYM_DICT.get(token, [token])
+            matched = False
+            for v in variants:
+                if re.search(r'\b' + re.escape(v) + r'\b', text_lower):
+                    matched = True
+                    break
+            if matched:
+                title_t = token.upper() if len(token) <= 4 else token.title()
                 if title_t not in found_skills:
                     found_skills.append(title_t)
                 
@@ -628,12 +660,19 @@ def extract_matched_skills_and_score(resume_text, job_description):
     text_lower = resume_text.lower()
     raw_query = job_description.strip()
     words = re.findall(r'\b[A-Za-z0-9+#.]+\b', raw_query)
-    stop_tokens = {"and", "or", "the", "for", "with", "in", "on", "to", "at", "a", "an", "is", "are", "we", "need", "developer", "engineer", "consultant"}
+    stop_tokens = {"and", "or", "the", "for", "with", "in", "on", "to", "at", "a", "an", "is", "are", "we", "need", "require", "required"}
 
-    cleaned_terms = [w for w in words if w.lower() not in stop_tokens and len(w) > 1]
+    cleaned_terms = [w for w in words if w.lower() not in stop_tokens and len(w) >= 2]
     matched_set = []
     for term in cleaned_terms:
-        if re.search(r'\b' + re.escape(term.lower()) + r'\b', text_lower):
+        term_low = term.lower()
+        variants = SYNONYM_DICT.get(term_low, [term_low])
+        matched = False
+        for v in variants:
+            if re.search(r'\b' + re.escape(v) + r'\b', text_lower):
+                matched = True
+                break
+        if matched:
             t_case = term.upper() if len(term) <= 4 else term.title()
             if t_case not in matched_set:
                 matched_set.append(t_case)
@@ -1476,14 +1515,19 @@ def _do_main(job_query, account_email="recruiter@ecorptrainings.com", max_candid
             except Exception:
                 cand_score = float(det_score)
 
-            # If AI explicitly evaluated the resume and gave match_score = 0 or "No match",
-            # respect the AI evaluation! Do not overwrite with deterministic false positives.
+            det_has_match = (det_score >= 30 and str(det_matched_skills).strip().lower() not in ["none", "no match", ""])
             ai_reason = str(ai_data.get("match_reason") or "").strip()
             ai_ms = str(ai_data.get("matched_skills") or "").strip()
             if cand_score <= 0 or ai_reason.lower() in ["no match", "none"] or ai_ms.lower() in ["no match", "none"]:
-                cand_score = 0
-                cand_matched_skills = "No match"
-                cand_reason = "No match"
+                if det_has_match:
+                    logger.info(f"[search-RESCUE] Rescuing {cand_name} via deterministic match: {det_matched_skills} (score={det_score})")
+                    cand_score = det_score
+                    cand_matched_skills = det_matched_skills
+                    cand_reason = det_reason
+                else:
+                    cand_score = 0
+                    cand_matched_skills = "No match"
+                    cand_reason = "No match"
             else:
                 cand_matched_skills = ai_data.get("matched_skills") or det_matched_skills
                 cand_reason = ai_data.get("match_reason") or det_reason

@@ -546,7 +546,7 @@ def run_async_search(search_id, params):
         date_to = params.get('date_to', '')
         show_mode = params.get('show_mode', 'all')
         copied_emails = None
-        if show_mode != 'copied':
+        if show_mode == 'not_copied':
             copied_emails = get_cached_copied_emails(selected_account)
             logging.info(f"[search] Excluding {len(copied_emails)} copied emails from Gmail search for mailbox {selected_account}")
 
@@ -961,7 +961,7 @@ def _do_process(available_accounts, default_account, is_get_search):
         if is_serverless:
             # On Vercel / serverless: execute synchronously because background threads are frozen once HTTP response finishes
             copied_emails = None
-            if show_mode != 'copied':
+            if show_mode == 'not_copied':
                 copied_emails = get_cached_copied_emails(selected_account)
                 logging.info(f"[search] Excluding {len(copied_emails)} copied emails from Gmail search for mailbox {selected_account}")
             df, scan_summary = execute_full_candidate_search(

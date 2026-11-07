@@ -30,18 +30,19 @@ except ImportError:
 # Gemini Models configuration — updated for 2026 model availability
 VALID_GEMINI_MODELS = [
     'gemini-3.5-flash-lite',
-    'gemini-2.5-flash',
-    'gemini-flash-latest',
     'gemini-3.8-flash',
+    'gemini-2.5-flash',
+    'gemini-3.5-flash',
+    'gemini-flash-latest',
     'gemini-2.0-flash',
     'gemini-1.5-flash',
     'gemini-1.5-pro'
 ]
 
 GEMINI_PRIMARY_MODEL = os.getenv('GEMINI_PRIMARY_MODEL', 'gemini-3.5-flash-lite')
-GEMINI_FALLBACK_1 = os.getenv('GEMINI_FALLBACK_MODEL_1', 'gemini-2.5-flash')
-GEMINI_FALLBACK_2 = os.getenv('GEMINI_FALLBACK_MODEL_2', 'gemini-flash-latest')
-GEMINI_FALLBACK_3 = os.getenv('GEMINI_FALLBACK_MODEL_3', 'gemini-3.8-flash')
+GEMINI_FALLBACK_1 = os.getenv('GEMINI_FALLBACK_MODEL_1', 'gemini-3.8-flash')
+GEMINI_FALLBACK_2 = os.getenv('GEMINI_FALLBACK_MODEL_2', 'gemini-2.5-flash')
+GEMINI_FALLBACK_3 = os.getenv('GEMINI_FALLBACK_MODEL_3', 'gemini-3.5-flash')
 
 raw_gemini_models = [
     GEMINI_PRIMARY_MODEL,
@@ -51,7 +52,7 @@ raw_gemini_models = [
 ]
 
 GEMINI_MODELS = [m for m in raw_gemini_models if m in VALID_GEMINI_MODELS]
-for default_m in ['gemini-3.5-flash-lite', 'gemini-2.5-flash', 'gemini-flash-latest', 'gemini-3.8-flash']:
+for default_m in ['gemini-3.5-flash-lite', 'gemini-3.8-flash', 'gemini-2.5-flash', 'gemini-3.5-flash']:
     if default_m not in GEMINI_MODELS:
         GEMINI_MODELS.append(default_m)
 
