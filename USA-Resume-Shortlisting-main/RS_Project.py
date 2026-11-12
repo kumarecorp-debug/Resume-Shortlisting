@@ -868,6 +868,40 @@ class SearchProgress:
         self.search_id = search_id
         self.t_start = time.time()
         self.message = ""
+        self._last_sync = 0
+
+    def _sync_progress(self, pct=None):
+        if not self.search_id:
+            return
+        now = time.time()
+        if pct is None:
+            pct = int((self.current / self.target) * 100) if self.target else 0
+        if getattr(self, '_last_sync', 0) and (now - self._last_sync) < 1.0 and pct < 100 and self.status != "done":
+            return
+        self._last_sync = now
+        try:
+            import db
+            client = db.get_supabase()
+            if client:
+                msg = self.message or f"Extracting candidate {self.current}/{self.target} ({pct}%)"
+                client.table('search_progress').upsert({
+                    "search_id": self.search_id,
+                    "status": self.status or "running",
+                    "progress": pct,
+                    "message": msg,
+                    "pagination_meta": {
+                        "target": self.target,
+                        "current": self.current,
+                        "resumes_extracted": self.current,
+                        "emails_scanned": self.emails_scanned,
+                        "found_relevant": self.resumes_found,
+                        "elapsed_seconds": self.elapsed_seconds,
+                        "eta_seconds": self.eta_seconds,
+                    },
+                    "updated_at": "now()"
+                }).execute()
+        except Exception:
+            pass
 
     def set_stats(self, emails_scanned=None, resumes_found=None, status=None, stage=None, message=None):
         with self.lock:
@@ -881,12 +915,14 @@ class SearchProgress:
                 self.stage = stage
             if message is not None:
                 self.message = message
+            self._sync_progress()
 
     def increment(self, step=1):
         with self.lock:
             self.current = min(self.current + step, self.target)
             pct = int((self.current / self.target) * 100)
             logger.info(f"[search-PROGRESS] {self.current}/{self.target} ({pct}%)")
+            self._sync_progress(pct)
 
     def done(self, message=""):
         with self.lock:
@@ -895,6 +931,7 @@ class SearchProgress:
             self.stage = "done"
             if message:
                 self.message = message
+            self._sync_progress(100)
 
     @property
     def elapsed_seconds(self):
@@ -1421,12 +1458,14 @@ def _do_main(job_query, account_email="recruiter@ecorptrainings.com", max_candid
 
     logger.info(f"[search-START] search_id={search_id} target={target_candidates} jd={job_query}")
 
-    progress.set_stats(status="extracting")
+    progress.set_stats(status="extracting", stage="extracting", message=f"Extracting candidates (0/{target_candidates})...")
     all_candidates = []
     seen_identifiers = set()
     scan_summary = {'pdf': 0, 'docx': 0}
 
     BATCH_SIZE = getattr(ai_extractor, 'BATCH_SIZE', 10)
+    if not BATCH_SIZE or BATCH_SIZE < 5:
+        BATCH_SIZE = 10
     total_batches = (len(items_to_extract) + BATCH_SIZE - 1) // BATCH_SIZE
     is_cancelled = False
     is_timed_out = False

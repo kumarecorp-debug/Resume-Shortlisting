@@ -620,54 +620,96 @@ def api_search_progress(search_id):
 
     try:
         response = None
-        try:
-            client = db.get_supabase()
-            if client:
-                result = client.table('search_progress')\
-                    .select('*')\
-                    .eq('search_id', search_id)\
-                    .execute()
-                
-                if result.data and len(result.data) > 0:
-                    row = result.data[0]
-                    response = {
-                        "status": row.get("status") or "running",
-                        "progress": row.get("progress") or 0,
-                        "message": row.get("message"),
-                        "candidates": row.get("candidates") or [],
-                        "pagination_meta": row.get("pagination_meta") or {},
-                        "error": row.get("error"),
-                    }
-        except Exception as e_sb:
-            logging.debug(f"[progress-API] supabase table lookup skipped: {e_sb}")
 
-        if not response and search_id in _search_result_store:
+        # 1. Check in-memory store for completed search
+        if search_id in _search_result_store:
             res = _search_result_store[search_id]
             cands = res.get("candidates", [])
             response = {
                 "status": res.get("status", "done"),
                 "progress": 100,
+                "percentage": 100,
                 "message": f"Found {len(cands)} candidates",
                 "candidates": cands,
+                "target": res.get("pagination_meta", {}).get("target", len(cands)),
+                "found_relevant": len(cands),
+                "resumes_extracted": len(cands),
+                "emails_scanned": res.get("pagination_meta", {}).get("emails_scanned", len(cands)),
+                "elapsed_seconds": res.get("elapsed", 0),
+                "eta_seconds": 0,
                 "pagination_meta": res.get("pagination_meta", {}),
                 "error": None
             }
 
+        # 2. Check in-memory active progress (most real-time source)
         if not response and search_id in RS_Project._searches:
             prog = RS_Project._searches[search_id]
             status = getattr(prog, 'status', 'running')
-            pct = int((prog.current / max(prog.target, 1)) * 100)
+            pct = int((prog.current / max(prog.target, 1)) * 100) if prog.target else 0
             response = {
                 "status": "done" if status == "done" else "running",
                 "progress": 100 if status == "done" else min(pct, 99),
-                "message": getattr(prog, 'message', '') or "Searching...",
+                "percentage": 100 if status == "done" else min(pct, 99),
+                "message": getattr(prog, 'message', '') or f"Extracting candidates ({prog.current}/{prog.target})...",
                 "candidates": [],
+                "target": prog.target,
+                "found_relevant": getattr(prog, 'resumes_found', 0),
+                "resumes_extracted": prog.current,
+                "emails_scanned": getattr(prog, 'emails_scanned', 0),
+                "elapsed_seconds": prog.elapsed_seconds,
+                "eta_seconds": prog.eta_seconds,
                 "pagination_meta": {},
                 "error": None
             }
 
+        # 3. Fallback: Check Supabase search_progress table (cross-worker sync)
         if not response:
-            response = {"status": "running", "progress": 0, "candidates": []}
+            try:
+                client = db.get_supabase()
+                if client:
+                    result = client.table('search_progress')\
+                        .select('*')\
+                        .eq('search_id', search_id)\
+                        .execute()
+                    
+                    if result.data and len(result.data) > 0:
+                        row = result.data[0]
+                        pm = row.get("pagination_meta") or {}
+                        prog_val = row.get("progress") or 0
+                        status_val = row.get("status") or "running"
+                        cands_val = row.get("candidates") or []
+                        response = {
+                            "status": status_val,
+                            "progress": prog_val,
+                            "percentage": prog_val,
+                            "message": row.get("message") or "Searching...",
+                            "candidates": cands_val,
+                            "target": pm.get("target") or 25,
+                            "found_relevant": pm.get("found_relevant") or (len(cands_val) if status_val == "done" else 0),
+                            "resumes_extracted": pm.get("resumes_extracted") or (len(cands_val) if status_val == "done" else 0),
+                            "emails_scanned": pm.get("emails_scanned") or 0,
+                            "elapsed_seconds": pm.get("elapsed_seconds") or 0,
+                            "eta_seconds": pm.get("eta_seconds") or 0,
+                            "pagination_meta": pm,
+                            "error": row.get("error"),
+                        }
+            except Exception as e_sb:
+                logging.debug(f"[progress-API] supabase table lookup skipped: {e_sb}")
+
+        if not response:
+            response = {
+                "status": "running",
+                "progress": 0,
+                "percentage": 0,
+                "candidates": [],
+                "target": 25,
+                "found_relevant": 0,
+                "resumes_extracted": 0,
+                "emails_scanned": 0,
+                "elapsed_seconds": 0,
+                "eta_seconds": 0,
+                "message": "Initializing search..."
+            }
 
         logging.info(
             f"[progress-API] id={search_id} status={response['status']} "
